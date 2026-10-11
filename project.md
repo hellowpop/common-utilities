@@ -9,6 +9,7 @@
 - 첫 번째 설계 대상: `object-recycle-container` 독립 유틸리티 모듈
 - Git 저장소: `https://github.com/hellowpop/common-utilities.git`
 - 원격 이름: `origin`, 초기 브랜치: `master`
+- 개발 브랜치: `develop`, 추적 브랜치: `origin/develop`. 이후 개발 작업은 `develop`을 유지한다.
 - Git 관리 대상: 소스, 테스트, Maven 설정, `AGENTS.md`, `project.md`, `.gitignore`
 - Git 제외 대상: Maven `target/`, IntelliJ `.idea/`, `*.iml`
 
@@ -22,6 +23,7 @@
 - 2026-10-11: `object-recycle-container` Java 21 독립 Maven 모듈 구현. Main 단일 락 수명 관리, owner 전용 Sub LIFO, 대여별 HolderLease, worker 반환함, patrol/LeakListener, initial/min/max 및 종료·실패 처리를 추가.
 - 2026-10-11: 독립 코드 리뷰에서 할당 rollback의 소유권 경쟁과 추가 Holder의 LIFO 순서 오류를 재현하고 수정. 실패한 min 보충을 다음 borrow에서 재시도하도록 보완.
 - 2026-10-11: 사용자의 GitHub push 요청에 따라 로컬 Git 저장소와 `origin`을 연결. 비어 있는 원격 저장소에 기존 로컬 브랜치 `master`로 초기 구현을 등록하도록 구성하고, push 전에 기술문서를 갱신. IDE 설정과 빌드 산출물을 Git 관리에서 제외.
+- 2026-10-11: `master`에서 `develop` 브랜치를 생성. 원격 `origin/develop`을 추적하도록 구성하고 로컬 작업 브랜치는 `develop`으로 유지한다. push 전에 브랜치 운영 정보를 이 문서에 기록.
 
 ## Object Recycle Container
 
