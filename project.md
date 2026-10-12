@@ -15,6 +15,12 @@
 
 ## 구조 변경내역
 
+- 2026-10-12: 사용자 push 요청에 따라 Partial Input 구현·메모리/NPE 보강·회귀 테스트를 develop에 커밋하고 origin/develop에 반영하도록 준비. push 전에 본 기술문서를 갱신했다.
+
+- 2026-10-12: Partial Input 메모리/NPE 분석 반영. 닫힌 스트림의 배열·구간·채널 참조 해제, 파일 생성자의 null 리스트 선검증, 스트림 생성 실패 시 채널 정리 추가. 참조 해제와 close 이후 계약 및 생성 실패 회귀 테스트 추가.
+
+- 2026-10-12: `partial-input` 독립 Java 21 Maven 모듈 추가. `com.inzent.apim.utilities.partial` 아래 배열/파일 부분 구간 검증, shrink, 선택 구간 InputStream을 구현. 기존 `object-recycle-container` 모듈과 의존성 없이 각각 빌드한다.
+
 - 2026-10-12: Object Recycle Container 분석 결과 반영. 정리 훅 Error 발생 시 일괄 정리와 오류 전파를 보강하고, Lease/Token/Event를 식별자 기반으로 전환하여 반환·회수 후 강한 참조를 해제. Sub 소유자는 Thread 대신 threadId로 식별. NPE 계약 및 사용·초기화·정리 복합 실패 회귀 테스트 추가. 공개 API와 timeout 기본값은 유지.
 - 2026-10-12: 사용자 push 요청에 따라 분석 리포트·안전성 개선·회귀 테스트를 develop에 커밋하여 origin/develop에 반영하도록 준비. push 전에 기술문서를 갱신했으며, 검증 결과는 아래 적용 기록에 유지한다.
 - 2026-10-11: Object Recycle Container 설계 초안을 simple-http-forward-proxy/project.md에서 이 프로젝트로 이관. 프로젝트 기준 경로, 패키지, Maven 좌표 및 빌드 기준 디렉터리를 수정. 설계 검토 단계이며 구현은 시작하지 않음.
@@ -26,6 +32,105 @@
 - 2026-10-11: 독립 코드 리뷰에서 할당 rollback의 소유권 경쟁과 추가 Holder의 LIFO 순서 오류를 재현하고 수정. 실패한 min 보충을 다음 borrow에서 재시도하도록 보완.
 - 2026-10-11: 사용자의 GitHub push 요청에 따라 로컬 Git 저장소와 `origin`을 연결. 비어 있는 원격 저장소에 기존 로컬 브랜치 `master`로 초기 구현을 등록하도록 구성하고, push 전에 기술문서를 갱신. IDE 설정과 빌드 산출물을 Git 관리에서 제외.
 - 2026-10-11: `master`에서 `develop` 브랜치를 생성. 원격 `origin/develop`을 추적하도록 구성하고 로컬 작업 브랜치는 `develop`으로 유지한다. push 전에 브랜치 운영 정보를 이 문서에 기록.
+
+## Partial Input 구현 계획 (2026-10-12)
+
+- 기존 develop 작업 경로를 유지하고 독립 `partial-input/pom.xml`을 추가한다.
+- `PartialByteArray(byte[], List<Long>)`, `PartialFile(Path/String, List<Long>)`을 공개 API로 제공한다.
+- 각 long의 상위/하위 32비트를 signed int offset/length로 해석한다. 음수와 원본 범위 초과는 생성 시 거부한다. 덧셈은 long으로 처리한다.
+- 리스트 순서를 유지하며 중복/겹침/역순을 허용한다. 0 길이와 빈 리스트를 허용한다. 리스트는 방어적으로 복사한다.
+- 배열 shrink는 원본을 변경하지 않고 새 배열을 반환한다. 파일 shrink는 동일 디렉터리 임시 파일에 복사하고 atomic replace로 원본 경로를 교체한다. 교체 성공 후 객체의 구간은 축소 파일 전체를 가리킨다.
+- stream은 구간 경계를 숨기며 read/skip/available/close 계약을 지킨다. 파일은 FileChannel의 위치 지정 읽기를 이용한다. 조기 EOF는 IOException으로 알린다.
+- 구현 순서: ① 공개 동작/실패/경계 테스트 및 미구현 실패 확인 ② 공통 구간과 스트림 및 배열/파일 API 구현 ③ 전체 모듈 검증 및 독립 코드 리뷰 ④ 사용 예제와 검증 결과 기록.
+
+### 구조 및 API
+
+| 파일 (`partial-input/src/main/java/com/inzent/apim/utilities/partial/`) | 역할 |
+| --- | --- |
+| `PartialByteArray.java` | 배열 입력, `byte[] shrink()`, `InputStream openStream()` |
+| `PartialFile.java` | Path/String 입력, `Path shrink() throws IOException`, `InputStream openStream() throws IOException` |
+| `PartialBlocks.java` | 내부 불변 구간 목록 및 생성자 검증 |
+| `PartialInputStream.java` | 내부 구간 연결 스트림, 독립 커서/파일 핸들 |
+
+생성자에서 offset/length 음수 또는 `offset + length > sourceSize`는 `IllegalArgumentException`,
+null 배열·리스트·리스트 원소는 `NullPointerException`으로 거부한다. 파일 접근 오류는 `IOException`이다.
+파일 offset과 length 각각의 최대값은 `Integer.MAX_VALUE`지만 두 값의 합과 전체 출력 길이는 long으로 계산한다.
+offset이 원본 크기와 같은 경우 length가 0일 때만 유효하다.
+배열 출력 길이가 `Integer.MAX_VALUE`보다 크면 shrink는 할당 전에 `IllegalStateException`으로 거부한다.
+그 이하라도 실제 배열 할당은 JVM 제한과 가용 메모리에 따른다.
+
+### 사용 예제
+
+```java
+import com.inzent.apim.utilities.partial.PartialByteArray;
+import com.inzent.apim.utilities.partial.PartialFile;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.List;
+
+// 상위 4 byte: offset, 하위 4 byte: length
+List<Long> info = List.of(
+        (1L << 32) | 3L,
+        (7L << 32) | 2L);
+
+byte[] source = "0123456789".getBytes(StandardCharsets.UTF_8);
+PartialByteArray array = new PartialByteArray(source, info);
+byte[] compact = array.shrink(); // "12378". source는 그대로 유지된다.
+try (InputStream input = array.openStream()) {
+    byte[] selected = input.readAllBytes(); // "12378"
+}
+
+// 원본 파일 내용이 "0123456789"인 예제
+PartialFile file = new PartialFile(Path.of("data.bin"), info);
+try (InputStream input = file.openStream()) {
+    // input.transferTo(output); 로 선택된 부분만 전송할 수 있다.
+}
+Path compactedPath = file.shrink(); // 원본 경로의 내용이 "12378"로 교체된다.
+// 이후 file.openStream()/file.shrink()는 축소된 파일 전체를 대상으로 한다.
+```
+
+### 자원·변경 계약
+
+- 리스트는 복사하지만 byte[] 내용은 공유한다. 스트림 사용 중 원본 배열/파일을 외부에서 변경하지 않는다.
+- 스트림마다 커서가 독립적이다. 파일 스트림은 close가 필요하며 파일 객체 생성자 자체는 핸들을 유지하지 않는다.
+- 파일 전체를 메모리에 올리지 않는다. shrink는 고정 크기 복사 버퍼와 선택 길이만큼의 임시 디스크 공간을 사용한다.
+- 파일 shrink 전에 열린 스트림을 모두 닫는다. 파일 객체의 shrink/openStream 동시 호출은 지원하지 않는다.
+- 파일 경로는 생성 시 real path로 해석한다. 심볼릭 링크 입력은 해석된 대상 경로를 교체한다.
+- 임시 파일의 메타데이터로 교체하므로 기존 파일의 권한/시간 등 메타데이터 보존을 보장하지 않는다. 기존 hard link는 이전 파일 내용을 유지한다.
+- atomic replace 미지원/교체 실패 시 IOException으로 종료한다. 비원자적 덮어쓰기로 전환하지 않는다. 복사 실패 시 임시 파일을 정리하고 원본 내용을 유지한다.
+- 선택된 바이트를 읽기 전에 파일 끝에 도달하면 `EOFException`을 발생시킨다. 생성 후 외부 파일 변경을 완전히 감지하거나 스냅샷을 제공하지는 않는다.
+- 0 길이 read는 0, 정상 EOF는 -1, 음수 skip은 0, available은 남은 논리 바이트 수를 int 최대값으로 제한한다. mark/reset은 미지원이다.
+- 빈 선택의 shrink 결과는 빈 배열/빈 파일이다. 겹친 구간은 중복 출력되므로 선택 길이가 원본보다 커질 수 있다.
+
+### 검증 기록
+
+- 구현 전 공개 클래스 부재에 따른 테스트 컴파일 실패를 확인했다.
+- 최초 `mvn -f partial-input/pom.xml test`: 10개 테스트 통과.
+- 최종 `mvn -f partial-input/pom.xml clean verify`: 10개 테스트 통과, JAR 생성 성공.
+- 기존 모듈 `mvn -f object-recycle-container/pom.xml clean verify`: 58개 테스트 통과, JAR 생성 성공. 오류/누수 시나리오의 진단 WARNING 로그가 출력되며 테스트 실패는 없다.
+- 독립 코드 리뷰: 수정이 필요한 결함 없음. atomic move 실패 분기의 전용 회귀 테스트는 미추가 상태이며, 복사 실패 시 원본 보존과 임시 파일 정리는 검증했다.
+- 최초 구현 시 develop의 미커밋 변경으로 유지했으며, 이후 사용자 push 요청에 따라 구현·안전성 보강·테스트·문서를 함께 커밋하여 origin/develop에 반영한다.
+- 실제 임시 파일로 순서·겹침·빈 구간·범위 오류·조기 EOF·실패 시 원본 보존·2GB 경계 위치를 검증한다.
+- 배열/파일 스트림의 bulk read 경계, skip, unsigned 단일 바이트, close, 독립 커서와 배열 출력 크기 초과를 검증한다.
+
+### Partial Input 메모리 누수 / NPE 분석 및 조정 (2026-10-12)
+
+| 분석 경로 | 판단 및 조정 |
+| --- | --- |
+| 닫힌 스트림 → 원본 배열/구간 목록 | close 이후에도 final 필드가 강한 참조를 유지했다. 스트림 객체를 장기 보관하면 큰 원본의 GC가 지연될 수 있어 close에서 참조를 해제한다. 채널 close 실패 시에도 참조는 이미 해제된다. |
+| 파일 openStream → 채널 획득 → 스트림 생성 | 스트림 생성 중 RuntimeException/Error 발생 시 획득한 채널을 닫도록 예외 처리를 보강했다. close의 IOException은 원래 예외에 suppressed로 보존한다. 메모리 고갈 상황에서의 복구는 최선 노력이며 강제로 재현하지 않았다. |
+| 파일 생성자 null 리스트 | 파일 접근 이전에 requireNonNull을 수행한다. 없는 파일 경로와 null 리스트가 함께 전달되어도 partialInfo NPE로 입력 오류를 일관되게 알린다. |
+| null 원소/잘못된 구간으로 파일 생성 실패 | 기존 try-with-resources가 채널을 정리한다. 생성 실패 후 파일 삭제 테스트로 확인했다. |
+| close 후 source/selection/channel null | read/skip/available은 ensureOpen을 먼저 통과해야 참조를 사용하므로 정상적인 순차 호출에서 우발적 NPE 없이 IOException을 반환한다. 중복 close는 허용한다. |
+| PartialByteArray 객체 → 원본 배열 | 재사용을 위한 의도된 참조다. shrink는 새 배열을 반환하므로 원본을 회수하려면 사용자가 기존 view 참조도 놓아야 한다. 공개 API 의미는 유지했다. |
+| EOF/읽기 실패 후 파일 핸들 | 자동 close하지 않는다. 호출자가 try-with-resources로 스트림을 닫는 소유권 계약을 유지한다. |
+| 동시 read/close 또는 shrink/openStream | thread-safe 계약이 없으며 지원하지 않는다. 이번 수정은 동기화나 동시 사용 지원을 추가하지 않는다. |
+
+검증: 참조 유지 및 null 검사 순서 테스트 2개의 실패를 먼저 확인했고 수정 후 신규 회귀 테스트를 포함한 13개 테스트가 통과했다.
+참조 해제 검증은 GC 시간에 의존하지 않도록 실제 스트림의 소유 참조를 직접 검사한다.
+최종 clean verify: partial-input 13개, object-recycle-container 58개, 총 71개 테스트 통과 및 두 JAR 생성 성공.
+독립 재검토에서도 지원하는 순차 호출 계약 내에서 추가 수정이 필요한 NPE/자원 수명 결함은 발견되지 않았다.
 
 ## Object Recycle Container
 
