@@ -1,6 +1,7 @@
 package com.inzent.apim.utilities.recycle;
 
 import java.time.Duration;
+import java.lang.ref.WeakReference;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -8,11 +9,14 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
+import java.util.function.BooleanSupplier;
 
 /**
  * Thread-safe lifecycle coordinator. Call start after subclass construction.
  * Lifecycle hooks run outside the metadata lock, must terminate, and must not
  * reenter this Main. Different holders' hooks may run concurrently.
+ * Cleanup errors are propagated after best-effort disposal of the claimed batch.
+ * Main must be explicitly closed, especially when automatic patrol is enabled.
  */
 public abstract class MainContainer<T> implements AutoCloseable {
     private enum Life { NEW, STARTING, OPEN, CLOSED }
@@ -32,21 +36,21 @@ public abstract class MainContainer<T> implements AutoCloseable {
     }
     static final class SubState<T> {
         final long id;
-        final Thread ownerThread;
+        final long ownerThreadId;
         final SubContainer<T> handle;
         final long borrowedAt;
         final List<StackTraceElement> borrowStack;
-        final ArrayDeque<Token<T>> returns = new ArrayDeque<>();
+        final ArrayDeque<Token> returns = new ArrayDeque<>();
         long lastUsedAt, borrows, recycles, forced, outstanding;
         int creating;
         boolean force;
         SubLife life = SubLife.PREPARING;
         SubState(long id, SubContainer<T> handle, long now, List<StackTraceElement> borrowStack) {
-            this.id = id; this.handle = handle; ownerThread = Thread.currentThread();
+            this.id = id; this.handle = handle; ownerThreadId = Thread.currentThread().threadId();
             borrowedAt = lastUsedAt = now; this.borrowStack = borrowStack;
         }
     }
-    record Token<T>(Slot<T> slot, long generation) {}
+    record Token(long slotId, long generation) {}
 
     private final ContainerConfig config;
     private final LeakListener listener;
@@ -68,7 +72,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
 
     protected MainContainer(ContainerConfig config) { this(config, null, System::nanoTime); }
     protected MainContainer(ContainerConfig config, LeakListener listener) { this(config, listener, System::nanoTime); }
-    /** The supplied clock must be monotonic and thread-safe. */
+    /** The supplied clock must be monotonic, thread-safe, non-blocking and non-throwing. */
     protected MainContainer(ContainerConfig config, LeakListener listener, LongSupplier clock) {
         this.config = Objects.requireNonNull(config, "config");
         this.listener = listener == null ? event -> event.forceClose() : listener;
@@ -129,7 +133,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
                 }
                 return null;
             });
-        } catch (RuntimeException | Error failure) { close(); throw failure; }
+        } catch (RuntimeException | Error failure) { preservingFailure(failure, this::close); throw failure; }
     }
 
     public final SubContainer<T> borrowContainer() {
@@ -137,7 +141,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
         locked(() -> { requireOpen(); return null; });
         replenish();
         SubContainer<T> handle = hook(this::createSubContainer);
-        if (handle == null || handle.main != this || handle.state != null)
+        if (handle == null || handle.main() != this || handle.state != null)
             throw new IllegalArgumentException("createSubContainer must return a fresh Sub belonging to this Main");
         SubState<T> sub = locked(() -> {
             requireOpen();
@@ -146,7 +150,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
             handle.state = state; subs.put(state.id, state); return state;
         });
         try {
-            List<Token<T>> tokens = allocate(sub, config.initialObjectsPerSub(), false);
+            List<Token> tokens = allocate(sub, config.initialObjectsPerSub(), false);
             tokens.forEach(handle.stack::push);
             hookRun(handle::onBorrow);
             locked(() -> {
@@ -157,25 +161,25 @@ public abstract class MainContainer<T> implements AutoCloseable {
             return handle;
         } catch (RuntimeException | Error failure) {
             List<Slot<T>> cleanup = locked(() -> revoke(sub, true));
-            handle.stack.clear(); runCleanup(cleanup, true); throw failure;
+            handle.stack.clear(); preservingFailure(failure, () -> runCleanup(cleanup, true)); throw failure;
         }
     }
 
     /** Assign one additional available holder to the specified owner's LIFO stack. */
     public final void newObject(SubContainer<T> sub) {
         checkEntry(); checkOwned(sub); sub.checkOwner(); requireActive(sub);
-        List<Token<T>> tokens = allocate(sub.state, 1, false);
+        List<Token> tokens = allocate(sub.state, 1, false);
         tokens.forEach(sub.stack::push);
     }
 
     private void checkOwned(SubContainer<T> sub) {
-        if (sub == null || sub.main != this || sub.state == null)
+        if (sub == null || sub.main() != this || sub.state == null)
             throw new IllegalArgumentException("Sub belongs to another Main or is uninitialized");
     }
 
     /** Reserve all capacity before running any factory. Partial allocations are rolled back. */
-    private List<Token<T>> allocate(SubState<T> owner, int count, boolean startup) {
-        var selected = new ArrayList<Token<T>>();
+    private List<Token> allocate(SubState<T> owner, int count, boolean startup) {
+        var selected = new ArrayList<Token>();
         var fresh = new ArrayList<Slot<T>>();
         int reserved = locked(() -> {
             checkAllocation(owner, startup);
@@ -184,7 +188,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
             if (slots.size() + creating + missing > config.max()) throw new PoolExhaustedException("Object capacity reached");
             for (int i = 0; i < available; i++) {
                 Slot<T> slot = idle.removeFirst(); slot.life = SlotLife.LOCAL; slot.owner = owner;
-                selected.add(new Token<>(slot, slot.generation));
+                selected.add(new Token(slot.id, slot.generation));
             }
             creating += missing; if (owner != null) owner.creating += missing;
             return missing;
@@ -206,7 +210,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
                     if (owner == null) idle.addLast(created);
                     return created;
                 });
-                remaining--; selected.add(new Token<>(slot, 0)); fresh.add(slot);
+                remaining--; selected.add(new Token(slot.id, 0)); fresh.add(slot);
                 locked(() -> { checkAllocation(owner, startup); return null; });
             }
             return locked(() -> {
@@ -218,11 +222,11 @@ public abstract class MainContainer<T> implements AutoCloseable {
             List<Slot<T>> cleanup = locked(() -> {
                 creating -= uncreated; if (owner != null) owner.creating -= uncreated;
                 var actions = new ArrayList<Slot<T>>();
-                for (Token<T> token : selected) {
-                    Slot<T> slot = token.slot();
+                for (Token token : selected) {
+                    Slot<T> slot = slots.get(token.slotId());
                     // Registry revocation can return this slot and another Sub can borrow it
                     // before the allocation resumes. Rollback owns only its original assignment.
-                    if (!slots.containsKey(slot.id) || slot.owner != owner || slot.generation != token.generation()) continue;
+                    if (slot == null || slot.owner != owner || slot.generation != token.generation()) continue;
                     if (!fresh.contains(slot) && life == Life.OPEN && (owner == null || !owner.force)
                             && slot.life == SlotLife.LOCAL) {
                         slot.owner = null; slot.life = SlotLife.IDLE; slot.idleAt = now(); idle.addLast(slot);
@@ -232,7 +236,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
                 }
                 releaseSub(owner); return actions;
             });
-            runCleanup(cleanup, false); throw failure;
+            preservingFailure(failure, () -> runCleanup(cleanup, false)); throw failure;
         }
     }
     private void checkAllocation(SubState<T> owner, boolean startup) {
@@ -249,12 +253,12 @@ public abstract class MainContainer<T> implements AutoCloseable {
         drainReturns(sub);
         while (true) {
             if (sub.stack.isEmpty()) newObject(sub);
-            Token<T> token = sub.stack.pop();
-            Slot<T> slot = token.slot();
+            Token token = sub.stack.pop();
             var cleanup = new ArrayList<Slot<T>>();
             HolderLease<T> lease = locked(() -> {
                 requireActive(sub.state);
-                if (!slots.containsKey(slot.id) || slot.owner != sub.state || slot.life != SlotLife.LOCAL
+                Slot<T> slot = slots.get(token.slotId());
+                if (slot == null || slot.owner != sub.state || slot.life != SlotLife.LOCAL
                         || slot.generation != token.generation()) return null;
                 if (slot.generation == Long.MAX_VALUE) {
                     markDestroy(slot); if (claimCleanup(slot)) cleanup.add(slot); return null;
@@ -272,8 +276,8 @@ public abstract class MainContainer<T> implements AutoCloseable {
         locked(() -> {
             requireActive(sub.state);
             while (!sub.state.returns.isEmpty()) {
-                Token<T> token = sub.state.returns.removeFirst(); Slot<T> slot = token.slot();
-                if (slot.owner == sub.state && slot.life == SlotLife.RETURNED && slot.generation == token.generation()) {
+                Token token = sub.state.returns.removeFirst(); Slot<T> slot = slots.get(token.slotId());
+                if (slot != null && slot.owner == sub.state && slot.life == SlotLife.RETURNED && slot.generation == token.generation()) {
                     slot.life = SlotLife.LOCAL; sub.stack.push(token);
                 }
             }
@@ -282,37 +286,43 @@ public abstract class MainContainer<T> implements AutoCloseable {
     }
 
     private boolean active(HolderLease<T> lease) {
-        Slot<T> slot = lease.slot;
-        return life == Life.OPEN && slot.lease == lease && slot.generation == lease.generation
-                && slot.life == SlotLife.BORROWED && slot.owner == lease.owner && lease.owner.life == SubLife.ACTIVE;
+        Slot<T> slot = slots.get(lease.slotId);
+        return life == Life.OPEN && slot != null && slot.lease == lease && slot.generation == lease.generation
+                && slot.life == SlotLife.BORROWED && slot.owner != null
+                && slot.owner.id == lease.ownerId && slot.owner.life == SubLife.ACTIVE;
     }
     private void requireActive(HolderLease<T> lease) {
         if (!active(lease)) throw new IllegalStateException("Holder lease is recycled or expired");
     }
     void use(HolderLease<T> lease, Consumer<? super T> action) {
         checkEntry();
-        Slot<T> slot = lease.slot;
-        locked(() -> {
+        Slot<T> slot = locked(() -> {
             requireActive(lease);
-            if (slot.inUse) throw new IllegalStateException("Concurrent or nested use is forbidden");
-            slot.inUse = true; slot.lastUsedAt = lease.owner.lastUsedAt = now(); return null;
+            Slot<T> current = slots.get(lease.slotId);
+            if (current.inUse) throw new IllegalStateException("Concurrent or nested use is forbidden");
+            current.inUse = true; current.lastUsedAt = current.owner.lastUsedAt = now(); return current;
         });
-        boolean success = false;
-        try { action.accept(slot.holder.value()); success = true; }
+        Throwable useFailure = null;
+        try { action.accept(slot.holder.value()); }
+        catch (Throwable failure) { useFailure = failure; throw failure; }
         finally {
-            final boolean completed = success;
+            final boolean completed = useFailure == null;
             boolean cleanup = locked(() -> {
                 slot.inUse = false;
                 if (!completed) markDestroy(slot);
-                if (active(lease)) slot.lastUsedAt = lease.owner.lastUsedAt = now();
+                if (active(lease)) slot.lastUsedAt = slot.owner.lastUsedAt = now();
                 return claimCleanup(slot);
             });
-            if (cleanup) runCleanup(List.of(slot), true);
+            if (cleanup) {
+                if (useFailure == null) runCleanup(List.of(slot), true);
+                else preservingFailure(useFailure, () -> runCleanup(List.of(slot), true));
+            }
         }
     }
     void touch(HolderLease<T> lease) {
         checkEntry(); locked(() -> {
-            requireActive(lease); lease.slot.lastUsedAt = lease.owner.lastUsedAt = now(); return null;
+            requireActive(lease); Slot<T> slot = slots.get(lease.slotId);
+            slot.lastUsedAt = slot.owner.lastUsedAt = now(); return null;
         });
     }
     void touch(SubContainer<T> sub) {
@@ -323,8 +333,9 @@ public abstract class MainContainer<T> implements AutoCloseable {
         var cleanup = new ArrayList<Slot<T>>();
         boolean accepted = locked(() -> {
             if (!active(lease)) return false;
-            Slot<T> slot = lease.slot; SubState<T> owner = lease.owner;
+            Slot<T> slot = slots.get(lease.slotId); SubState<T> owner = slot.owner;
             slot.life = SlotLife.RECYCLING; slot.acceptedReturn = true;
+            lease.detach(); slot.borrowStack = List.of();
             owner.recycles++; owner.outstanding--; owner.lastUsedAt = now();
             if (claimCleanup(slot)) cleanup.add(slot); return true;
         });
@@ -364,6 +375,8 @@ public abstract class MainContainer<T> implements AutoCloseable {
         if (slot.life == SlotLife.BORROWED) { slot.owner.forced++; slot.owner.outstanding--; }
         idle.remove(slot);
         slot.destroyRequested = true;
+        if (slot.lease != null) slot.lease.detach();
+        slot.borrowStack = List.of();
         if (slot.life != SlotLife.DESTROYING) slot.life = SlotLife.QUARANTINED;
     }
     private boolean claimCleanup(Slot<T> slot) {
@@ -374,16 +387,44 @@ public abstract class MainContainer<T> implements AutoCloseable {
         return false;
     }
     private void runCleanup(List<Slot<T>> actions, boolean maintain) {
-        for (Slot<T> slot : actions) cleanup(slot);
-        if (maintain && !actions.isEmpty()) replenish();
+        Error failure = null;
+        for (Slot<T> slot : actions) {
+            try { cleanup(slot); }
+            catch (Error error) { failure = combine(failure, error); }
+        }
+        try { if (maintain && !actions.isEmpty()) replenish(); }
+        catch (Error error) { failure = combine(failure, error); }
+        if (failure != null) throw failure;
+    }
+    private static Error combine(Error first, Error next) {
+        if (first == null) return next;
+        if (isFatal(next) && !isFatal(first)) { next.addSuppressed(first); return next; }
+        if (first != next) first.addSuppressed(next);
+        return first;
+    }
+    /** Keep the originating failure, unless cleanup discovers a fatal VM failure. */
+    private static void preservingFailure(Throwable original, Runnable cleanup) {
+        try { cleanup.run(); }
+        catch (RuntimeException | Error failure) {
+            if (failure == original) return;
+            if (isFatal(failure) && !isFatal(original)) {
+                failure.addSuppressed(original); rethrowFatal(failure);
+            }
+            original.addSuppressed(failure);
+        }
     }
     private void cleanup(Slot<T> slot) {
+        Error error = null;
         boolean destroy = locked(() -> slot.destroyRequested);
         if (!destroy) {
             try {
                 destroy = !hook(() -> isRecycleable(slot.holder));
                 if (!destroy) hookRun(() -> onRecycle(slot.holder));
-            } catch (RuntimeException failure) { diagnose("Recycle hook failed", failure); destroy = true; }
+            } catch (RuntimeException | Error failure) {
+                destroy = true;
+                if (failure instanceof Error fatal) error = fatal;
+                diagnose("Recycle hook failed", failure);
+            }
         }
         final boolean failedOrRejected = destroy;
         boolean mustDestroy = locked(() -> {
@@ -393,8 +434,8 @@ public abstract class MainContainer<T> implements AutoCloseable {
             }
             slot.cleaning = false; slot.lease = null;
             if (owner != null && owner.life == SubLife.ACTIVE) {
-                Token<T> token = new Token<>(slot, slot.generation);
-                if (Thread.currentThread() == owner.ownerThread) {
+                Token token = new Token(slot.id, slot.generation);
+                if (Thread.currentThread().threadId() == owner.ownerThreadId) {
                     slot.life = SlotLife.LOCAL; owner.handle.stack.push(token);
                 } else { slot.life = SlotLife.RETURNED; owner.returns.addLast(token); }
             } else {
@@ -404,7 +445,10 @@ public abstract class MainContainer<T> implements AutoCloseable {
         });
         if (!mustDestroy) return;
         try { hookRun(() -> onDestroy(slot.holder)); }
-        catch (RuntimeException failure) { diagnose("Destroy hook failed; resource release is unconfirmed", failure); }
+        catch (RuntimeException | Error failure) {
+            if (failure instanceof Error fatal) error = combine(error, fatal);
+            diagnose("Destroy hook failed; resource release is unconfirmed", failure);
+        }
         finally {
             locked(() -> {
                 SubState<T> owner = slot.owner;
@@ -412,11 +456,13 @@ public abstract class MainContainer<T> implements AutoCloseable {
                 slot.owner = null; slot.lease = null; slot.cleaning = false; destroyedCount++; releaseSub(owner); return null;
             });
         }
+        if (error != null) throw error;
     }
     private void releaseSub(SubState<T> sub) {
         if (sub == null || sub.life != SubLife.REVOKED || sub.creating != 0) return;
         if (slots.values().stream().noneMatch(slot -> slot.owner == sub)) {
             sub.life = SubLife.RELEASED; subs.remove(sub.id);
+            sub.handle.detach(subSnapshot(sub));
         }
     }
     private void replenish() {
@@ -430,7 +476,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
             }
         } finally { maintaining.remove(); }
     }
-    private void diagnose(String message, RuntimeException failure) {
+    private void diagnose(String message, Throwable failure) {
         locked(() -> { failureCount++; return null; }); logger.log(System.Logger.Level.WARNING, message, failure);
     }
     private void warnMismatch(SubStats stats) {
@@ -501,15 +547,36 @@ public abstract class MainContainer<T> implements AutoCloseable {
         LeakEvent.Reason reason = expired(now, sub.borrowedAt, sub.lastUsedAt, config.subBorrowLimit(), config.subIdleLimit());
         if (reason == null) return null;
         return new LeakEvent(LeakEvent.Target.SUB, sub.id, 0, 1, reason, now - sub.borrowedAt, now - sub.lastUsedAt,
-                sub.borrowStack, () -> forceSub(sub));
+                sub.borrowStack, closeAction(this, LeakEvent.Target.SUB, sub.id, 1));
     }
     private LeakEvent holderEvent(HolderLease<T> lease) {
         if (!active(lease)) return null;
-        Slot<T> slot = lease.slot; long now = now();
+        Slot<T> slot = slots.get(lease.slotId); long now = now();
         LeakEvent.Reason reason = expired(now, slot.borrowedAt, slot.lastUsedAt, config.holderBorrowLimit(), config.holderIdleLimit());
         if (reason == null) return null;
-        return new LeakEvent(LeakEvent.Target.HOLDER, slot.id, lease.owner.id, lease.generation, reason,
-                now - slot.borrowedAt, now - slot.lastUsedAt, slot.borrowStack, () -> forceHolder(lease));
+        return new LeakEvent(LeakEvent.Target.HOLDER, slot.id, lease.ownerId, lease.generation, reason,
+                now - slot.borrowedAt, now - slot.lastUsedAt, slot.borrowStack,
+                closeAction(this, LeakEvent.Target.HOLDER, slot.id, lease.generation));
+    }
+    /** A retained event owns only a weak Main reference and primitive identity. */
+    private static BooleanSupplier closeAction(MainContainer<?> main, LeakEvent.Target target, long id, long generation) {
+        var reference = new WeakReference<>(main);
+        return () -> {
+            MainContainer<?> current = reference.get();
+            return current != null && current.forceTarget(target, id, generation);
+        };
+    }
+    private boolean forceTarget(LeakEvent.Target target, long id, long generation) {
+        checkEntry();
+        if (target == LeakEvent.Target.SUB) {
+            SubState<T> sub = locked(() -> subs.get(id));
+            return sub != null && forceSub(sub);
+        }
+        HolderLease<T> lease = locked(() -> {
+            Slot<T> slot = slots.get(id);
+            return slot != null && slot.generation == generation ? slot.lease : null;
+        });
+        return lease != null && forceHolder(lease);
     }
     private static LeakEvent.Reason expired(long now, long borrowed, long used, Duration borrowLimit, Duration idleLimit) {
         boolean borrow = borrowLimit != null && now - borrowed >= borrowLimit.toNanos();
@@ -520,14 +587,23 @@ public abstract class MainContainer<T> implements AutoCloseable {
     }
     private void notifyLeak(LeakEvent event) {
         try { listener.onLeak(event); }
-        catch (RuntimeException failure) { diagnose("Leak listener failed", failure); }
+        catch (RuntimeException | Error failure) {
+            diagnose("Leak listener failed", failure); rethrowFatal(failure);
+        }
+    }
+    private static void rethrowFatal(Throwable failure) {
+        if (failure instanceof VirtualMachineError fatal) throw fatal;
+        if (failure instanceof ThreadDeath death) throw death;
+    }
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof VirtualMachineError || failure instanceof ThreadDeath;
     }
     private boolean forceHolder(HolderLease<T> lease) {
         checkEntry(); var cleanup = new ArrayList<Slot<T>>();
         boolean accepted = locked(() -> {
             if (!active(lease)) return false;
-            markDestroy(lease.slot);
-            if (claimCleanup(lease.slot)) cleanup.add(lease.slot); return true;
+            Slot<T> slot = slots.get(lease.slotId); markDestroy(slot);
+            if (claimCleanup(slot)) cleanup.add(slot); return true;
         });
         runCleanup(cleanup, true); return accepted;
     }
@@ -559,8 +635,9 @@ public abstract class MainContainer<T> implements AutoCloseable {
     }
     private void automaticScan() {
         try { patrol(); }
-        catch (RuntimeException failure) {
+        catch (RuntimeException | Error failure) {
             if (locked(() -> life != Life.CLOSED)) diagnose("Automatic patrol failed", failure);
+            rethrowFatal(failure);
         }
     }
 

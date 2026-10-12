@@ -15,6 +15,8 @@
 
 ## 구조 변경내역
 
+- 2026-10-12: Object Recycle Container 분석 결과 반영. 정리 훅 Error 발생 시 일괄 정리와 오류 전파를 보강하고, Lease/Token/Event를 식별자 기반으로 전환하여 반환·회수 후 강한 참조를 해제. Sub 소유자는 Thread 대신 threadId로 식별. NPE 계약 및 사용·초기화·정리 복합 실패 회귀 테스트 추가. 공개 API와 timeout 기본값은 유지.
+- 2026-10-12: 사용자 push 요청에 따라 분석 리포트·안전성 개선·회귀 테스트를 develop에 커밋하여 origin/develop에 반영하도록 준비. push 전에 기술문서를 갱신했으며, 검증 결과는 아래 적용 기록에 유지한다.
 - 2026-10-11: Object Recycle Container 설계 초안을 simple-http-forward-proxy/project.md에서 이 프로젝트로 이관. 프로젝트 기준 경로, 패키지, Maven 좌표 및 빌드 기준 디렉터리를 수정. 설계 검토 단계이며 구현은 시작하지 않음.
 - 2026-10-11: Main만 thread-safe, Sub는 소유 스레드 전용으로 변경. Main 객체 수 initial/min/max 및 Supplier 생성 정책 추가. worker 반환과 patrol은 Main 관리 상태를 통해 처리하도록 수정.
 - 2026-10-11: Main 생성자에 선택적 LeakListener 추가. 미지정 시 감지 대상 forceClose, 지정 시 Listener가 처리 여부를 결정하도록 누수 감지와 강제 종료를 분리.
@@ -595,6 +597,9 @@ Main의 추상 생성/판정/정리 훅, initial/min/max, Sub onBorrow, 대여�
 | `PoolExhaustedException.java`, `ObjectCreationException.java` | 용량 부족과 생성 실패 구분 |
 
 ObjectPool/SubState는 Main 내부 map/deque/slot 상태로 구현하여 별도의 공개 타입을 늘리지 않는다.
+2026-10-12부터 Lease와 로컬 Token은 슬롯 객체 대신 ID·세대를 저장하고 Main registry에서 검증한다.
+활성 Lease/Sub는 Main을 강하게 참조하지만, Lease 반환/회수와 Sub RELEASED 시점에는
+이를 해제하고 약한 참조만 남긴다. LeakEvent의 종료 동작도 Main 약한 참조와 ID·세대만 저장한다.
 `Main.recycleContainer(sub)`는 어느 스레드에서든 registry만으로 회수한다. Sub 메서드를 호출하거나
 Sub 스택을 읽거나 비우지 않는다. 소유 스레드의 `Sub.close()`가 자신의 로컬 토큰을 비운다.
 정상 반환 시 반환함과 스택에 해당하는 슬롯을 registry에서 직접 일괄 회수하므로
@@ -651,6 +656,9 @@ try (var main = new BuilderPool(); var workers = Executors.newVirtualThreadPerTa
 ```
 
 Managed POJO의 dispose/close에서는 저장한 `HolderLease.close()`를 호출하면 된다.
+완료 POJO가 장기 보관된다면 대여 필드도 해제한다. 여러 worker가 동시에 dispose한다면
+`AtomicReference.getAndSet(null)` 등으로 필드 인계를 직렬화한다. 반환된 기본 Lease는
+Main·payload를 강하게 보유하지 않지만, 사용자 POJO나 Sub 확장 클래스가 별도로 가진 참조까지 제거하지는 않는다.
 중복 dispose는 안전하다. worker에게 Sub의 public 메서드를 직접 호출하게 하지 않는다.
 가변 `T` 참조를 use 밖에 저장하지 않으며, 필요하면 콜백 안에서 불변 결과를 복사한다.
 
@@ -690,3 +698,275 @@ mvn -f object-recycle-container/pom.xml clean verify
 동시성 테스트는 latch/barrier로 실행 순서를 제어하며 sleep에 의존하지 않는다.
 공개 API 사이의 매우 짧은 예약/rollback 경쟁 한 건은 테스트에서 private 락을 교체해
 예약 트랜잭션 직후에만 정지한다. 프로덕션에 테스트 전용 훅은 추가하지 않았다.
+
+## Object Recycle Container 구현·메모리 누수·NPE 분석 리포트 (2026-10-11)
+
+> 아래 리포트는 수정 전 기준 커밋의 분석 기록이다. 지적 사항의 현재 적용 상태는 문서 끝의
+> 「2026-10-12 분석 결과 적용」을 참조한다. 아래 소스 행 번호도 수정 전 기준이다.
+
+### 분석 범위와 결론
+
+- 기준 커밋: `fb4863150a65a043da3580850b4a283d9909885b`.
+- 대상: `object-recycle-container/src/main/java/com/inzent/apim/utilities/recycle/`의 전체 구현, 기존 테스트와 본 문서의 수명 계약.
+- 방법: 정적 참조·상태 전이 분석, 기존 Maven 검증, 저장소 밖 임시 Java 프로그램을 통한 추가 재현. 리플렉션은 참조 존재를 읽는 용도로만 사용하였다.
+- 변경 범위: **이 Markdown 문서만 변경**. Java 소스, 테스트 소스, POM은 변경하지 않았다. 빌드 검증에 따른 `target/` 산출물은 제외한다.
+- 구조 변경내역: 2026-10-11 분석 리포트를 `project.md`에 추가. 모듈·패키지·API 구조 변경 없음.
+
+**판정:** 일반 반환·회수의 상태 관리와 null 입력 방어는 대체로 갖춰져 있다. 그러나 정리 훅에서 `Error`가 발생하는 경우 복구되지 않는 슬롯 점유를 재현했다. 종료된 핸들·이벤트·Sub를 애플리케이션이 보관하면 풀 회계와 별개로 객체 그래프가 유지될 수 있다. 정상 계약하의 내부 null 역참조 결함은 이번 분석에서 확인하지 못했다. 이는 모든 실행에 대한 무누수·무NPE 보증은 아니다.
+
+본 리포트의 P1은 우선 검토할 정리 불능 결함, P2는 사용 방식·설정에 따라 나타나는 잔존 참조 및 운영 위험이다. 발생 빈도는 실제 확장 훅과 서비스 코드가 없어 정량화하지 않았다.
+
+### 1. 구현 구조와 수명 분석
+
+이하 `MainContainer.java:행` 등은 위 대상 패키지 안의 파일과 분석 시점의 행 번호를 뜻한다.
+
+| 구성 | 구현 및 책임 | 분석 근거 |
+| --- | --- | --- |
+| Main | 단일 `ReentrantLock`으로 registry, 슬롯 상태, 생성 예약, 통계를 보호. 생성·정리·리스너 훅과 use 콜백은 락 밖에서 실행 | MainContainer.java:54–67, 87–95, 292–311, 380–414 |
+| Sub | 소유 스레드만 LIFO stack을 조작. Main의 타 스레드 회수는 registry만 사용 | SubContainer.java:8–27; MainContainer.java:346–360 |
+| HolderLease | 매 대여마다 발급. Main·Slot·SubState·generation을 저장하며 이전 세대의 재사용을 거절 | HolderLease.java:8–20; MainContainer.java:255–265, 284–290 |
+| 정상 반환 | BORROWED → RECYCLING → LOCAL/RETURNED. owner 반환은 stack, worker 반환은 returns에 적재. 다음 owner borrow가 returns를 이동 | MainContainer.java:271–281, 321–331, 394–401 |
+| Sub 반환 | LOCAL/RETURNED는 Main IDLE로 이동. 미반환 BORROWED는 폐기. 실행 중 정리는 지연 | MainContainer.java:334–374 |
+| 폐기 | 권한 무효화 → QUARANTINED → DESTROYING → registry 제거. 사용 중이거나 정리 중이면 완료를 기다림 | MainContainer.java:362–414 |
+| patrol | Sub 만료 후 Holder 만료 검사. 기본 리스너는 forceClose, 사용자 리스너는 정책 위임. Main IDLE 축소와 min 보충 | MainContainer.java:469–564 |
+| 용량 제한 | slots + creating을 max로 제한. 회수 대기 슬롯도 용량 점유. Sub는 등록 상태 기준 maxSubContainers 제한 | MainContainer.java:144, 180–190, 416–429 |
+
+정상 cleanup에서는 `slots`, `holders`, `values`와 슬롯의 owner/lease 참조를 제거하고, 소유 슬롯·생성 예약이 없는 REVOKED Sub를 registry에서 제거한다. 따라서 순환 참조가 있다는 사실만으로 누수라고 판정할 수 없다. **GC root에서 남은 강한 참조 경로와 회수되지 않는 외부 자원**이 판단 기준이다.
+
+### 2. 메모리 누수 및 자원 잔존 분석
+
+#### M-01 / P1 / 재현 확인: 판정·재활용 훅의 Error 이후 정리 불능
+
+- 위치: MainContainer.java:369–386, 567–583.
+- 조건: `isRecycleable()` 또는 `onRecycle()`가 `AssertionError`, `LinkageError` 등 `Error`를 던지고 호출 환경이 계속 동작하는 경우. 일반 `RuntimeException` 경로와 구별해야 한다.
+- 원인: `claimCleanup()`이 `cleaning=true`를 설정하지만, cleanup의 판정·재활용 구간은 `RuntimeException`만 잡는다. `Error`가 전파되면 cleaning 해제·폐기 전이까지 도달하지 않는다.
+- 결과: 이후 Main close는 슬롯을 QUARANTINED로 바꾸지만 cleaning이 true여서 정리를 재획득하지 못한다. Sub와 Holder가 registry에 남고 용량을 계속 점유한다. 해당 경로는 failureCount도 증가시키지 않는다.
+- 재현: initial=1, min=0, max=1, perSub=1. start → Sub/Holder borrow → 해당 훅에서 AssertionError → lease.close 예외 포착 → Main.close.
+- 관측: 두 훅 각각 `state=CLOSED, total=1, quarantined=1, revokedSubs=1, destroyedCount=0, failureCount=0`, onDestroy 호출 0회.
+- 개선 검토: Error 전파 정책과 별개로 cleanup 소유권·상태를 finally에서 일관되게 정리하는 구조가 필요하다. VM 치명적 장애까지 정상 복구할 수 있다고 가정해서는 안 된다. 이번에는 수정하지 않았다.
+
+#### M-02 / P1 / 재현 확인: 폐기 훅의 Error가 후속 일괄 정리를 중단
+
+- 위치: MainContainer.java:376–377, 406–413, 569–583.
+- 조건: 여러 슬롯을 일괄 정리하는 중 하나의 `onDestroy()`가 Error를 던지는 경우.
+- 원인: 현재 슬롯은 finally에서 registry에서 제거되지만 Error는 `runCleanup()`의 for 루프를 중단한다. 뒤의 슬롯들은 이미 claim되어 cleaning=true인 채 실행되지 않는다.
+- 재현: initial=2, min=0, max=2, perSub=2. start → 첫 onDestroy에서 AssertionError → Main.close 예외 포착 → Main.close 재호출.
+- 관측: `CLOSED, total=1, quarantined=1, destroyedCount=1, failureCount=0`, onDestroy 호출 1회. 두 번째 close는 CLOSED 조기 반환으로 남은 슬롯을 처리하지 않는다.
+- 영향: 후속 슬롯의 heap 참조와 외부 자원 잔존. 첫 슬롯도 훅이 자원 해제 전에 실패했다면 외부 자원 해제는 불확실하다.
+- 개선 검토: 일괄 정리 중 예외가 발생해도 아직 실행되지 않은 슬롯의 claim을 남기지 않는 정책, 오류 집계·전파 및 재시도 가능성 검토.
+
+#### M-03 / P2 / 참조 경로 재현 확인: 반환·종료된 HolderLease가 객체를 계속 보유
+
+- 위치: HolderLease.java:8–13; MainContainer.java:22–46, 411–412; ObjectHolder.java:7–9.
+- 참조 경로: 애플리케이션의 완료 POJO/캐시 → HolderLease → Slot → ObjectHolder → T.
+- 추가 경로: HolderLease → Main → 현재 풀 전체, HolderLease → owner SubState → ownerThread/handle/stack.
+- 정상 recycle/폐기는 `slot.lease`를 지우지만 외부 Lease의 final slot/main/owner는 지우지 않는다. Slot.holder와 ObjectHolder.value도 final이다.
+- 재현: 1 KiB byte[]를 대여하고 lease, Sub, Main을 모두 close한 뒤 이전 lease를 보관. Main의 total=0이지만 리플렉션으로 lease.slot.holder.value의 1,024바이트와 owner 참조 존재 확인.
+- 판정: 호출자가 핸들을 놓으면 이 경로 자체는 GC를 막지 않는다. 반대로 완료 POJO가 lease를 계속 보유하면 **논리적 반환은 성공했지만 실제 메모리 도달 가능성은 남는다**. 수명이 끝난 서로 다른 슬롯의 핸들을 계속 쌓으면 잔존 객체 수는 현재 max를 넘어갈 수 있다.
+- 운영 대응: Managed POJO의 dispose에서 close 후 보유 필드를 해제하고, 완료 핸들을 무제한 이력에 저장하지 않는다. 단순 `HolderLease.close()` 호출만으로 참조가 끊어진다고 가정하지 않는다.
+- 설계 검토: 외부 핸들에는 식별자·세대만 두는 간접 참조 구조 또는 종료 후 참조 해제 검토. 동시 use 및 오래된 핸들 무효화 계약을 유지해야 한다.
+
+#### M-04 / P2 / 참조 경로 재현 확인: Main 경유 회수는 Sub의 로컬 stack을 비우지 않음
+
+- 위치: SubContainer.java:8, 27; MainContainer.java:334–360, 567–583.
+- 조건: `Main.recycleContainer(sub)`, patrol 또는 Main.close로 회수한 Sub 핸들을 계속 보관하면서 owner가 `Sub.close()`를 호출하지 않는 경우.
+- 원인: owner 전용 자료구조를 타 스레드가 건드리지 않도록 revoke는 stack을 변경하지 않는다. stack.clear는 owner의 Sub.close 경로에 있다.
+- 경로: 보관된 Sub → stack → Token → Slot → Holder → T.
+- 재현: 초기 슬롯 1개를 가진 Sub 대여 → Main.recycleContainer(sub) → Main.close → 보관된 Sub stack 크기 1 확인. 풀 registry 제거와 로컬 토큰 제거는 별개다.
+- 판정: 세대·소유권 검증으로 오래된 토큰의 사용은 막지만 참조는 남는다. owner가 Sub.close하거나 외부 Sub 참조를 해제해야 한다. M-03에서 owner.handle을 통해 이 stack이 함께 보존될 수도 있다.
+- 개선 검토: 강제 회수 후 owner 정리 계약을 명확히 하고, 장기적으로 로컬 토큰이 큰 payload를 직접 붙잡지 않는 구조 검토. 타 스레드의 무조건 stack.clear는 현재 스레드 안전성 계약과 충돌한다.
+
+#### M-05 / P2 / 정적 확인: LeakEvent 장기 보관이 Main과 대여 그래프를 유지
+
+- 위치: LeakEvent.java:17–25, 36–39; MainContainer.java:503–512, 521–523.
+- closeAction 람다는 Main과 SubState 또는 HolderLease를 캡처한다. 이벤트의 forceClose 성공 이후에도 closeAction은 final로 남는다.
+- 사용자 리스너가 이벤트 자체를 장기 큐·이력에 저장하면 M-03/M-04 경로까지 유지될 수 있다. 관찰만 하는 리스너는 같은 만료 대여에 대해 다음 patrol에서도 새 이벤트를 받을 수 있어 외부 큐가 계속 커질 수 있다.
+- 라이브러리 내부에 무한 이벤트 저장소가 있는 것은 아니다. 이벤트 보관 정책은 호출자의 책임이며, 지연 forceClose 기능 때문에 생긴 참조 보존이다.
+- 대응: 이력에는 target/id/reason/시간 등 값만 복사하고, 실행 가능한 이벤트 큐에는 용량·TTL·소비 후 제거 정책을 둔다. 이 항목은 별도 GC 재현 없이 소스 참조 경로로 판정했다.
+
+#### M-06 / P2 / 설계상 조건부 위험: 감시 비활성·반환 누락·Sub 장기 점유
+
+- 위치: ContainerConfig.java:27–30; MainContainer.java:350–360, 498–519, 543–558.
+- 기본값은 automaticPatrol=false이고 모든 timeout은 null이다. 기본 설정만으로 반환 누락이 자동 회수되지 않는다. 자동 patrol을 켜도 관련 제한값이 null이면 만료 감지는 하지 않는다.
+- 정상 반환 Holder도 Sub에 남는다. poolIdleLimit은 Main idle만 축소하므로 ACTIVE Sub가 점유한 LOCAL/RETURNED 객체는 축소 대상이 아니다. Sub 제한 또는 명시적 Sub 반환이 필요하다.
+- 사용자 LeakListener는 forceClose를 직접 실행하지 않으면 대여를 계속 유지하며, RuntimeException을 던져도 기본 강제 회수로 전환되지 않는다.
+- max/maxSubContainers는 등록 개수 상한으로 무한 생성은 억제하지만, 서비스의 장기 점유·PoolExhaustedException은 가능하다. T의 내부 버퍼 크기와 M-03/M-05 외부 이력 크기는 이 상한으로 제한되지 않는다.
+- 정상 풀 캐싱 자체를 누수로 판정하지 않는다. 예를 들어 onRecycle에서 논리적 길이만 초기화하는 가변 버퍼는 큰 내부 저장 공간을 계속 유지할 수 있으므로 실제 T와 훅 구현을 별도 확인해야 한다.
+
+#### M-07 / P2 / 설계상 조건부 위험: 끝나지 않는 콜백·훅·scheduler
+
+- 위치: MainContainer.java:123–128, 189–210, 298–310, 369–414, 560–583.
+- use가 끝나지 않으면 inUse 상태 때문에 폐기는 지연된다. 생성 훅 정지는 creating 예약을, 정리 훅 정지는 cleaning과 슬롯을 유지한다. close는 진행 중 작업을 강제 중단하거나 완료를 기다리는 API가 아니다.
+- 단일 patrol 스레드에서 listener/onDestroy 등이 정지하면 후속 감시가 지연된다. scheduler.shutdown도 실행 중 훅 완료를 보장하지 않는다.
+- automaticPatrol=true인 Main을 close하지 않고 외부 참조만 버리면 주기 작업 `this::automaticScan`이 Main과 그 풀을 계속 참조할 수 있다. daemon이라는 속성은 객체 참조 해제 수단이 아니다.
+- automaticScan은 RuntimeException만 잡으므로 Error로 인한 자동 감시 지속성도 추가 시험 대상이다. 이번 실행에서는 scheduler Error 시나리오를 별도 재현하지 않았다.
+- 대응: Main의 명시적 close, use/훅의 유한 실행 보장, 외부 I/O timeout 및 취소 협력. quarantined/recycling/destroying/creating/revokedSubs가 장시간 유지되는지 관측한다.
+
+#### M-08 / P2 / 정적·기존 테스트 확인: onDestroy 실패 후 외부 자원 해제 불확실
+
+- 위치: MainContainer.java:406–413; 기존 ContainerLifecycleTest.java:50–61.
+- RuntimeException(NPE 포함)이 발생하면 로그·failureCount 증가 후 registry에서 제거하고 자동 재시도하지 않는다. 따라서 풀 total이 감소해도 소켓·파일·native 메모리가 해제되었다는 뜻은 아니다.
+- destroyedCount는 폐기 경로의 registry 제거 횟수이지 자원 해제 성공 횟수가 아니다.
+- 개선 검토: 실제 onDestroy를 예외에 안전하게 작성하고 자원별 해제 결과를 별도로 계측한다. 재시도는 이중 해제 위험과 멱등성을 고려해 결정해야 한다.
+
+### 3. NPE 가능성 분석
+
+#### 3.1 공개 입력·팩토리 경계
+
+| 진입점/조건 | 실제 결과 | 근거 및 해석 |
+| --- | --- | --- |
+| Main의 config 또는 clock=null | 즉시 NPE | MainContainer.java:73, 75. requireNonNull에 의한 명시적 계약 검증 |
+| ObjectHolder(null) | 즉시 NPE | ObjectHolder.java:8. 재현 확인; null T의 풀 등록을 차단 |
+| SubContainer 생성자 main=null | 즉시 NPE | SubContainer.java:10. 확장 클래스의 잘못된 생성 입력 |
+| lease.use(null) | 즉시 NPE, 대여는 유지 | HolderLease.java:17. Main.use 진입 전 실패; 재현에서 borrowed=1. 호출자 finally/try-with-resources 반환 필요 |
+| createNewHolder가 null 반환 | ObjectCreationException, 원인은 NPE | MainContainer.java:196–197. 생성 예약 rollback 대상; 기존 factoryNull 테스트 통과 |
+| createSubContainer가 null/외부 Main/이미 사용된 Sub 반환 | IllegalArgumentException | MainContainer.java:139–141. 단락 평가로 null 역참조 방지 |
+| Main.newObject/recycleContainer(null) | IllegalArgumentException | MainContainer.java:171–173. checkOwned 방어 |
+| Sub.recycleObjectHolder(null) | 활성·owner 조건 충족 시 IllegalArgumentException | SubContainer.java:18–21. 만료/owner 위반이면 앞선 상태 검증 예외가 우선 |
+| listener=null | 기본 강제 회수 리스너 사용 | MainContainer.java:74. 오류 아님 |
+| 각 timeout=null | 해당 제한 비활성 | ContainerConfig.java:19–20; MainContainer.java:514–519 |
+| patrolInterval=null | IllegalArgumentException | ContainerConfig.java:17. schedule에서 NPE가 발생하기 전에 거절 |
+
+#### 3.2 사용자 콜백·훅에서 발생하는 NPE
+
+| 발생 지점 | 처리 | 메모리/자원 영향 |
+| --- | --- | --- |
+| createNewHolder | ObjectCreationException으로 래핑, 할당 rollback | 훅이 일부 자원을 만든 뒤 반환 전에 실패하면 그 자원은 훅 자체가 정리해야 함 |
+| createSubContainer | NPE 전파 | Sub registry 등록 전. 확장 훅 내부 자원은 확장 구현 책임 |
+| Sub.onBorrow | revoke + cleanup 후 전파 | 준비 중 Sub의 슬롯 회수, stack.clear 수행 (MainContainer.java:158–160) |
+| use(action) 본문 | finally에서 markDestroy·cleanup 후 예외 전파 | 정상 정리 훅 기준 실패 객체 재사용 방지; payload 내부 필드의 null은 컨테이너가 보증하지 않음 |
+| isRecycleable/onRecycle | RuntimeException으로 포착, 진단 후 폐기 | 추가 재현의 onRecycle NPE에서 total=0, failureCount=1, destroy=1 |
+| onDestroy | 포착·진단 후 registry 제거 | 자원 해제 성공은 보장 불가(M-08) |
+| LeakListener | 포착·진단, 기본 forceClose 대체 없음 | 다음 patrol에서 다시 감지할 수 있으나 대여는 계속 남을 수 있음 |
+| 주입한 LongSupplier clock | 별도 복구 계약 없음 | 사용자 clock 예외가 상태 변경 도중 발생하면 부분 상태가 남을 가능성. production 기본 System.nanoTime 경로와 구별; 미재현 |
+
+#### 3.3 내부 null 역참조·경쟁 검토
+
+- `requireActive(SubState)`와 `subSnapshot`은 null 가드를 직접 두지 않지만 공개 Sub 메서드는 checkOwner, Main 공개 Sub 인자 메서드는 checkOwned를 선행한다. 정상 외부 API 사용에서 미초기화 state는 먼저 거절된다.
+- BORROWED 슬롯은 락 안에서 owner·lease를 설정하고, active 검증과 회수 전이도 같은 락으로 직렬화한다. holderEvent가 처리할 Lease 목록도 락 안에서 수집한다. 회수 경쟁만으로 null lease/owner를 사용하게 되는 경로는 확인하지 못했다.
+- ObjectHolder.value는 생성자에서 null을 거절하고 final이며, Slot.holder도 null 팩토리 검증 뒤 설정된다. 따라서 정상 등록된 payload 자체가 내부 회수 과정에서 null로 바뀌는 구조는 아니다.
+- use는 inUse 보호로 폐기를 지연한다. 만료 핸들은 정상적으로 IllegalStateException 또는 recycle=false로 처리되며 NPE가 기대 동작은 아니다.
+- 리플렉션·동일 패키지 코드의 상태 훼손, 잘못된 외부 스레드 게시, 확장 훅이 다루는 T 내부 null은 위 판정의 보장 범위 밖이다.
+- **결론:** 직접 NPE 발생 지점은 존재하나 주로 입력 검증 또는 사용자 코드 실패다. 내부 NPE 결함을 확정할 증거는 발견하지 못했다. use(null) 이후 반환을 생략하는 경우에는 입력 오류가 M-06 점유 문제로 이어질 수 있다.
+
+### 4. 실행 검증과 재현 기록
+
+환경: Windows 11, Java 21.0.3, Maven 3.9.11. 실행일: 2026-10-11 (Asia/Seoul).
+
+```powershell
+mvn -f object-recycle-container/pom.xml verify
+```
+
+결과: **BUILD SUCCESS**, 총 44개 테스트, 실패 0, 오류 0, 건너뜀 0.
+MainContainerTest 10개, ContainerLifecycleTest 19개, ContainerConcurrencyTest 15개.
+이번 명령은 clean 없이 기존 빌드 산출물을 사용하는 verify이며, 로그에서 main/test class가 최신 상태임을 확인했다.
+
+추가 검증은 저장소 밖 임시 `Audit.java`를 Java source-file launcher로 실행했다. 기존 프로덕션 class를 classpath로 사용하고, 프로젝트 소스에 테스트를 추가하지 않았다. 재현 프로그램의 Pool 클래스는 byte[1024] Holder를 생성하고 지정한 한 훅에서만 AssertionError/NPE를 발생시켰다.
+
+```text
+predicateError after close: total=1, quarantined=1, revokedSubs=1, destroys=0
+recycleError after close:   total=1, quarantined=1, revokedSubs=1, destroys=0
+destroyError after repeated close: total=1, quarantined=1, destroys=1
+retained lease: total=0, payloadBytes=1024, ownerRetained=true
+retained sub stack after main recycle/close=1
+recycleNpe: total=0, failureCount=1, destroys=1
+null value=NullPointerException
+null callback=NullPointerException, borrowed=1
+```
+
+재현 순서는 M-01~M-04와 입력 표에 명시하였다. 리플렉션 결과는 강한 참조가 남는다는 구조적 증거이며, GC 횟수나 heap 증가량을 측정한 결과가 아니다. 힙 덤프, 장시간 soak test, 서비스 실트래픽, 외부 자원 계측은 수행하지 않았다. 기존 44개 테스트의 성공만으로 이번 Error 경로나 장기 참조 보관 문제가 검증되었다고 볼 수 없다.
+
+### 5. 권장 후속 순서 (이번 요청에서는 미구현)
+
+1. M-01/M-02에 대한 Error 주입 회귀 테스트와 cleanup 예외 안전성 검토. 재정리 가능 상태, 후속 슬롯 처리, failureCount 의미를 함께 결정한다.
+2. M-03~M-05를 대상으로 완료 POJO/이벤트/회수 Sub의 실제 보관 기간을 확인하고 참조 해제 정책을 적용한다. 필요하면 핸들·토큰의 간접 참조 설계를 검토한다.
+3. 서비스별 Main.close, Sub.close, Lease.close 책임과 patrol/timeout/리스너 정책을 확정한다. T 내부 버퍼와 외부 자원 해제도 점검한다.
+4. payload 유형별 반복 생성·폐기와 완료 핸들 보관 여부를 나눠 heap dump의 GC root 경로를 비교한다. 현재 total뿐 아니라 생성 대비 해제 성공 수, 장기 격리·생성 예약, 이벤트 큐 길이를 관찰한다.
+5. 추가 시험: use(null) 반환 보장, onDestroy NPE와 외부 자원 실패, 보관된 이벤트의 참조 그래프, 자동 patrol Error, 유한하지 않은 훅의 서비스 종료 정책.
+
+현재 소스에는 위 개선을 반영하지 않았다. 이 리포트는 구현 분석과 재현 결과를 기록한 문서이며 수정 완료 보고가 아니다.
+
+## 2026-10-12 분석 결과 적용
+
+### 적용 범위와 설계
+
+사용자의 “분석내용 적용” 요청에 따라 위 리포트의 실제 결함과 참조 보존 경로를 수정했다.
+기존 Main 단일 락, owner 전용 Sub 스택, 세대별 대여, 사용 중 정리 지연 계약을 유지한다.
+업무별 판단이 필요한 timeout·메모리 상한·외부 I/O 취소 정책은 라이브러리가 임의로 결정하지 않는다.
+작업은 실패 회귀 테스트 작성 → 수정 전 실패 확인 → 소스 수정 → 전체 검증 → 독립 리뷰 순서로 진행했다.
+
+| 리포트 항목 | 적용 내용 | 남는 책임/제약 |
+| --- | --- | --- |
+| M-01 판정·재활용 Error | RuntimeException뿐 아니라 Error도 진단하고 해당 슬롯 폐기 후 Error 전파 | 치명적인 VM 장애에서 완료 보장은 불가 |
+| M-02 일괄 폐기 중단 | 슬롯별 Error를 집계하면서 이미 획득한 나머지 정리를 수행. 후속 Error는 suppressed로 보존 | 실제 onDestroy 자원 해제 성공은 확장 훅 책임 |
+| M-03 반환 Lease 참조 | Lease는 slotId/ownerId/generation만 저장. 반환 접수 또는 강제 회수 시 Main 강한 참조 해제 | 활성 대여는 의도적으로 Main 수명을 유지. use 밖 payload 보관 금지 |
+| M-04 Sub stack 참조 | Token은 slotId/generation만 저장. RELEASED Sub는 Main 강한 참조 해제·통계 snapshot 보관. owner는 threadId로 식별 | 타 스레드는 여전히 owner stack을 수정하지 않음. 사용자 Sub 확장 필드는 확장 구현 책임 |
+| M-05 이벤트 참조 | 종료 동작은 Main WeakReference와 target/id/generation만 캡처, 호출 시 registry 재검증 | 외부 이력에 이벤트 자체를 무한 저장하면 이벤트·stack trace 메모리는 계속 증가. 큐 용량·TTL 필요 |
+| M-06 감시·점유 정책 | 기존 기본값과 명시적 반환 계약 유지, 아래 운영 지침 보강 | 실제 업무 시간과 payload 크기를 기준으로 설정 필요 |
+| M-07 훅·자동 감시 | 리스너와 자동 patrol은 일반 Error도 진단하여 후속 감시 유지. VirtualMachineError/ThreadDeath는 전파 | 끝나지 않는 use/훅 강제 중단은 하지 않음. scheduler가 있는 Main은 명시적 close 필요 |
+| M-08 외부 자원 해제 실패 | 기존 로그·failureCount·registry 제거 정책 유지, Error까지 적용 | 파괴 실패 자동 재시도 없음. destroyedCount는 해제 성공 수가 아님 |
+| NPE | null 입력의 기존 예외 계약 유지. use(null) 후 반환 가능성과 onRecycle NPE 후 폐기 회귀 테스트 추가 | T 내부 null과 사용자 훅의 오류는 호출자가 관리 |
+
+공개 메서드·생성자·record 구성요소는 변경하지 않았다. 내부 `Token<T>(Slot, generation)`은
+`Token(slotId, generation)`으로 변경했고, Lease의 Slot/SubState 직접 참조를 제거했다.
+반환·회수 시 Holder의 borrowStack도 비워 대여 진단 메타데이터 보관 기간을 줄였다.
+새 운영 의존성과 설정 필드는 추가하지 않았다.
+
+### 오류 처리와 참조 수명 계약
+
+- `isRecycleable`/`onRecycle` Error는 해당 Holder를 폐기하고 호출자에게 전파한다.
+  `onDestroy` Error도 registry 제거를 완료한 뒤 전파한다. 일괄 정리에서는 나머지 슬롯도 처리한다.
+- 복수 Error는 최초 Error에 suppressed로 추가한다. 단, 뒤에 발생한 VirtualMachineError 또는
+  ThreadDeath가 일반 Error에 가려지지 않도록 치명적 오류를 우선 전파한다.
+- use, start, 할당 rollback, Sub.onBorrow 실패 중 추가 정리 오류가 발생하면 최초 실패를 유지하고
+  정리 오류를 suppressed로 기록한다. 정리 중 치명적 오류가 발생하면 이를 우선 전파한다.
+- use 콜백의 모든 Throwable에 대해 실패 객체를 폐기한다. 예외를 우회 전파하는 checked exception도
+  정상 사용 완료로 취급하지 않도록 회귀 테스트로 보호했다.
+- 리스너의 일반 Error는 RuntimeException과 마찬가지로 진단한다. 관찰용 리스너가 실패했다고 해서
+  강제 회수 정책으로 바뀌지는 않는다. 자동 patrol의 일반 Error는 이후 주기의 감시를 중단시키지 않는다.
+- Error 처리는 이미 시작된 수명 전이를 가능한 범위에서 마무리하기 위한 방어다. 실제 메모리 고갈·VM 손상·
+  스레드 강제 종료에서도 자원을 반드시 정리한다는 보장은 아니다.
+- 반환된 Lease의 id/generation은 유지되고 recycle은 false, use/touch는 IllegalStateException이다.
+  Main이 GC 대상이 되어도 같은 동작을 유지한다. use(null)은 기존대로 NullPointerException이다.
+- RELEASED Sub는 Main이 더 이상 존재하지 않아도 owner의 stats()/close()가 안전하다.
+  stats는 최종 snapshot을 반환하며, 새 대여·touch·patrol은 거절한다.
+- 보관된 LeakEvent는 같은 대여에 대한 지연 forceClose를 지원하지만, 이전 세대 이벤트가 새 대여를 회수하지 못한다.
+  Main이 더 이상 도달 가능하지 않거나 대상이 반환·회수된 경우 false를 반환한다.
+- Sub RELEASED 전에는 진행 중 use/생성/정리를 관리해야 하므로 Main 강한 참조를 유지한다.
+  콜백 종료 전에 payload를 버리거나 외부 자원을 닫는 방식으로 누수를 숨기지 않는다.
+
+### 운영 적용 지침
+
+1. 서비스 종료 시 Main.close, 요청 종료 시 owner의 Sub.close, 작업 종료 시 Lease.close를 보장한다.
+   try-with-resources 또는 finally를 사용하고 worker가 완료된 뒤 Sub를 반환한다.
+2. 자동 회수가 필요하면 automaticPatrol=true와 해당 Holder/Sub 제한을 함께 설정한다.
+   기본 automaticPatrol=false·제한 null은 변경하지 않았다. 자동 감시만 켜고 제한을 비워 두면 만료 회수는 없다.
+3. poolIdleLimit은 Main의 IDLE에만 적용된다. 장기 Sub 점유는 Sub 반환 또는 Sub 제한으로 관리한다.
+4. use/생성/정리/리스너는 유한 시간에 끝나야 한다. 외부 I/O에는 timeout·협력적 취소를 적용한다.
+   주입 clock은 단조 증가, thread-safe, non-blocking, non-throwing 계약을 따라야 한다.
+5. failureCount와 장기 creating/recycling/quarantined/destroying/revokedSubs를 관측한다.
+   외부 자원 해제 성공·실패는 실제 onDestroy 구현에서 별도로 계측한다.
+6. 큰 payload 내부 버퍼는 isRecycleable에서 크기에 따라 폐기하거나 onRecycle에서 줄인다.
+   풀 max는 객체 수 제한이며, 개별 객체의 바이트 크기나 외부 이벤트 큐의 크기 제한이 아니다.
+7. 사용자 POJO/Sub 하위 클래스/리스너가 직접 저장한 payload·Main 참조는 라이브러리의 참조 해제와 별개다.
+   완료 POJO 필드와 이벤트 큐 소비 정책을 함께 관리한다.
+
+### 검증 기록
+
+- 추가 테스트 클래스: `ContainerSafetyTest`, 14개 테스트. 기존 44개와 합계 58개.
+- 첫 단계에서 기존 소스의 Error 정리 누락·참조 잔존·자동 patrol 중단 7건의 실패를 확인하고 수정했다.
+- 복합 실패의 최초 예외 보존 3건과 치명적 오류 우선 전파 1건도 수정 전 실패를 확인했다.
+- 리뷰 중 발견한 checked callback 예외 처리 회귀는 expected total=0 / actual=1을 재현한 뒤 수정했다.
+- NPE 계약 및 Main 약한 참조 해제 후 fallback은 별도 회귀 테스트로 검증했다.
+- 강한 참조 검사는 반환 객체의 실제 객체 그래프를 순회하면서 WeakReference를 제외한다.
+  GC 타이밍에 의존하지 않으며, fallback 테스트는 약한 참조를 명시적으로 clear하여 해당 분기를 검증한다.
+  실제 heap dump·장기 soak·성능 벤치마크를 수행한 것은 아니다.
+- 기존 latch/barrier 기반 동시성 15개를 포함하여 worker 반환, Main/Sub 종료, 생성 rollback,
+  지연 use/정리, 오래된 이벤트의 동일 슬롯 다음 세대 보호가 계속 통과했다.
+- Java 21.0.3 / Maven 3.9.11에서 전체 `mvn -f object-recycle-container/pom.xml test`:
+  **58개, 실패 0, 오류 0, 건너뜀 0, BUILD SUCCESS**.
+- 독립 리뷰의 치명적 오류 집계 및 checked callback 회귀 지적을 반영했다.
+  예외 주입 테스트의 WARNING은 의도된 진단이다.
+- 최종 `mvn -f object-recycle-container/pom.xml clean verify`도 **BUILD SUCCESS**:
+  58개 테스트, 실패 0, 오류 0, 건너뜀 0, JAR 재생성 완료. `git diff --check` 통과.
+  독립 리뷰의 재확인에서 미해결 지적 없음. 커밋·push는 수행하지 않았다.

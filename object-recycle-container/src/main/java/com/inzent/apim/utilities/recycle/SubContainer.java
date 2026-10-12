@@ -1,28 +1,54 @@
 package com.inzent.apim.utilities.recycle;
 
 import java.util.ArrayDeque;
+import java.lang.ref.WeakReference;
 
-/** Owner-thread-only facade; no local locks. HolderLease operations may run on workers. */
+/**
+ * Owner-thread-only facade; no local locks. HolderLease operations may run on workers.
+ * Released handles retain identity and statistics, but not their Main or pooled payloads.
+ */
 public class SubContainer<T> implements AutoCloseable {
-    final MainContainer<T> main;
-    final ArrayDeque<MainContainer.Token<T>> stack = new ArrayDeque<>();
+    private final WeakReference<MainContainer<T>> mainReference;
+    private volatile MainContainer<T> liveMain;
+    private volatile SubStats releasedStats;
+    final ArrayDeque<MainContainer.Token> stack = new ArrayDeque<>();
     MainContainer.SubState<T> state;
-    protected SubContainer(MainContainer<T> main) { this.main = java.util.Objects.requireNonNull(main); }
+    protected SubContainer(MainContainer<T> main) {
+        liveMain = java.util.Objects.requireNonNull(main); mainReference = new WeakReference<>(main);
+    }
+    MainContainer<T> main() {
+        MainContainer<T> main = liveMain;
+        return main != null ? main : mainReference.get();
+    }
+    void detach(SubStats stats) { releasedStats = stats; liveMain = null; }
+    private MainContainer<T> requireMain() {
+        MainContainer<T> main = main();
+        if (main == null) throw new IllegalStateException("Sub is released");
+        return main;
+    }
     protected void onBorrow() {}
     void checkOwner() {
-        main.checkEntry();
-        if (state == null || Thread.currentThread() != state.ownerThread)
+        MainContainer<T> main = main();
+        if (main != null) main.checkEntry();
+        if (state == null || Thread.currentThread().threadId() != state.ownerThreadId)
             throw new IllegalStateException("Sub operations require the borrowing thread");
     }
-    public HolderLease<T> borrowObjectHolder() { checkOwner(); return main.borrowHolder(this); }
+    public HolderLease<T> borrowObjectHolder() { checkOwner(); return requireMain().borrowHolder(this); }
     public boolean recycleObjectHolder(HolderLease<T> lease) {
-        checkOwner(); main.requireActive(this);
-        if (lease == null || lease.main != main || lease.owner != state)
+        checkOwner(); MainContainer<T> main = requireMain(); main.requireActive(this);
+        if (lease == null || lease.main() != main || lease.ownerId != state.id)
             throw new IllegalArgumentException("Holder belongs to another Sub or Main");
         return lease.recycle();
     }
-    public SubStats stats() { checkOwner(); return main.subStats(this); }
-    public void touch() { checkOwner(); main.touch(this); }
-    public PatrolResult patrol() { checkOwner(); return main.patrol(this); }
-    @Override public void close() { checkOwner(); main.recycleContainer(this); stack.clear(); }
+    public SubStats stats() {
+        checkOwner(); MainContainer<T> main = main();
+        return main != null ? main.subStats(this) : releasedStats;
+    }
+    public void touch() { checkOwner(); requireMain().touch(this); }
+    public PatrolResult patrol() { checkOwner(); return requireMain().patrol(this); }
+    @Override public void close() {
+        checkOwner();
+        try { MainContainer<T> main = main(); if (main != null) main.recycleContainer(this); }
+        finally { stack.clear(); }
+    }
 }

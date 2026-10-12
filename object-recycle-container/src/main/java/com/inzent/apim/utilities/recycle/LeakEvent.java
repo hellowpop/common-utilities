@@ -5,7 +5,12 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Detection snapshot. The bound close action is safe to retain and call from another thread. */
+/**
+ * Detection snapshot. The bound close action is safe to retain and call from another thread.
+ * It weakly references Main and resolves the original identity/generation at invocation time;
+ * retaining this event does not keep the pool alive. forceClose returns false once the
+ * target is returned/revoked or Main is no longer reachable.
+ */
 public final class LeakEvent {
     public enum Target { SUB, HOLDER }
     public enum Reason { BORROW_LIMIT, IDLE_LIMIT, BORROW_AND_IDLE_LIMIT }
