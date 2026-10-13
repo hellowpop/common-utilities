@@ -15,6 +15,10 @@
 
 ## 구조 변경내역
 
+- 2026-10-13: 사용자 push 요청에 따라 LDAP README와 문서 추가 내역을 develop에 커밋하여 origin/develop에 반영하도록 준비. push 전에 본 기술문서를 갱신하고 README Java 예제의 Java 21 컴파일을 확인했다.
+
+- 2026-10-13: `ldap-connection-pool/README.md` 사용 문서 추가. 풀 생성·초기화·대여/반납·종료 라이프사이클, 생성 파라미터/기본값, LDAP 설정·엔트리 샘플, 전체 Java 사용 예제, 예외 계약 및 주의사항을 정리했다.
+
 - 2026-10-13: 사용자 push 요청에 따라 LDAP 연결 풀 구현, package-private 클래스 분리, memory leak/NPE 보완 및 회귀 테스트를 develop에 커밋하여 origin/develop에 반영하도록 준비. push 전에 본 기술문서를 갱신했다.
 
 - 2026-10-13: LDAP 풀 memory leak/NPE 분석 반영. 닫힌/완료된 검색 자원 추적 해제, 반환 시 목록·제공자 참조 해제, 파생 자원 중복 등록 방지, 정리 재진입 보호, iterator 수명 검사, Attribute 스냅샷/스키마 참조 해제, TLS 응답 래퍼 추가. 제공자 NPE/RuntimeException/Error 연결 폐기와 null 경계·동시 종료·복합 실패 테스트를 보강했다.
@@ -42,6 +46,8 @@
 - 2026-10-11: `master`에서 `develop` 브랜치를 생성. 원격 `origin/develop`을 추적하도록 구성하고 로컬 작업 브랜치는 `develop`으로 유지한다. push 전에 브랜치 운영 정보를 이 문서에 기록.
 
 ## LDAP Connection Pool (2026-10-13)
+
+사용법은 [LDAP Connection Pool README](ldap-connection-pool/README.md)에 정리한다.
 
 ### 구조와 구현 방침
 
