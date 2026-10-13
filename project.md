@@ -15,6 +15,14 @@
 
 ## 구조 변경내역
 
+- 2026-10-13: 사용자 push 요청에 따라 LDAP 연결 풀 구현, package-private 클래스 분리, memory leak/NPE 보완 및 회귀 테스트를 develop에 커밋하여 origin/develop에 반영하도록 준비. push 전에 본 기술문서를 갱신했다.
+
+- 2026-10-13: LDAP 풀 memory leak/NPE 분석 반영. 닫힌/완료된 검색 자원 추적 해제, 반환 시 목록·제공자 참조 해제, 파생 자원 중복 등록 방지, 정리 재진입 보호, iterator 수명 검사, Attribute 스냅샷/스키마 참조 해제, TLS 응답 래퍼 추가. 제공자 NPE/RuntimeException/Error 연결 폐기와 null 경계·동시 종료·복합 실패 테스트를 보강했다.
+
+- 2026-10-13: LDAP 연결 풀의 내부 Entry/Lease/Resource를 `LdapPoolEntry`/`LdapContextLease`/`LdapContextResource` package-private 최상위 클래스로 분리. 내부 함수형 인터페이스도 `LdapContextFactory`/`LdapCleanupAction` 파일로 분리. 공개 API와 동작을 유지하고 LDAP 회귀 테스트 17개 및 JAR 빌드를 검증했다.
+
+- 2026-10-13: `ldap-connection-pool` 독립 Java 21 Maven 모듈 추가. `com.inzent.apim.utilities.ldap.LdapConnectionPool`에서 Properties 기반 LDAP 연결, max/min/idle timeout, 대여별 close 프록시, Consumer 자동 반납, 전체 종료 및 파생 자원 정리를 구현. 기존 두 모듈과 의존성 없이 빌드한다.
+
 - 2026-10-12: 사용자 push 요청에 따라 Partial Input 구현·메모리/NPE 보강·회귀 테스트를 develop에 커밋하고 origin/develop에 반영하도록 준비. push 전에 본 기술문서를 갱신했다.
 
 - 2026-10-12: Partial Input 메모리/NPE 분석 반영. 닫힌 스트림의 배열·구간·채널 참조 해제, 파일 생성자의 null 리스트 선검증, 스트림 생성 실패 시 채널 정리 추가. 참조 해제와 close 이후 계약 및 생성 실패 회귀 테스트 추가.
@@ -32,6 +40,125 @@
 - 2026-10-11: 독립 코드 리뷰에서 할당 rollback의 소유권 경쟁과 추가 Holder의 LIFO 순서 오류를 재현하고 수정. 실패한 min 보충을 다음 borrow에서 재시도하도록 보완.
 - 2026-10-11: 사용자의 GitHub push 요청에 따라 로컬 Git 저장소와 `origin`을 연결. 비어 있는 원격 저장소에 기존 로컬 브랜치 `master`로 초기 구현을 등록하도록 구성하고, push 전에 기술문서를 갱신. IDE 설정과 빌드 산출물을 Git 관리에서 제외.
 - 2026-10-11: `master`에서 `develop` 브랜치를 생성. 원격 `origin/develop`을 추적하도록 구성하고 로컬 작업 브랜치는 `develop`으로 유지한다. push 전에 브랜치 운영 정보를 이 문서에 기록.
+
+## LDAP Connection Pool (2026-10-13)
+
+### 구조와 구현 방침
+
+- `ldap-connection-pool/pom.xml`: 독립 Maven 좌표 `com.inzent.apim.utilities:ldap-connection-pool:1.0.0-SNAPSHOT`.
+- `ldap-connection-pool/src/main/java/com/inzent/apim/utilities/ldap/LdapConnectionPool.java`: 공개 API 및 풀 상태 관리. 실행 시 외부 라이브러리 의존성 없음.
+- 같은 패키지의 `LdapPoolEntry.java`, `LdapContextLease.java`, `LdapContextResource.java`: 연결 상태, 대여별 JDK 동적 프록시, 파생 자원 프록시를 담당하는 package-private 최상위 클래스. 내부 클래스를 사용하지 않는다.
+- 같은 패키지의 `LdapContextFactory.java`, `LdapCleanupAction.java`: 생성/정리 경계의 package-private 함수형 인터페이스.
+- 같은 패키지의 `LdapEnumerationIterator.java`, `LdapAttributeSnapshot.java`, `LdapStartTlsResponse.java`: iterator 수명 검사, 독립 속성 값과 대여 중 스키마 조회, TLS 응답의 제공자 참조 해제를 담당하는 package-private 최상위 클래스.
+- 같은 패키지의 `src/test/java/.../LdapConnectionPoolTest.java`: 연결 생성 경계의 대체 Context와 JNDI InitialContextFactory를 이용하는 수명·실패·동시성 테스트.
+- 같은 테스트 패키지의 `LdapPoolSafetyTest.java`: 참조 해제, 반복 검색, 재진입 정리, null 계약, 종료 경쟁, 속성/TLS의 clone·직렬화 및 복합 실패 회귀 테스트.
+- 기존 Object Recycle Container의 스레드 소유 Sub 계약과 LDAP의 직접 borrow/close 계약이 달라 독립 풀로 구현한다. develop 작업 경로를 유지한다.
+- 구현 순서: API·실패 테스트 → 미구현 실패 확인 → 연결 풀/프록시 구현 → 동시성·파생 자원 테스트 → 별도 코드 리뷰 및 재현 테스트로 보강 → 전체 모듈 빌드.
+
+### 생성자 및 설정
+
+```java
+LdapConnectionPool(Properties properties)
+LdapConnectionPool(Properties properties, int max, int min, long idleTimeoutMillis)
+```
+
+| Properties 키 | 기본값 | 의미 |
+| --- | --- | --- |
+| `ldap.pool.max` | `8` | 풀에서 관리하는 대여 중 + idle Context 최대 개수 |
+| `ldap.pool.min` | `1` | 초기 생성 및 idle 정리 시 보존할 최소 Context 개수 |
+| `ldap.pool.idleTimeoutMillis` | `300000` | 반납 후 idle 유지 시간(ms). `0`은 idle 만료 비활성화 |
+
+명시적 생성자 인자가 Properties의 풀 설정보다 우선한다. 일부 키만 지정하면 나머지는 기본값을 사용한다.
+`max >= 1`, `0 <= min <= max`, `idleTimeoutMillis >= 0`이어야 한다. timeout은 나노초 변환 가능 범위까지 허용한다.
+잘못된 설정은 `IllegalArgumentException`, null Properties/Consumer는 `NullPointerException`이다.
+Properties의 defaults 체인과 객체형 JNDI 값을 포함해 키/값을 얕게 복사한다. 호출자가 원본 키를 변경해도 풀에는 반영되지 않지만 가변 값 자체는 공유하므로 외부에서 변경하지 않는다.
+풀 설정 키는 JNDI에 전달하지 않는다. 하위 JNDI 자체 풀과 중복되지 않도록 `com.sun.jndi.ldap.connect.pool=false`를 강제로 설정한다.
+
+### API 및 수명 계약
+
+- `void open() throws NamingException`: 최초에 `max(1, min)`개 연결을 생성하고 각 연결에서 `getAttributes("", new String[]{"1.1"})`를 호출해 설정된 base DN 접근까지 테스트한다. min=0이어도 초기 연결 테스트는 수행한다. 성공 이후 반복 호출은 무동작이며 실패한 초기 연결은 모두 정리하고 재시도할 수 있다.
+- `LdapContext borrow() throws NamingException`: 필요하면 자동 open. idle 연결을 재사용하거나 max까지 생성한다. 각 대여마다 새 프록시를 반환하며 max 도달 시 대기 없이 `NamingException`을 발생시킨다.
+- 대여 프록시의 `close()`는 자동 반납이다. 반복 close는 무동작, 반납된 프록시의 LDAP 호출은 `NamingException`이다. LdapContext는 AutoCloseable이 아니므로 직접 대여 시 `finally`에서 close한다.
+- `void runWith(Consumer<LdapContext>) throws NamingException`: 정상/예외 경로 모두 자동 반납한다. Consumer 예외와 반납 예외가 함께 발생하면 Consumer 예외에 정리 오류를 suppressed로 추가한다. Consumer 자체는 checked exception을 선언할 수 없으므로 LDAP 호출의 NamingException은 람다 안에서 처리/변환해야 한다.
+- `void dispose() throws NamingException`: idle 및 대여 중인 연결과 파생 자원을 모두 닫고 영구 종료한다. 진행 중인 LDAP 호출이 끝날 때까지 해당 Context의 락에서 기다린다. 한 연결의 close가 실패해도 나머지 정리를 시도하며 첫 오류에 후속 오류를 suppressed로 추가한다. 반복 dispose는 무동작이다. 종료 후 open/borrow는 `IllegalStateException`이다.
+- 풀은 AutoCloseable이며 풀의 `close()`는 dispose와 같다. close 실패 시 해당 제공자의 실제 자원 해제 완료는 보장할 수 없지만 풀은 종료 상태를 유지한다.
+
+### 재사용·동시성·자원 정리
+
+- 풀 상태 변경/신규 연결 생성은 풀 락으로 직렬화한다. 서로 다른 대여 Context의 LDAP 호출은 병렬 실행되며 동일 대여 Context와 그 파생 자원의 호출은 동일 락으로 직렬화한다.
+- idle 시간은 단조 증가 시계 `System.nanoTime()`으로 측정한다. daemon 정리 작업은 최대 1초 간격으로 min을 초과한 만료 연결을 정리하고 borrow에서도 정리한다. 사용 중인 연결은 idle 만료로 닫지 않는다.
+- 환경 속성 변경, request controls 변경, reconnect, extended operation 및 제공자 예외(NamingException/RuntimeException/Error) 발생 연결은 반납 시 폐기한다. 원래 예외를 유지한다. 다음 borrow에서 min을 보충하므로 실패/폐기 직후에는 일시적으로 min보다 적을 수 있다.
+- Context를 반환하는 newInstance/lookup/schema 등의 결과와 NamingEnumeration을 대여 수명에 묶어 프록시로 관리한다. Binding/SearchResult 내부 Context도 추적한다. 반납/종료 시 자식 자원을 먼저 닫고, Context가 파생된 루트는 재사용하지 않는다. 명시적인 자식 close 실패도 루트 폐기로 처리한다.
+- 닫힌 열거자/자식 Context는 즉시 추적 목록에서 제거한다. hasMore/hasMoreElements가 false이면 열거자를 닫고 제공자 참조를 해제한다. 완료된 열거자의 추가 hasMore는 false, next는 NoSuchElementException이다. asIterator는 제공자 대신 프록시를 사용한다. 명시적으로 닫힌 열거자의 checked 호출은 NamingException, legacy Enumeration 호출은 IllegalStateException이다.
+- Attribute/Attributes 및 SearchResult의 속성은 독립 값 스냅샷으로 반환해 반납 후에도 일반 값을 읽을 수 있다. 스키마 조회는 대여 중 제공자에 위임하고 반환 Context를 추적한다. 반납/종료 후에는 스키마 조회를 NamingException으로 거부하고 제공자 참조를 해제한다. clone도 같은 수명을 적용하며 직렬화본은 제공자 참조 없이 값만 보존한다. WeakReference/ReferenceQueue로 스냅샷을 등록해 사용하지 않는 값 객체를 강하게 붙잡지 않으며 등록 때 전체 목록을 반복 순회하지 않는다.
+- StartTlsResponse는 package-private 하위 클래스 래퍼를 반환한다. TLS 메서드는 동일 대여 락에서 호출하고 명시적 close/반납/종료 시 제공자 참조를 해제한다. 닫힌 응답의 negotiate는 IOException, 설정 메서드는 IllegalStateException이다. Context/열거자/TLS 및 스키마 조회는 대여 수명 안에서만 사용한다.
+- 풀 max는 루트 Context 개수이다. 파생 Context가 별도 네트워크 연결을 생성하는지는 JNDI 제공자에 달려 있으며 서버의 실제 TCP 연결 수 상한을 보장하지 않는다.
+- connect/read timeout은 풀 idle timeout과 별개이다. 필요하면 `com.sun.jndi.ldap.connect.timeout`, `com.sun.jndi.ldap.read.timeout`을 Properties에 지정한다. base DN 읽기 권한도 open 테스트에 필요하다.
+
+### 사용 예제
+
+```java
+import com.inzent.apim.utilities.ldap.LdapConnectionPool;
+import java.util.Properties;
+import javax.naming.Context;
+import javax.naming.NamingException;
+import javax.naming.ldap.LdapContext;
+
+Properties props = new Properties();
+props.setProperty(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
+props.setProperty(Context.PROVIDER_URL, "ldap://localhost:389/dc=example,dc=com");
+props.setProperty(Context.SECURITY_AUTHENTICATION, "simple");
+props.setProperty(Context.SECURITY_PRINCIPAL, "cn=admin,dc=example,dc=com");
+props.setProperty(Context.SECURITY_CREDENTIALS, "password"); // 실제로는 외부 비밀 설정에서 읽는다.
+props.setProperty("com.sun.jndi.ldap.connect.timeout", "5000");
+props.setProperty("com.sun.jndi.ldap.read.timeout", "5000");
+props.setProperty(LdapConnectionPool.MAX_PROPERTY, "16");
+// 미지정 min=1, idle timeout=300000ms
+
+try (LdapConnectionPool pool = new LdapConnectionPool(props)) {
+    pool.open();
+    pool.runWith(ctx -> {
+        try { System.out.println(ctx.getAttributes("uid=user,ou=people")); }
+        catch (NamingException ex) { throw new IllegalStateException("LDAP 조회 실패", ex); }
+    });
+
+    LdapContext context = pool.borrow();
+    try { System.out.println(context.getAttributes("uid=user,ou=people")); }
+    finally { context.close(); }
+} // pool.dispose()
+```
+
+### Memory leak / NPE 분석 및 보완 (2026-10-13)
+
+| 분석 경로 | 기존 위험 | 보완 및 검증 |
+| --- | --- | --- |
+| 장시간 대여 후 반복 검색/close | 닫힌 handler 누적, 반환된 프록시에 리스트 backing array 잔류 | 개별 close에서 등록 제거, invalidate에서 목록 자체 null 처리. 반복 500회 후 추적 0 및 반환 후 참조 null 확인 |
+| 완료 열거자 / asIterator | 제공자 상태가 반납까지 유지, raw iterator가 수명 검사 우회 | 완료 시 close/참조 해제, iterator를 프록시에 연결하여 종료 후 호출 거부 |
+| 같은 자원 반복 반환 / 루트 별칭 | 중복 프록시와 중복 physical close | 동일 객체 identity로 핸들 재사용, 자체 프록시 재포장 방지, 루트는 풀에서만 실제 close 1회 |
+| 제공자 close의 parent.close 재진입 | invalidate 중 목록 변경, 중복 release | owner/entry/등록 목록을 콜백 전에 분리. 재진입 close는 무동작이며 나머지 자원 정리 유지 |
+| Attribute/검색 결과 속성 캐시 | JDK LDAP Attribute가 내부 Context를 참조하고 schema에서 raw Context 생성 | 값을 스냅샷으로 복사, 스키마만 대여 중 위임. 반납 후 제공자·lease 참조 해제, 값 읽기 및 clone/직렬화 검증 |
+| 검색 속성 복사 실패 | 속성 복사 오류가 child Context 등록 전에 발생하면 자식 정리 누락 | child를 먼저 등록하여 NPE 등 복사 실패 후에도 정리 유지 |
+| TLS 응답 보관 | JDK TLS 제공자는 close 후에도 연결·스트림·소켓 필드를 유지할 수 있음 | LdapStartTlsResponse로 제공자를 숨기고 핸들 target/lease 해제. TLS close 1회 및 종료/직렬화 계약 검증 |
+| 제공자 내부 NPE/RuntimeException/Error | NamingException 이외의 오류 후 연결 재사용 | 모든 제공자 실패에서 dirty 설정, 원래 오류 전파, 반납 시 폐기 |
+| null 및 종료 경쟁 | 잘못된 내부 null 저장 시 뒤늦은 NPE | Properties/factory/clock/Consumer와 내부 owner/entry/context/target 생성 경계에 requireNonNull. 정상 null 응답/controls 허용. 호출·반납·dispose 경쟁 40회에서 NPE/중복 close 없음 |
+| Error를 포함한 정리 실패 | 정리 오류 후 나머지 자원/풀 참조 잔류 가능 | 전체 정리 시도 및 첫 오류 + suppressed 유지. child close Error에도 root close와 handler·환경·reaper 참조 해제 확인 |
+
+일반적인 동시 close/dispose에서는 동일 Entry 락에서 상태를 읽고 무효화하므로 owner/target을 잘못 역참조하는 NPE를 발견하지 않았다.
+null Properties/Consumer/내부 의존성과 null factory 반환에 대한 NPE는 의도적인 계약 검증이다. factory null 반환 후 초기화 재시도가 정상 동작함도 확인했다.
+검증은 강한 참조 필드와 추적 목록 상태를 직접 확인하여 GC 실행 시점에 의존하지 않는다. 실제 heap dump/장시간 서버 부하 테스트는 수행하지 않았다.
+
+dispose를 누락하면 daemon 작업이 풀을 참조하고, 대여 후 close를 누락하면 max 한도를 차지하므로 호출측에서 종료/반납 계약을 지켜야 한다.
+제공자 close 자체가 실패하면 실제 네트워크 자원 해제 완료는 보장할 수 없지만 풀의 참조를 해제하고 재사용을 차단한다.
+속성 값의 사용자 정의 가변 객체/byte[]는 깊은 복사하지 않는다. 일반 값의 외부 보관은 호출측 소유이며 사용자 정의 객체 내부의 임의 참조 그래프까지 정리하지 않는다.
+
+### 검증과 참고
+
+- `mvn -f ldap-connection-pool/pom.xml clean verify`: 기본 동작 17개 + 안전성 16개, 총 33개 테스트. 초기/지연 open, 자동/중복 반납, max, idle/min, daemon 정리, 종료, 연결·정리 실패, Properties 복사/defaults, JNDI 생성 경로, 동시 호출 및 위 참조 해제/NPE 경로를 검증한다.
+- 코드 리뷰에서 발견한 SearchResult 내부 Context 누수 및 명시적인 열거자 close 실패 후 재사용을 각각 실패 테스트로 재현하고 수정했다.
+- 최종 `clean verify`: LDAP 33개, Object Recycle Container 58개, Partial Input 13개, 총 104개 테스트 통과 및 세 모듈 JAR 빌드 성공. 참조 해제 보완 후 재리뷰에서 추가 수정 항목 없음.
+- 실제 LDAP 서버 인증/검색 통합 검증은 서버 환경이 제공되지 않아 수행하지 않았다. 테스트는 대체 Context 및 JNDI InitialContextFactory를 사용한다.
+- API 기준: [Java 21 InitialLdapContext](https://docs.oracle.com/en/java/javase/21/docs/api/java.naming/javax/naming/ldap/InitialLdapContext.html), [Java 21 LdapContext](https://docs.oracle.com/en/java/javase/21/docs/api/java.naming/javax/naming/ldap/LdapContext.html).
+- 수명/열거 기준: [Java 21 Context](https://docs.oracle.com/en/java/javase/21/docs/api/java.naming/javax/naming/Context.html), [Java 21 NamingEnumeration](https://docs.oracle.com/en/java/javase/21/docs/api/java.naming/javax/naming/NamingEnumeration.html). 제공자의 Context 참조와 TLS close 동작은 로컬 Java 21 클래스의 javap 결과도 확인했다.
 
 ## Partial Input 구현 계획 (2026-10-12)
 
