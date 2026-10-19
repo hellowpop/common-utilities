@@ -15,6 +15,22 @@
 
 ## 구조 변경내역
 
+- 2026-10-19: 사용자 push 요청에 따라 curl 실행기 구현·메모리 누수/NPE 보완·회귀 테스트·기술문서를 develop에 커밋하여 origin/develop에 반영하도록 준비했다. 변경된 AGENTS.md 규칙과 사용자 추가 CallPatterns 사용 샘플을 포함하며, push 전에 기술문서를 갱신하고 실행기 clean verify를 재확인한다.
+
+- 2026-10-19: curl 실행기 메모리 누수/NPE 분석 및 보완. 닫힌 스트림 mark/reset NPE, unchecked/Error 이후 정리 중단, stdin 작업 시작·interrupt 실패의 자원 잔존 경로를 재현하고 수정했다. null 경계와 참조 해제·정리 재시도 회귀 테스트 12개 추가, clean verify 총 42개 통과. 상세는 `curl-http-mock-executor/resource-safety-review.md`에 기록했다.
+
+- 2026-10-19: curl 실행기 최종 `clean verify` 30개 테스트 통과 및 README 예제 javac 검증 완료. 기존 네 모듈 147개 회귀 테스트를 포함해 전체 177개 통과. 독립 리뷰 재확인 완료, 커밋/push는 수행하지 않았다.
+
+- 2026-10-19: `curl-http-mock-executor` Java 21 Maven 모듈 구현 및 README 추가. 기존 payload 생성기/Netty API를 사용해 curl 실행, Builder 헤더, pre/post 훅, 별도 stdout/stderr 파일, 1 MiB 본문 저장, Closeable 자원 관리와 실패 기록을 구현했다. 로컬 HTTP/HTTPS 실제 curl 테스트 및 독립 코드 리뷰로 헤더 검증·빈 헤더·로그 파싱·interrupt 처리를 보강했다.
+
+- 2026-10-19: curl 실행기 ExecuteContext Builder에 `requestHeader(CharSequence, Object)` 및 `requestHeaders(HttpHeaders)` 설계 추가. 개별 추가/일괄 교체, 복사와 컨텍스트 격리, pre 수정 및 헤더 검증 순서를 명시했다. 설계 검토 단계 유지.
+
+- 2026-10-19: curl 실행기 설계에 HTTPS 인증서 검증 기본 비활성화, stdout/stderr 별도 파일과 컨텍스트 참조, Closeable 기반 프로세스/스트림/임시파일 정리, Netty 직접 의존성과 HTTP 상수/API 사용을 반영했다. 설계 검토 단계 유지.
+
+- 2026-10-19: curl 실행기 설계에 `ExecuteConfigure.additionalArguments` 추가. 토큰 단위 전달, 지원 옵션과 관리 옵션 충돌 검증, 프록시/TLS 설정, 최종 인자 기록 및 민감 값 마스킹을 정의했다. 설계 검토 단계 유지.
+
+- 2026-10-19: `curl-http-mock-executor/project.md`에 curl 기반 HTTP 더미 요청 실행기 설계 검토안 추가. 기존 HTTP Payload Generator 재사용, 실행 컨텍스트와 pre/post 훅, 전송/인코딩, 1 MiB 본문 저장 경계, 실행 기록 및 실패/자원 수명을 정의했다. 설계 확정 후 구현하며 현재 구현은 시작하지 않았다.
+
 - 2026-10-13: 사용자 push 요청에 따라 LDAP README와 문서 추가 내역을 develop에 커밋하여 origin/develop에 반영하도록 준비. push 전에 본 기술문서를 갱신하고 README Java 예제의 Java 21 컴파일을 확인했다.
 
 - 2026-10-13: `ldap-connection-pool/README.md` 사용 문서 추가. 풀 생성·초기화·대여/반납·종료 라이프사이클, 생성 파라미터/기본값, LDAP 설정·엔트리 샘플, 전체 Java 사용 예제, 예외 계약 및 주의사항을 정리했다.
