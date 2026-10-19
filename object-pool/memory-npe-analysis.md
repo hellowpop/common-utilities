@@ -6,6 +6,7 @@
 - 수행 범위: 정적 참조·상태 전이 검토, 기존 테스트 실행, Java 17 독립 재현 프로그램, 독립 리뷰
 - 변경 범위: 분석 문서와 독립 probe만 추가했다. 운영 소스와 기존 테스트는 수정하지 않았다.
 - 후속 상태: 사용자 “분석적용” 요청으로 M-01을 수정했다. 위 변경 범위와 1–6절 재현 결과는 최초 분석 시점의 기록이며, 현재 결과는 7절을 따른다.
+- 최근 재분석: 독립 Sub 컨테이너·초과 생성 정책 이후의 내부 저장 공간 및 NPE 재검증·수정은 10절을 따른다. 현재 API·정책은 후속 변경 절을 함께 참고한다.
 
 ## 1. 결론
 
@@ -60,7 +61,7 @@ closeSubLocked는 idle entry를 DESTROYING으로 전환해 지역 cleanup 목록
 | 컬렉션 최고 용량 | 비워진 ArrayDeque/Map의 내부 저장 공간은 객체 수가 줄었다고 바로 축소되지는 않을 수 있음 | target 잔존과 다른 메타데이터/캐시 비용. 이 분석에서 backing-array 크기나 heap 사용량은 측정하지 않음 |
 | 확장 Main/target의 사용자 필드 | Main 상속 클래스의 추가 필드, target 내부 버퍼, 사용자 정적 캐시 | 풀은 임의 사용자 필드를 정리하지 않음. 애플리케이션 참조 그래프 별도 점검 필요 |
 
-미반납 Holder 수는 maxSize로 제한되지만, T 하나의 메모리나 외부 자원 비용은 제한하지 않는다. 닫힌 Sub가 미반납 객체를 가진 상태로 새 Sub를 발급할 수 있으므로 activeSubPoolCount만으로 전체 잔존 범위를 판단하면 안 된다. created/borrowed/closedSub/destroying/reserved와 실패 누계를 함께 확인한다.
+최초 분석 시에는 미반납 Holder 수가 maxSize로 제한되었지만, 이후 9절의 정책 변경으로 현재는 제한하지 않는다. T 하나의 메모리나 외부 자원 비용도 제한하지 않는다. 닫힌 Sub가 미반납 객체를 가진 상태로 새 Sub를 발급할 수 있으므로 activeSubPoolCount만으로 전체 잔존 범위를 판단하면 안 된다. created/borrowed/closedSub/destroying/reserved와 실패 누계를 함께 확인한다.
 
 ### 정상 경로에서 확인한 해제
 
@@ -164,3 +165,97 @@ ANALYSIS CHECKS PASSED: 20
 - 독립 리뷰에서 락 밖 진단, 정리 우선 순서, 로깅 재진입·동시 반납의 단일 폐기, 복합 오류 보존과 snapshot 참조 수명을 확인했다. 추가 중요 지적 없음.
 - 미반납·무한 훅·외부 자원 해제 실패의 계약상 위험은 이번 수정으로 자동 회수되는 대상이 아니다. 정상 Holder 반납과 유한 훅을 전제로 하며, 힙 덤프·장기 부하 검증은 추가하지 않았다.
 - 기존 사용자 변경은 보존했으며 커밋·push는 수행하지 않았다.
+
+## 8. 독립 Sub 컨테이너 후속 구조 (2026-10-20)
+
+최초 분석의 SubState ID queue는 이후 사용자 요청으로 SubPool이 소유하는 SubPoolContainer의 실제 PooledEntry 관리 Map·idle Deque로 변경했다. 따라서 미반납 Holder가 있는 동안에는 Sub → container → entry → target 참조도 존재한다. 해당 entry가 Main으로 이전되거나 폐기되면 local managed에서 제거하며, 최종 반납 후 managed/idle이 0이고 Main 참조도 해제되는 계약이다.
+
+다른 Sub의 컨테이너 객체를 직접 회수하지 않는다. 독립 저장소의 대여·반납·종료·소유권 변경은 기존 Main 조정 락 안에서 수행한다. 전체 Java 17 clean verify 52개 통과 및 분석 probe 20개 통과를 확인했고 독립 리뷰에서 추가 중요 참조 유지 결함은 확인하지 못했다. 힙 덤프나 장기 GC 검증은 추가하지 않았다.
+
+## 9. Main idle 상한 후속 정책 (2026-10-20)
+
+사용자 요청으로 maxSize는 Main idle 보관 상한으로 변경됐다. 전체 생성·대여 수와 reservedCreationCount는 이 값을 넘을 수 있다. 반납 시 Main idle이 이미 maxSize이면 반납 대상을 DESTROYING으로 전환하고 Sub 관리 목록에서 해제한 뒤 락 밖에서 폐기한다. local cache 초과, 닫힌 Sub 지연 반납, Sub 종료, 초기 배정 rollback 모두 동일 경로를 사용한다.
+
+이 정책은 전체 메모리 점유를 제한하지 않는다. Sub cache는 maxCachedPerSub에 따라 독립 유지되고 borrowed 객체는 정상 반납까지 유지된다. 폐기 실패의 registry 제거·참조 해제·오류 집계 계약은 동일하다. Java 17 clean verify 58개와 probe 20개를 확인했으며 독립 리뷰에서 추가 중요 지적 없음.
+
+## 10. 독립 컨테이너·초과 생성 이후 재분석 및 적용 (2026-10-20)
+
+### 분석 범위와 결론
+
+현재 MainPool/SubPoolContainer/SubPool/SubState/ObjectHolder/PooledEntry와 Jackson 설정 경로를 다시 검토했다. 새로운 일반 동시성 경로의 내부 NPE나 정상 반납 이후 target의 강한 참조 잔존은 확인하지 못했다. **실제 확인한 개선 대상은 버스트 후 내부 저장소의 과다 유지와 일반 호출 후 빈 ThreadLocal 항목의 유지다.** target 객체 누수와 내부 배열·메타데이터 보관을 구분한다.
+
+이전 58개 테스트는 반환된 핸들의 직접 필드를 중심으로 검사했다. 이번에는 Main/Sub 컨테이너의 Map·Deque까지 따라가는 참조 검사, 실제 할당된 내부 배열 길이, ThreadLocalMap 키를 추가 검증했다. VM의 GC 시점에 의존하지 않는다.
+
+### M-02 / P2 / 재현·수정: 관리 Map의 최고 용량 유지
+
+Main.entries와 targets, SubPoolContainer.managed는 현재 보유 수만큼 entry를 제거하더라도 내부 배열을 자동으로 줄이지 않았다. 전체 생성 수를 제한하지 않는 정책에서 4,096개를 대여했다 반납하면 Main에 target이 2개만 남아도 배열이 각각 8,192·16,384·8,192 슬롯으로 유지됐다. Main.subs도 미반납을 가진 종료 Sub가 많이 쌓인 뒤 모두 반납해도 큰 테이블을 유지했다.
+
+Map의 요소가 삭제된 자리에서 target 참조가 남는 문제는 아니다. Main이나 종료 핸들이 도달 가능한 상태로 보관되면 불필요하게 큰 배열이 함께 유지되는 저장 공간 문제다. 반복 버스트가 같은 크기이면 계속 무한 증가하는 누수라고 단정할 수 없으나, 더 큰 버스트가 있을 때 최고 용량이 늘 수 있다.
+
+**적용:** 최고 관리 수를 추적하고, 32 초과 규모에서 현재 수가 최고 수의 1/4 미만으로 감소하면 Map을 재구성한다. 살아 있는 PooledEntry의 동일성과 순서, IdentityHashMap의 참조 동일성 계약은 유지한다. Main 조정 락 안에서 교체하며 실제 target의 폐기·생성·대여 수는 바꾸지 않는다.
+
+### M-03 / P2 / 재현·수정: 빈 컨테이너의 배열 유지
+
+1,024개를 초기 배정한 Sub의 idle Deque는 내부 배열 길이가 1,257이었다. 전부 대여하거나 Sub.close로 비운 뒤에도 빈 배열이 같은 크기로 남았다. Main idle과 Main/Sub 관리 테이블도 완전 종료 후 자동 축소되지 않았다.
+
+**적용:** Sub idle이 크게 줄면 같은 비율 규칙으로 Deque를 재구성한다. 최종 반납이 끝나 컨테이너가 실제로 비었을 때만 저장소를 교체한다. Main도 entries와 생성 진행 수가 모두 0이어서 CLOSED가 되는 시점에 빈 registry와 idle 저장소를 교체한다. 미반납/생성/폐기 중인 entry를 버리는 방식은 사용하지 않는다.
+
+### M-04 / P3 / 재현·수정: 빈 ThreadLocal 항목
+
+checkEntry의 ThreadLocal.get은 훅 밖에서도 null 값의 항목을 해당 스레드에 생성했다. initialSize=0으로 start만 호출해도 풀의 감시용 키가 작업 스레드 ThreadLocalMap에 남는 것을 확인했다. 값은 null이므로 이 항목이 Main/target을 강하게 보관한다는 의미는 아니다. 여러 풀과 장수 스레드가 조합되면 항목 수와 조회 비용이 늘 수 있는 메타데이터 유지다.
+
+**적용:** true인 훅 감시 상태는 유지하고 재진입을 거절한다. 그 외의 일반 진입에서는 빈 항목을 즉시 remove한다. 기존 생성·폐기 훅 finally의 remove도 유지한다.
+
+### NPE 재검증
+
+| 경로 | 검증 결과 |
+| --- | --- |
+| 생성 훅 null/NPE, 부분 Sub 초기화 실패 | 생성 진행 수를 해제하고 기존 rollback 경로로 Main idle 상한 내 보관 또는 폐기 |
+| overflow 폐기 NPE + 경고 로거 NPE | 모든 확보 대상의 정리 시도, suppressed 오류 집계, 최종 반환 후 Main/Sub/Holder의 transitive target/Main 참조 없음 |
+| get와 Main.close/Holder.close 경쟁 | 유효 target 또는 IllegalStateException. null target 노출 확인 안 됨 |
+| Sub.stats와 최종 반납 경쟁 | null snapshot 노출 확인 안 됨. 최종 snapshot 게시 후 volatile Main 참조 해제 |
+| 저장소 교체 | Map·Deque 필드를 null로 만들지 않고 락 안에서 교체. 준비 중 생성과 미반납을 유지 |
+| 입력 null 및 Jackson 속성 null | 기존 입력 계약 유지. JSON 속성 null은 기본값, Main config 자체 null은 NPE로 거절 |
+
+### 실제 계측 결과
+
+아래 값은 JDK 17.0.10에서 계측한 **내부 배열 원소 수**다. IdentityHashMap 배열은 key/value 슬롯을 함께 포함하며, 표를 메모리 바이트 수나 전체 heap 감소량으로 해석하지 않는다.
+
+| 시나리오 / 저장소 | 수정 전 | 수정 후 |
+| --- | --- | --- |
+| 4,096개 반납 후 Main.entries | 8,192 | 32 |
+| 4,096개 반납 후 Main.targets | 16,384 | 64 |
+| 4,096개 반납 후 Sub.managed | 8,192 | 32 |
+| 완전 종료 후 Main.entries / targets / subs | 8,192 / 16,384 / 16 | 0 / 8 / 0 |
+| 1,024 초기 배정 후 종료된 Main.idle / Sub.idle | 1,257 / 1,257 | 1 / 1 |
+| 1,024 초기 배정 후 종료된 Sub.managed | 2,048 | 0 |
+| 일반 start 후 빈 ThreadLocal 항목 | 있음 | 없음 |
+
+### 재현 및 검증 방법
+
+[PoolMemorySafetyTest.java](src/test/java/com/inzent/apim/utilities/pool/PoolMemorySafetyTest.java)에 7개 회귀 테스트를 추가했다. 수정 전에는 저장소 유지·빈 ThreadLocal 5개 실패를 확인했다. NPE 복합 실패와 get/stats/반납 경쟁은 수정 전에도 통과했으며 새 결함으로 보고하지 않는다.
+
+테스트의 `--add-opens`는 JDK 내부 저장 공간을 확인하기 위한 것으로, 운영 소스에서는 해당 reflection을 사용하지 않는다. 운영 런타임에 모듈 개방 옵션은 필요하지 않다.
+
+저장소 루트의 PowerShell, JDK 17 java/javac 환경에서 계측한다.
+
+```powershell
+mvn -f object-pool/pom.xml clean verify
+mvn -f object-pool/pom.xml dependency:build-classpath -Dmdep.outputFile=target/probe-classpath.txt -DincludeScope=test
+$probeDependencies = (Get-Content object-pool/target/probe-classpath.txt -Raw).Trim()
+New-Item -ItemType Directory -Force object-pool/target/analysis-classes | Out-Null
+javac -encoding UTF-8 --release 17 -cp "object-pool/target/classes;$probeDependencies" -d object-pool/target/analysis-classes object-pool/analysis/PoolMemoryProbe.java
+java --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED -cp "object-pool/target/classes;object-pool/target/analysis-classes" com.inzent.apim.utilities.pool.analysis.PoolMemoryProbe --check-compaction
+```
+
+--check-compaction은 수정 후 회수 보장 검증용이다. 수정 전 클래스를 별도로 준비해 당시 값을 계측할 때는 이 인수를 생략한다. 실제 작업에서는 JDK 17.0.10 bin의 java/javac를 명시했다.
+
+### 최종 검증 결과
+
+- 실제 JDK 17.0.10 / Maven 3.9.11에서 `mvn -f object-pool/pom.xml clean verify` 성공. **65개 테스트, 실패/오류/건너뜀 0**.
+- PoolSafetyProbe의 기존 **20개 검사항목 통과**, 최종 CLOSED/created=0/destroying=0 확인. 추가 VM 모듈 개방 없이 기본 풀 런타임을 실행했다.
+- PoolMemoryProbe --check-compaction 성공. 수정 후 반납 배열 32/64/32, 종료 저장소 0/8/0/1/0/1, 빈 ThreadLocal 키 없음의 실제 출력을 확인했다.
+- 독립 리뷰에서 저장소 교체 시 entry 동일성·락·종료 조정·재진입 감시와 참조 해제를 확인했다. 추가 중요 지적 없음.
+- 기존 별도 사용자 변경은 수정하지 않았으며 커밋·push는 수행하지 않았다.
+
+이 분석에서도 실제 메모리 고갈·장기 부하·heap dump·외부 소켓/파일 계측은 수행하지 않았다. 이미 유지 중인 정상 캐시와 미반납 객체, 사용자가 보관한 raw target 또는 훅의 무한 실행을 자동 해소하는 변경은 아니다.

@@ -20,12 +20,13 @@ public abstract class MainPool<T> implements Closeable {
     private final PoolConfig config;
     private final ReentrantLock lock = new ReentrantLock();
     private final ThreadLocal<Boolean> inHook = new ThreadLocal<>();
-    private final Map<Long, PooledEntry<T>> entries = new LinkedHashMap<>();
-    private final IdentityHashMap<T, PooledEntry<T>> targets = new IdentityHashMap<>();
-    private final Map<Long, SubState<T>> subs = new LinkedHashMap<>();
-    private final ArrayDeque<Long> idle = new ArrayDeque<>();
+    private Map<Long, PooledEntry<T>> entries = new LinkedHashMap<>();
+    private IdentityHashMap<T, PooledEntry<T>> targets = new IdentityHashMap<>();
+    private Map<Long, SubState<T>> subs = new LinkedHashMap<>();
+    private ArrayDeque<Long> idle = new ArrayDeque<>();
     private PoolState life = PoolState.NEW;
     private int reserved;
+    private int entryHighWater, subHighWater;
     private long nextEntry, nextSub, created, creationFailures, destroyAttempts, destroyFailures;
     private long subBorrows, subRecycles, holderBorrows, holderRecycles;
 
@@ -36,13 +37,23 @@ public abstract class MainPool<T> implements Closeable {
     private void checkEntry() {
         if (Boolean.TRUE.equals(inHook.get()))
             throw new IllegalStateException("Lifecycle hooks cannot reenter pool operations");
+        inHook.remove(); // ThreadLocal.get installs a null entry even outside hooks.
     }
     private void requireOpen(SubState<T> sub) {
         if (life != PoolState.OPEN || sub.closed)
             throw new IllegalStateException("Main or Sub pool is not open");
     }
     private void terminateIfDrained() {
-        if (life == PoolState.CLOSING && reserved == 0 && entries.isEmpty()) life = PoolState.CLOSED;
+        if (life == PoolState.CLOSING && reserved == 0 && entries.isEmpty()) {
+            life = PoolState.CLOSED;
+            entries = new LinkedHashMap<>(); targets = new IdentityHashMap<>(0);
+            subs = new LinkedHashMap<>(); idle = new ArrayDeque<>(0);
+            entryHighWater = 0; subHighWater = 0;
+        }
+    }
+
+    static boolean needsStorageCompaction(int highWater, int current) {
+        return highWater > 32 && current < highWater / 4;
     }
 
     public final void start() throws IOException {
@@ -85,6 +96,7 @@ public abstract class MainPool<T> implements Closeable {
             if (occupied >= config.maxSubPools()) throw new PoolExhaustedException("Sub pool limit reached");
             sub = new SubState<>(this, ++nextSub, config.initialObjectsPerSub());
             subs.put(sub.id, sub);
+            subHighWater = Math.max(subHighWater, subs.size());
         } finally { lock.unlock(); }
         try {
             for (int i = 0; i < sub.initial; i++) obtain(sub, true);
@@ -108,16 +120,8 @@ public abstract class MainPool<T> implements Closeable {
         try {
             requireOpen(sub);
             PooledEntry<T> entry = null;
-            if (!initial && !sub.idle.isEmpty()) entry = entries.get(sub.idle.removeLast());
+            if (!initial) entry = sub.handle.container.borrowIdle();
             if (entry == null && !idle.isEmpty()) entry = entries.get(idle.removeLast());
-            if (entry == null && entries.size() + reserved >= config.maxSize()) {
-                for (SubState<T> other : subs.values()) {
-                    if (other != sub && !other.preparing && !other.idle.isEmpty()) {
-                        entry = entries.get(other.idle.removeLast()); break;
-                    }
-                }
-                if (entry == null) throw new PoolExhaustedException("Object limit reached");
-            }
             if (entry != null) return assign(entry, sub, initial);
             reserved++;
         } finally { lock.unlock(); }
@@ -127,9 +131,10 @@ public abstract class MainPool<T> implements Closeable {
     // Lock held: existing entry has been removed from its previous idle queue.
     private ObjectHolder<T> assign(PooledEntry<T> entry, SubState<T> sub, boolean initial) {
         entry.owner = sub;
+        sub.handle.container.register(entry);
         if (initial) {
             entry.state = PooledEntry.State.SUB_IDLE;
-            sub.idle.addLast(entry.id); return null;
+            sub.handle.container.recycle(entry); return null;
         }
         entry.state = PooledEntry.State.BORROWED;
         entry.holder = new ObjectHolder<>(this, sub.id, entry.id, ++entry.generation);
@@ -157,6 +162,7 @@ public abstract class MainPool<T> implements Closeable {
             else {
                 var entry = new PooledEntry<>(this, ++nextEntry, value);
                 entries.put(entry.id, entry); targets.put(value, entry); created++;
+                entryHighWater = Math.max(entryHighWater, entries.size());
                 boolean allowed = sub == null ? life == PoolState.STARTING
                         : life == PoolState.OPEN && !sub.closed;
                 if (!allowed) {
@@ -195,12 +201,10 @@ public abstract class MainPool<T> implements Closeable {
             SubState<T> sub = entry.owner;
             entry.holder = null; holder.detach();
             sub.borrowed--; sub.recycles++; holderRecycles++;
-            if (life != PoolState.OPEN) cleanup = markDestroy(entry);
-            else if (!sub.closed && sub.idle.size() < config.maxCachedPerSub()) {
-                entry.state = PooledEntry.State.SUB_IDLE; sub.idle.addLast(entry.id);
-            } else {
-                entry.owner = null; entry.state = PooledEntry.State.MAIN_IDLE; idle.addLast(entry.id);
-            }
+            if (life == PoolState.OPEN && !sub.closed
+                    && sub.handle.container.idleCount() < config.maxCachedPerSub()) {
+                entry.state = PooledEntry.State.SUB_IDLE; sub.handle.container.recycle(entry);
+            } else cleanup = recycleToMainLocked(entry);
             detachIfDone(sub);
         } finally { lock.unlock(); }
         if (cleanup != null) destroyAll(List.of(cleanup));
@@ -227,14 +231,22 @@ public abstract class MainPool<T> implements Closeable {
         sub.closed = true;
         if (!sub.preparing) subRecycles++;
         sub.preparing = false;
-        while (!sub.idle.isEmpty()) {
-            var entry = entries.get(sub.idle.removeLast());
-            if (life == PoolState.OPEN) {
-                entry.owner = null; entry.state = PooledEntry.State.MAIN_IDLE; idle.addLast(entry.id);
-            } else cleanup.add(markDestroy(entry));
+        PooledEntry<T> entry;
+        while ((entry = sub.handle.container.borrowIdle()) != null) {
+            PooledEntry<T> destroy = recycleToMainLocked(entry);
+            if (destroy != null) cleanup.add(destroy);
         }
         if (sub.borrowed != 0) warnings.add(sub.snapshot());
         detachIfDone(sub);
+    }
+
+    // Lock held. Main's maxSize caps retained idle entries, never concurrent object demand.
+    private PooledEntry<T> recycleToMainLocked(PooledEntry<T> entry) {
+        if (life != PoolState.OPEN || idle.size() >= config.maxSize()) return markDestroy(entry);
+        if (entry.owner != null) entry.owner.handle.container.release(entry);
+        entry.owner = null; entry.state = PooledEntry.State.MAIN_IDLE;
+        idle.addLast(entry.id);
+        return null;
     }
 
     // Cleanup precedes arbitrary logger code. Warning snapshots retain no pool or target.
@@ -252,12 +264,16 @@ public abstract class MainPool<T> implements Closeable {
     }
 
     private void detachIfDone(SubState<T> sub) {
-        if (sub.closed && sub.borrowed == 0 && sub.idle.isEmpty()) {
+        if (sub.closed && sub.borrowed == 0 && sub.handle.container.isEmpty()) {
             sub.handle.detach(sub.snapshot()); subs.remove(sub.id);
+            if (needsStorageCompaction(subHighWater, subs.size())) {
+                subs = new LinkedHashMap<>(subs); subHighWater = subs.size();
+            }
         }
     }
 
     private PooledEntry<T> markDestroy(PooledEntry<T> entry) {
+        if (entry.owner != null) entry.owner.handle.container.release(entry);
         entry.owner = null; entry.state = PooledEntry.State.DESTROYING; destroyAttempts++;
         return entry;
     }
@@ -280,7 +296,13 @@ public abstract class MainPool<T> implements Closeable {
                 lock.lock();
                 try {
                     if (failed) destroyFailures++;
-                    targets.remove(value); entries.remove(entry.id); terminateIfDrained();
+                    targets.remove(value); entries.remove(entry.id);
+                    if (needsStorageCompaction(entryHighWater, entries.size())) {
+                        entries = new LinkedHashMap<>(entries);
+                        targets = new IdentityHashMap<>(targets);
+                        entryHighWater = entries.size();
+                    }
+                    terminateIfDrained();
                 } finally { lock.unlock(); }
             }
         }
@@ -292,7 +314,7 @@ public abstract class MainPool<T> implements Closeable {
         try {
             int local = 0, active = 0, preparing = 0, closed = 0, borrowed = 0, destroying = 0;
             for (SubState<T> sub : subs.values()) {
-                local += sub.idle.size();
+                local += sub.handle.container.idleCount();
                 if (sub.closed) closed++; else if (sub.preparing) preparing++; else active++;
             }
             for (PooledEntry<T> entry : entries.values()) {

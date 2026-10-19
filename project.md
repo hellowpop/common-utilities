@@ -15,6 +15,16 @@
 
 ## 구조 변경내역
 
+- 2026-10-20: 사용자 push 요청에 따라 Object Pool의 Jackson 설정 로딩, 독립 Sub 컨테이너·초기 배정, Main idle 초과 폐기 정책, 메모리 저장소 회수 보완과 관련 테스트·문서를 develop에 커밋하여 origin/develop에 반영하도록 준비했다. push 전 기술문서를 갱신하고 JDK 17 clean verify 65개 테스트 통과 및 원격 동기 상태를 확인했다. 별도 ContainerSafetyTest.java 사용자 변경은 제외한다.
+
+- 2026-10-20: Object Pool 메모리·NPE 재분석 후 버스트 최고 용량 Map/Deque와 빈 ThreadLocal 항목 보관을 보완했다. 4,096개 반납 후 내부 배열의 과다 유지를 재현하고 점진 축소·종료 시 빈 저장소 교체를 적용했다. 메모리·NPE 회귀 7개 추가, 수정 전 5개 실패 후 JDK 17 clean verify 65개 통과. 기존 안전성 20개 및 새 memory probe 계측 검증 성공, 독립 리뷰 중요 지적 없음. 정상 target 참조 누수나 새로운 일반 경로 내부 NPE는 확인하지 못했다. 상세는 object-pool/memory-npe-analysis.md 10절. 커밋·push는 수행하지 않았다.
+
+- 2026-10-20: 사용자 요청에 따라 Object Pool maxSize를 Main idle 보관 상한으로 변경했다. 객체 대여는 maxSize를 넘어 추가 생성하며, Main 반납 시 idle 상한 초과 대상을 폐기한다. Sub 종료·지연 반납·cache 초과·초기 배정 rollback의 공통 반납 경로와 Sub cache 설정 검증을 조정했다. 초과 정책 테스트 7개 추가 및 기존 기대 조정 후 JDK 17 clean verify 58개와 분석 probe 20개 통과를 확인했다. 독립 리뷰 중요 지적 없음. 커밋·push는 수행하지 않았다.
+
+- 2026-10-20: 각 SubPool이 실제 entry 관리 Map과 idle Deque를 가진 독립 SubPoolContainer를 소유하도록 변경했다. initialObjectsPerSub만큼 초기 객체를 확보한 뒤 Sub를 발급하고, Sub 사이 직접 idle 회수는 제거했다. 테스트 5개 추가 및 기존 기대 조정 후 JDK 17 clean verify 52개, 분석 probe 20개 통과를 확인했다. README에 JSON 초기 수 설정과 독립 소유권을 반영했고 독립 리뷰 중요 지적 없음. 커밋·push는 수행하지 않았다.
+
+- 2026-10-20: PoolConfig에 Jackson 속성 기반 creator를 추가해 기본 ObjectMapper에서 JSON을 읽을 수 있도록 보완했다. 생략/null 속성의 기본값, 명시적 0과 교차 검증을 지원하며 불변 record와 기존 생성자 사용법을 유지한다. optional jackson-annotations 및 test databind 의존성, JSON 회귀 사례 15개와 README 설명을 추가했다. JDK 17 clean verify 47개 통과, README JSON 예제 및 Jackson 없는 기존 풀 런타임 사용을 확인했다. 독립 리뷰 중요 지적 없음. 커밋·push는 수행하지 않았다.
+
 - 2026-10-20: 사용자 push 요청에 따라 object-pool 모듈의 구현·안전성 보완·테스트·README·분석 문서를 develop에 커밋하여 origin/develop에 반영하도록 준비했다. push 전에 기술문서를 갱신하고 실제 JDK 17 clean verify 32개 테스트 통과와 원격 동기 상태를 확인했다. 별도 사용자 변경인 object-recycle-container의 ContainerSafetyTest.java는 이번 커밋에서 제외한다.
 
 - 2026-10-20: object-pool/README.md에 설계 구조·클래스 책임·소유권·수명 상태·호출 흐름도, 공개 API, 전체 사용 예제와 명시적 recycle/늦은 반납, 단계별 상태 카운트·예외 계약을 정리했다. Java 17에서 전체 예제와 추가 예제 두 개의 컴파일·실행을 확인했다. 문서만 수정했다.

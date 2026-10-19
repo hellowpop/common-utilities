@@ -69,7 +69,8 @@ class PoolConcurrencyTest {
                 await(entered);
                 assertEquals(1, pool.stats().preparingSubPoolCount());
                 assertEquals(0, pool.stats().activeSubPoolCount());
-                assertThrows(PoolExhaustedException.class, pool::borrowSubPool);
+                var other = pool.borrowSubPool();
+                assertSub(other, 2, 2, 2); other.close();
             } finally { release.countDown(); }
             var sub = borrow.get(5, TimeUnit.SECONDS);
             assertSub(sub, 2, 2, 2); sub.close();
@@ -110,17 +111,19 @@ class PoolConcurrencyTest {
         }
     }
 
-    @Test void reservedCreationCountsAgainstCapacity() throws Exception {
+    @Test void reservedCreationDoesNotPreventAdditionalCreation() throws Exception {
         var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
         try (var pool = new Pool(config(0, 1, 0, 1)) {
+            final AtomicInteger calls = new AtomicInteger();
             @Override protected Resource generateTargetObject() throws Exception {
-                entered.countDown(); await(release); return super.generateTargetObject();
+                if (calls.incrementAndGet() == 1) { entered.countDown(); await(release); }
+                return super.generateTargetObject();
             }
         }; var workers = new Workers()) {
             pool.start(); var a = pool.borrowSubPool(); var b = pool.borrowSubPool();
             var borrow = workers.executor.submit(a::borrowObjectHolder);
             try {
-                await(entered); assertThrows(PoolExhaustedException.class, b::borrowObjectHolder);
+                await(entered); b.borrowObjectHolder().close();
                 assertEquals(1, pool.stats().reservedCreationCount());
             } finally { release.countDown(); }
             borrow.get(5, TimeUnit.SECONDS).close(); a.close(); b.close();

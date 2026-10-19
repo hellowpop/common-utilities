@@ -90,16 +90,17 @@ class PoolLifecycleTest {
         assertEquals(2, pool.destroyed.get());
     }
 
-    @Test void localCacheOverflowReturnsToMainAndOtherSubCanReclaimIdle() throws Exception {
+    @Test void localCacheOverflowReturnsToMainWithoutStealingOtherSubIdle() throws Exception {
         try (var pool = new Pool(config(0, 2, 0, 1))) {
             pool.start(); var a = pool.borrowSubPool(); var b = pool.borrowSubPool();
             var h1 = a.borrowObjectHolder(); var h2 = a.borrowObjectHolder();
             h1.close(); h2.close();
             assertSub(a, 0, 1, 1); assertMain(pool, 2, 1, 2);
             var b1 = b.borrowObjectHolder(); var b2 = b.borrowObjectHolder();
-            assertSub(a, 0, 0, 0); assertSub(b, 0, 2, 0);
-            assertThrows(PoolExhaustedException.class, a::borrowObjectHolder);
-            b1.close(); b2.close(); a.close(); b.close();
+            assertSub(a, 0, 1, 1); assertSub(b, 0, 2, 0);
+            var a1 = a.borrowObjectHolder();
+            b1.close(); b2.close(); a1.close(); a.close(); b.close();
+            assertMain(pool, 2, 2, 0); assertEquals(1, pool.destroyed.get());
         }
     }
 
@@ -138,7 +139,6 @@ class PoolLifecycleTest {
         assertThrows(IllegalArgumentException.class, () -> new PoolConfig(0, 0, 1, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> new PoolConfig(0, 2, 0, 0, 1));
         assertThrows(IllegalArgumentException.class, () -> new PoolConfig(0, 2, 1, 2, 1));
-        assertThrows(IllegalArgumentException.class, () -> new PoolConfig(0, 2, 1, 0, 3));
     }
 
     static void assertMain(MainPool<?> pool, int created, int idle, int active) {

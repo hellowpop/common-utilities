@@ -39,15 +39,20 @@ class PoolFailureTest {
         }
     }
 
-    @Test void failedSubCapacityRollsBackWithoutCountingSuccessfulBorrow() throws Exception {
-        try (var pool = new Pool(new PoolConfig(0, 2, 2, 2, 2))) {
-            pool.start(); var sub = pool.borrowSubPool();
-            var holder = sub.borrowObjectHolder();
-            assertThrows(PoolExhaustedException.class, pool::borrowSubPool);
-            assertMain(pool, 2, 1, 1); assertSub(sub, 2, 1, 0);
-            assertEquals(1, pool.stats().subBorrowCount());
+    @Test void failedSubPreparationDestroysRollbackOverflowWithoutCountingSuccessfulBorrow() throws Exception {
+        try (var pool = new Pool(new PoolConfig(0, 1, 2, 3, 3)) {
+            boolean fail = true;
+            @Override protected Resource generateTargetObject() throws Exception {
+                if (fail && generated.get() == 2) { fail = false; throw new IOException("creation"); }
+                return super.generateTargetObject();
+            }
+        }) {
+            pool.start(); assertThrows(IOException.class, pool::borrowSubPool);
+            assertMain(pool, 1, 1, 0); assertEquals(1, pool.destroyed.get());
+            assertEquals(0, pool.stats().subBorrowCount());
             assertEquals(0, pool.stats().preparingSubPoolCount());
-            holder.close(); sub.close();
+            var sub = pool.borrowSubPool(); assertSub(sub, 3, 3, 3); sub.close();
+            assertMain(pool, 1, 1, 0);
         }
     }
 

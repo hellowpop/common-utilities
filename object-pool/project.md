@@ -31,9 +31,10 @@ Main이 target 객체의 생성·폐기와 전체 대여 상태를 관리하고,
 | 구성 | 공개 여부 | 책임 |
 | --- | --- | --- |
 | `MainPool<T> implements Closeable` | public abstract | start, Sub 대여/반납, target 생성·폐기 훅, 모든 소유권·상태·용량·통계 관리 |
-| `SubPool<T> implements Closeable` | public final | 로컬 idle 저장소에 대한 논리적 소유권, Holder 대여/반납, 종료 후 Main으로의 반납 경로 |
+| `SubPool<T> implements Closeable` | public final | 독립 SubPoolContainer 소유, Holder 대여/반납, 종료 후 Main으로의 반납 경로 |
+| `SubPoolContainer<T>` | package-private | 각 Sub가 독립 소유하는 실제 entry 관리 Map 및 idle LIFO. 대여·반납과 Main으로의 이전 처리 |
 | `ObjectHolder<T> implements Closeable` | public final | 대여별 핸들. get으로 target 제공, close로 소유 Sub에 반납 |
-| `PoolConfig` | public record | Main/Sub 초기 객체 수, 전체 객체 상한, 활성 Sub 상한, Sub idle 보관 상한 |
+| `PoolConfig` | public record | Main/Sub 초기 객체 수, Main idle 보관 상한, 활성 Sub 상한, Sub idle 보관 상한 |
 | `PoolStats`, `SubPoolStats` | public record | 대여/반납 누계와 현재 상태의 불변 snapshot |
 | `PoolExhaustedException` | public | 용량 부족 시 즉시 실패하는 unchecked 예외 |
 | `PooledEntry<T>` | package-private | 실제 target과 entry ID, 상태, 소유 Sub ID, 현재 대여 세대 보관. 물리 폐기를 위한 내부 close 제공 |
@@ -92,7 +93,7 @@ public final class ObjectHolder<T> implements Closeable {
 ```mermaid
 flowchart LR
     M[MainPool: registry / global idle]
-    S[SubPool: local idle entry IDs]
+    S[SubPool: independent entry container]
     H[ObjectHolder: borrow ID / generation]
     E[PooledEntry]
     T[target T]
@@ -104,12 +105,12 @@ flowchart LR
     H -. close: Sub 경유 반납 .-> M
 ```
 
-- Main registry가 실제 entry의 유일한 관리 기준이다. idle queue와 Sub 저장소에는 entry ID만 둔다.
+- Main registry는 전체 entry의 소유권·용량·수명 조정 기준이다. Main idle queue에는 entry ID를 두고, SubPool은 자신의 SubPoolContainer에 실제 PooledEntry의 managed Map 및 idle Deque를 독립 보관한다.
 - 하나의 entry는 Main idle, 특정 Sub idle, 특정 Holder 대여, 반환 처리, 폐기 중 하나에만 속한다.
 - Main idle과 Sub idle은 LIFO로 사용한다. 순서 보장이나 공정성은 제공하지 않는다.
 - Holder는 pool ID, sub ID, entry ID, borrow generation으로 대여를 식별한다. 반납된 예전 Holder의 close/get이 새 대여를 반납하거나 접근할 수 없다.
 - Holder는 활성 기간에 Main을 유지하며, 반납 후 Main/target 강한 참조를 해제한다. Main은 outstanding entry를 위해 필요한 Sub 관리 레코드만 유지하고 최종 반납 후 제거한다.
-- 종료된 Sub는 미반납 Holder가 있으면 반납 라우팅에 필요한 Main 참조를 유지하며, 모두 반납되면 참조를 해제하고 최종 통계만 보관한다. 종료 핸들 자체가 target을 보관하지 않는다.
+- 종료된 Sub는 미반납 Holder가 있으면 반납 라우팅에 필요한 Main 참조와 컨테이너의 해당 entry를 유지한다. 모두 반납되면 컨테이너가 비워지고 Main 참조를 해제하며 최종 통계를 보관한다. 최종 반납 후에는 target을 보관하지 않는다.
 
 ## 6. 상태와 주요 동작
 
@@ -134,22 +135,22 @@ Sub 핸들의 CLOSED는 신규 대여 금지 및 idle 이전 완료를 뜻한다
 
 `MAIN_IDLE ↔ SUB_IDLE → BORROWED → RETURNING → SUB_IDLE 또는 MAIN_IDLE`
 
-폐기 대상은 `DESTROYING → DESTROYED`로 진행한다. 실제 destroy 훅 실패는 별도 failureCount에 기록하며 entry를 재사용하지 않는다. 생성 중에는 별도의 reservedCreationCount로 용량을 예약한다.
+폐기 대상은 `DESTROYING → DESTROYED`로 진행한다. 실제 destroy 훅 실패는 별도 failureCount에 기록하며 entry를 재사용하지 않는다. 생성 중에는 별도의 reservedCreationCount로 진행 수를 추적한다. 객체 생성 요청의 상한으로 사용하지 않는다.
 
 ### Sub 대여
 
-Main이 OPEN인지와 Sub 상한을 확인하고 준비 슬롯을 예약한다. Main idle에서 `initialObjectsPerSub`개를 Sub에 초기 배정하며, 부족분은 전체 객체 상한 안에서 생성한다. 전체 상한에 도달하면 다른 Sub의 idle을 회수할 수 있지만 borrowed 객체는 회수하지 않는다.
+Main이 OPEN인지와 Sub 상한을 확인하고 준비 슬롯을 예약한다. Main idle에서 initialObjectsPerSub개를 Sub의 독립 컨테이너에 초기 배정하며, 부족분은 maxSize와 무관하게 새로 생성한다. 다른 Sub의 idle·borrowed 객체는 가져오지 않는다.
 
 초기 배정을 모두 완료한 뒤 Sub를 OPEN으로 게시하고 activeSubPoolCount를 증가시킨다. 준비 중인 Sub는 호출자에게 노출하지 않으며 activeSubPoolCount에 포함하지 않는다. 상한 검사는 `activeSubPoolCount + preparingSubPoolCount <= maxSubPools`로 수행해 동시 준비의 초과 발급을 방지한다.
 
-초기 배정 실패·종료 경쟁에서는 핸들을 발급하지 않고 준비 슬롯과 소유권 이전을 롤백한다. 확보한 객체는 Main이 OPEN이면 Main idle로 돌리고, Main이 종료 중이면 폐기한다. 기존 다른 Sub에서 가져온 idle도 Main idle로 돌린다. 생성 실패는 IOException 또는 원래 RuntimeException/Error로, Sub/객체 용량 부족은 PoolExhaustedException으로 전파한다.
+초기 배정 실패·종료 경쟁에서는 핸들을 발급하지 않고 준비 슬롯과 소유권 이전을 롤백한다. 확보한 객체는 Main이 OPEN이고 idle 공간이 있으면 Main idle로 돌리고, Main idle 상한 초과 또는 종료 중이면 폐기한다. 생성 실패는 IOException 또는 원래 RuntimeException/Error로, 활성·준비 Sub 수 상한은 PoolExhaustedException으로 전파한다.
 
 ### Holder 대여
 
 1. Main과 Sub 상태를 확인한다.
 2. 해당 Sub idle → Main idle 순서로 entry를 찾는다.
-3. 없으면 전체 상한 안에서 생성 슬롯을 예약하고 락 밖에서 generate 훅을 호출한다.
-4. 전체 상한에 도달했으면 발급 완료된 다른 Sub의 idle entry를 회수해 사용한다. 준비 중 Sub의 초기 배정 객체와 대여 중 entry는 회수하지 않는다. 회수할 idle도 없으면 PoolExhaustedException이다.
+3. 없으면 생성 진행 수를 증가시키고 락 밖에서 generate 훅을 호출한다.
+4. 전체 생성·대여 수가 maxSize 이상이어도 생성한다. 객체 수를 이유로 PoolExhaustedException을 발생시키지 않고 다른 Sub 컨테이너의 객체도 가져오지 않는다.
 5. entry를 BORROWED로 전환하고 새 generation의 Holder를 발급하며 Main/Sub 대여 누계를 함께 증가시킨다.
 6. 생성 도중 Main 또는 해당 Sub가 종료되면 대여를 취소하고 생성 결과를 폐기한다. 예약과 등록을 롤백하며 대여 누계는 증가시키지 않는다.
 
@@ -158,10 +159,10 @@ Main이 OPEN인지와 Sub 상한을 확인하고 준비 슬롯을 예약한다. 
 1. pool/sub/entry/generation을 검증한다. 동일 대여에 대해 한 스레드만 반납 전이를 수행한다.
 2. Holder를 반환 완료로 표시하고 Main/Sub 반납 누계를 각각 한 번 증가시킨다.
 3. Main OPEN, Sub OPEN, 로컬 idle 공간 있음: Sub idle에 저장한다.
-4. Main OPEN, Sub CLOSED 또는 로컬 idle 상한: Main idle로 이전한다.
+4. Main OPEN, Sub CLOSED 또는 로컬 idle 상한: Main idle에 공간이 있으면 이전하고, 이미 maxSize이면 해당 객체를 폐기한다.
 5. Main CLOSING: 해당 entry를 물리 폐기한다. 마지막 outstanding 정리 완료 시 Main을 CLOSED로 전환한다.
 
-일반 Holder.close는 target.close를 호출하지 않는다. 물리 폐기와 논리 반납은 분리한다. target 재초기화는 첫 버전에서 제공하지 않으므로 호출자는 반납 전에 재사용 가능한 상태로 만들어야 한다.
+캐시 보관으로 끝나는 Holder.close는 target.close를 호출하지 않는다. Main idle 상한 초과 또는 Main 종료 시에는 반납에서 물리 폐기를 실행한다. target 재초기화는 제공하지 않으므로 호출자는 반납 전에 재사용 가능한 상태로 만들어야 한다.
 
 ## 7. 종료 정책: 대여 중 자원은 지연 폐기
 
@@ -176,7 +177,7 @@ Main이 OPEN인지와 Sub 상한을 확인하고 준비 슬롯을 예약한다. 
 ### Sub.close
 
 1. Main 락에서 Sub를 CLOSED로 바꾸고 활성 Sub 수를 감소시킨다.
-2. 해당 Sub의 모든 idle entry를 Main idle로 이전한다. Main도 종료 중이면 폐기한다.
+2. 해당 Sub의 모든 idle entry를 Main으로 반납한다. Main idle 상한만큼 보관하고 초과분은 폐기하며, Main도 종료 중이면 모두 폐기한다.
 3. 미반납 Holder 수와 borrow/recycle 불일치를 진단한다. 해당 entry를 다른 호출자에게 재대여하지 않는다.
 4. 미반납 Holder는 기존 대여로 유지한다. Main이 OPEN이면 기존 Holder.get도 가능하다. 이후 Holder.close는 닫힌 Sub를 경유해 Main으로 직접 반납한다.
 5. 종료 후 새 borrow는 거절하고, 유효한 지연 recycle은 계속 허용한다.
@@ -199,7 +200,7 @@ get이 반환한 raw T는 Holder.close 이후 보관·사용하면 안 된다. �
 ## 8. 동시성·예외·자원 정리
 
 - 단일 ReentrantLock으로 상태, queue, registry, 통계 전이를 보호한다. 사용자 generate/destroy 훅은 락 밖에서 실행한다.
-- 생성 예약도 전체 상한에 포함한다. 생성 성공 직후 종료 경쟁을 다시 검사한다. 폐기 진행 중인 entry 역시 정리 완료 전까지 용량을 점유한다.
+- 생성 진행 수는 종료 조정용으로 추적한다. 생성 성공 직후 종료 경쟁을 다시 검사한다. 폐기 진행 중 entry는 정리 완료 전까지 createdObjectCount에 포함하지만 신규 생성을 제한하지 않는다.
 - 외부 훅은 동일 풀의 수명 변경 API로 재진입할 수 없다. 같은 스레드의 재진입을 감지해 IllegalStateException으로 거절한다. stats 조회는 허용한다.
 - 훅에서 다른 스레드의 동일 풀 작업 완료를 기다리지 않는 것은 확장 구현의 계약이다. 끝나지 않는 훅에 대한 강제 취소는 제공하지 않는다.
 - 생성 null은 생성 실패 IOException으로 처리한다. 생성 훅 실패 시 용량 예약을 반드시 해제한다.
@@ -215,9 +216,9 @@ get이 반환한 raw T는 Holder.close 이후 보관·사용하면 안 된다. �
 | --- | --- | --- |
 | initialSize | 0 | 0 이상, maxSize 이하 |
 | initialObjectsPerSub | 0 | 0 이상, maxCachedPerSub 이하. Sub 발급 시 초기 배정 수 |
-| maxSize | 128 | 1 이상 |
+| maxSize | 128 | 1 이상. Main idle 보관 상한이며 전체 생성 수 제한이 아님 |
 | maxSubPools | 32 | 1 이상. 현재 OPEN Sub 수 제한 |
-| maxCachedPerSub | 8 | 0 이상, maxSize 이하. 0이면 반납 즉시 Main idle로 이동 |
+| maxCachedPerSub | 8 | 0 이상. Main idle 상한과 독립. 0이면 반납 즉시 Main으로 이동 |
 
 최소 유지 수, 대기 timeout, 자동 생성 보충은 두지 않는다. 각 설정의 메모리 비용은 target 크기와 함께 산정한다.
 
@@ -247,7 +248,7 @@ Main idleObjectCount는 Main에서 Sub로 배정할 때 감소하고 Sub에서 M
 
 initialObjectCount는 설정·초기 배정 이력이며 현재 수량이 아니다. initialObjectsPerSub가 0이면 빈 Sub로 발급한다. 초기 배정 미완료 Sub는 발급하지 않으므로 initialObjectCount가 부분 성공 수로 남는 경우는 없다.
 
-Sub idle에서 Holder를 대여하면 idleObjectCount만 감소하고 managedObjectCount는 유지한다. Main에서 추가 객체를 받아 Holder를 발급하면 managedObjectCount가 증가한다. Holder가 같은 Sub idle로 반납되면 idleObjectCount만 증가한다. Main으로 이전하거나 폐기 소유권을 넘기면 managedObjectCount가 감소한다. 다른 Sub가 idle을 회수하면 원래 Sub의 idleObjectCount와 managedObjectCount를 함께 감소시킨다.
+Sub 컨테이너 idle에서 Holder를 대여하면 idleObjectCount만 감소하고 managedObjectCount는 유지한다. Main에서 추가 객체를 받아 Holder를 발급하면 컨테이너의 managedObjectCount가 증가한다. Holder가 같은 Sub idle로 반납되면 idleObjectCount만 증가한다. Main으로 이전하거나 폐기 소유권을 넘기면 컨테이너의 managedObjectCount가 감소한다. 다른 Sub는 해당 컨테이너의 객체를 직접 가져가지 못한다.
 
 Sub.close는 모든 로컬 idle을 Main으로 이전하므로 idleObjectCount는 0이 된다. 아직 대여/반납 처리 중인 객체는 managedObjectCount에 남고 최종 반납 후 0이 된다. initialObjectCount는 종료 후에도 유지한다.
 
@@ -257,7 +258,7 @@ Sub.close는 모든 로컬 idle을 Main으로 이전하므로 idleObjectCount는
 
 - 안정 상태에서 `holderBorrowCount - holderRecycleCount = borrowedCount`이다. 반납 전이는 동일 락 안에서 통계와 상태를 함께 갱신한다.
 - Sub close 이후에도 outstanding Holder 반납을 해당 Sub 통계에 반영한다. 마지막 반납 시 최종 snapshot을 고정한다.
-- `createdObjectCount + reservedCreationCount <= maxSize`를 항상 유지한다. 기존 liveEntryCount는 createdObjectCount와 같은 값이며 중복 카운터로 구현하지 않는다.
+- `Main idleObjectCount <= maxSize`를 항상 유지한다. createdObjectCount와 reservedCreationCount는 maxSize를 초과할 수 있다. 기존 liveEntryCount는 createdObjectCount와 같은 값이며 중복 카운터로 구현하지 않는다.
 - `Main idle + 전체 Sub idle + borrowed + returning + destroying = createdObjectCount`이다. 초기 배정 중 entry는 준비 Sub의 idle로 내부 집계하고, 폐기는 Sub 소유권을 해제한 뒤 destroying으로 집계한다. 폐기 완료 entry는 registry에서 제거한다.
 - 각 Sub에서 `managedObjectCount = idleObjectCount + borrowedCount + returningCount`이다. 준비 Sub도 내부적으로 같은 식을 유지한다. 소유권 이전과 해당 Main/Sub 카운트 변경은 하나의 락 구간에서 수행한다.
 - 종료 시 불일치 진단은 System.Logger를 사용한다. 로그에는 ID와 건수만 기록하고 target.toString을 호출하지 않는다.
@@ -299,12 +300,12 @@ Sub가 먼저 닫히는 경우에도 Holder.close는 유효하다. Main도 먼�
 5. Holder/Sub/Main 중복 close와 다른 풀/다른 Sub 핸들 오반납으로 통계·소유권이 변하지 않는다.
 6. 예전 Holder.close/get이 재대여된 entry에 영향을 주지 않는다.
 7. Main.close와 대여/반납/생성 완료 경쟁에서 entry 유실, 중복 대여, 중복 폐기가 없다.
-8. 동시 생성에서도 상한을 지키며 다른 Sub idle 회수 및 Sub cache 상한을 검증한다.
+8. 동시 생성에서 maxSize 초과 대여를 허용하고, 동시 반납에서 Main idle 및 Sub cache 상한과 컨테이너 격리를 검증한다.
 9. 생성 null/실패, 중복 target, 폐기 실패, 복수 정리 실패에도 정리와 예약 해제가 완료된다.
 10. 미반납 Holder 존재 시 Main은 CLOSING이고 target을 조기 폐기하지 않으며, 최종 반납 후 CLOSED가 된다.
 11. 반환된 Holder와 최종 종료된 Sub가 Main/target을 강하게 유지하지 않는지 확인한다.
 12. sleep 시간에 의존하지 않는 latch/barrier 기반 경쟁 테스트와 생성·폐기 건수 계측을 사용한다.
-13. Main의 createdObjectCount/idleObjectCount/activeSubPoolCount와 Sub의 initialObjectCount/managedObjectCount/idleObjectCount를 초기 배정, 대여, 반납, Sub 간 idle 회수, 종료, 지연 반납 단계마다 검증한다.
+13. Main의 createdObjectCount/idleObjectCount/activeSubPoolCount와 Sub의 initialObjectCount/managedObjectCount/idleObjectCount를 초기 배정, 대여, 반납, cache 초과 이전, 종료, 지연 반납 단계마다 검증한다.
 14. Sub 초기 배정의 부분 실패와 동시 준비 시 예약·카운트·소유권을 롤백하고, 실패한 Sub가 활성 수에 포함되지 않는지 검증한다.
 
 ## 12. 구현 단계 산출물
@@ -316,7 +317,7 @@ Maven 설정, 공개 타입, 내부 상태 관리, 수명 처리, 경쟁·실패
 ## 13. 구현 구성과 검증 기록
 
 - `MainPool`: 단일 ReentrantLock, target 동일성 registry, 생성 예약, 수명 훅, 초기 배정 rollback, 대여·반납·종료 조정.
-- `SubPool` / `SubState`: 대여 범위 핸들 및 ID 기반 로컬 LIFO, 종료 후 지연 반납, 최종 통계 snapshot.
+- `SubPool` / `SubPoolContainer` / `SubState`: 독립 컨테이너의 실제 entry 관리 Map과 로컬 LIFO, 수명·통계 조정, 종료 후 지연 반납, 최종 통계 snapshot. 최초 ID 저장소 방식에서 19절의 요구에 따라 변경했다.
 - `ObjectHolder`: 대여 세대 핸들, get 상태 검사, 멱등적 close 및 반환 후 Main 참조 해제.
 - `PooledEntry`: 실제 target, 소유권과 물리 close. 폐기 후 target/Main 참조 해제.
 - `PoolConfig`, `PoolStats`, `SubPoolStats`, `PoolState`, `PoolExhaustedException`: 설정 검증, 불변 snapshot, 상태와 용량 오류.
@@ -356,3 +357,48 @@ Maven 설정, 공개 타입, 내부 상태 관리, 수명 처리, 경쟁·실패
 - 사용자 push 요청에 따라 모듈 전체와 루트 기술문서를 develop에 커밋하고 origin/develop로 push한다. 앞선 커밋·push 미수행 기록은 각 작업 종료 시점의 이력이다.
 - push 전 실제 JDK 17.0.10 / Maven 3.9.11 clean verify를 다시 실행해 32개 테스트의 실패/오류/건너뜀 0을 확인했다. fetch 후 develop과 origin/develop의 앞섬/뒤처짐은 0/0이었다.
 - 다른 모듈의 사용자 변경은 커밋에서 제외한다. target과 IDE 생성 파일은 기존 ignore 규칙에 따라 포함하지 않는다.
+
+## 18. PoolConfig Jackson 역직렬화 (2026-10-20)
+
+- 사용자 요청으로 PoolConfig에 `@JsonCreator(mode=PROPERTIES)` 정적 fromJson factory와 5개 @JsonProperty 이름을 추가했다. 불변 record, 기존 5개 int 생성자·접근자·동등성은 유지한다.
+- JSON 속성은 nullable Integer로 받아 누락/null이면 defaults()의 해당 값을 채우고 canonical 생성자의 용량·교차 검증을 적용한다. 명시적 0은 기본값으로 덮어쓰지 않는다. 부분 설정과 기본값의 조합도 검증 대상이다.
+- `jackson-annotations:2.20`을 optional 의존성으로 추가했다. Jackson 로딩을 사용하는 애플리케이션이 databind를 선택하며, 모듈에서는 기존 프로젝트와 같은 `jackson-databind:2.20.1`을 테스트 범위로 사용한다. 최초 설계의 Jackson 비의존 기본 사용은 유지하고 선택적 JSON 연동을 추가한 것이다.
+- 테스트 15개 추가: 빈 객체, 부분 설정, null 속성, 명시적 0, JSON 설정에 따른 실제 풀 초기화, 범위·교차 검증 9개, 직렬화 왕복. 수정 전 빈/부분/null 3개 오류를 확인한 뒤 전체 47개 통과를 확인했다.
+- README에 Maven 의존성, JSON/Java 예제, 기본값·null·검증 및 ObjectMapper 설정 계약을 추가했다. 독립 코드 리뷰 중요 지적 없음.
+- 실제 JDK 17.0.10 / Maven 3.9.11 clean verify **47개 통과**, 실패/오류/건너뜀 0. README의 PoolConfigJsonExample을 컴파일·실행해 부분 JSON이 `PoolConfig(2,64,32,1,8)`로 읽히는 것을 확인했다.
+- 기존 전체 풀 예제도 컴파일 후 **Jackson JAR을 제외한 런타임 클래스패스**로 실행했다. hello 처리와 정상 카운트를 확인했다. 풀 내부에 ObjectMapper나 JSON 입력을 보관하지 않는다. 이번 변경은 커밋·push하지 않았다.
+
+## 19. Sub 독립 컨테이너와 초기 인스턴스 수 (2026-10-20)
+
+- 사용자 요청에 따라 각 SubPool이 별도 SubPoolContainer를 소유하도록 변경했다. 실제 PooledEntry의 managed Map과 idle Deque가 이 컨테이너에 위치하고 SubState에는 수명·카운트만 남긴다.
+- 초기 수 설정은 기존 Jackson 지원 속성 initialObjectsPerSub를 사용한다. Main idle 또는 새로 생성한 target을 초기 수만큼 컨테이너에 넣은 뒤에만 Sub를 발급한다. 초기값 0은 빈 컨테이너이며, 4로 지정하면 반환 직후 initial/managed/idle=4/4/4다.
+- Sub 컨테이너 사이의 직접 idle 회수를 제거했다. 자신의 idle이 없으면 Main idle 또는 새 객체로 충당하고, 전체 상한이면 PoolExhaustedException이다. Main 반납 후에는 다른 Sub에 배정할 수 있다.
+- 관리 entry는 대여 중에도 해당 컨테이너에 남고, Sub idle 반납 시 재등록 없이 재사용한다. Main 이전·폐기 시 managed에서 제거한다. Sub.close는 idle을 모두 이전하고 borrowed는 최종 반납까지 추적한다.
+- Main의 단일 락은 컨테이너 조작·전역 소유권·카운트를 원자적으로 조정한다. 생성·폐기·진단은 락 밖에서 실행한다. 별도 Sub 락이나 공개 가변 컨테이너 API는 추가하지 않았다.
+- 테스트 5개 추가 및 기존 cross-Sub 회수 기대 2개를 독립 소유권 계약으로 변경했다. 수정 전 3개 실패를 확인한 뒤 실제 JDK 17.0.10 clean verify에서 전체 **52개 통과**, 실패/오류/건너뜀 0.
+- 분석 probe **20개 검사항목 통과**, 로깅 NPE 후 CLOSED/created=0/destroying=0 확인. 독립 리뷰에서 소유권 이전·지연 반납·참조 해제·초기 배정 경쟁을 확인했고 추가 중요 지적 없음. 커밋·push는 수행하지 않았다.
+
+## 20. Main 초과 생성 및 idle 상한 반납 정책 (2026-10-20)
+
+- 사용자 요청으로 maxSize를 전체 객체 수 상한에서 Main idle 보관 상한으로 변경했다. 19절까지의 생성 상한 설명은 당시 이력이며 현재 규범은 본 절과 갱신된 6–9절을 따른다.
+- 자신의 Sub idle과 Main idle이 모두 없으면 생성·대여 중 수가 maxSize 이상이어도 새 객체를 만든다. 생성 진행·폐기 진행 수 역시 새 생성을 차단하지 않는다.
+- recycleToMainLocked에 Main 반납을 통합했다. Main이 OPEN이고 idle 수가 maxSize 미만일 때만 보관하며 그 외에는 반납 대상을 폐기한다. Holder 반납, 닫힌 Sub 지연 반납, 로컬 cache 초과, Sub.close와 초기 배정 rollback에 동일하게 적용한다.
+- 반납 대상 선택과 소유권·카운트 갱신은 Main 락 안에서, 실제 폐기는 락 밖에서 수행한다. 일괄 폐기 오류를 집계하고 폐기 실패에도 local/global 관리 참조를 제거한다.
+- maxCachedPerSub의 maxSize 이하 제약을 제거했다. initialSize<=maxSize와 initialObjectsPerSub<=maxCachedPerSub는 각각 초기 idle과 초기 컨테이너의 제약으로 유지한다. maxSubPools는 별도 Sub 수 제한이므로 기존 예외 계약을 유지한다.
+- 초과 정책 회귀 7개를 추가하고 기존 상한·JSON·초기 준비 테스트의 기대를 조정했다. 수정 전 8개 오류를 확인한 뒤 실제 JDK 17.0.10 clean verify에서 전체 **58개 통과**, 실패/오류/건너뜀 0.
+- 분석 probe **20개 검사항목 통과**, 로깅 NPE 후 CLOSED/created=0/destroying=0 확인. 독립 리뷰에서 초과 객체의 단일 폐기·동시 반납·종료·오류 집계를 확인했고 추가 중요 지적 없음. 커밋·push는 수행하지 않았다.
+
+## 21. 메모리·NPE 재분석 및 저장 공간 회수 (2026-10-20)
+
+- 독립 Sub 컨테이너와 maxSize 초과 생성 정책을 기준으로 재분석했다. 정상 반납 후 새로운 target 참조 누수나 일반적인 내부 NPE는 확인하지 못했다. 버스트 이후 큰 내부 배열과 빈 ThreadLocal 항목이 유지되는 경로를 재현했다.
+- 4,096개 대여·반납 후 Main.entries/targets, Sub.managed의 배열이 수정 전 8,192/16,384/8,192 슬롯으로 남았고 수정 후 32/64/32로 줄었다. 정상 캐시는 유지하고 관리 규모가 32를 넘었다가 최고 수의 1/4 미만으로 줄었을 때 저장소를 재구성한다.
+- Sub idle의 큰 배열도 감소 시 축소하고, 최종 반납된 Sub 및 완전히 CLOSED인 Main의 빈 저장소를 교체한다. 일반 API의 빈 ThreadLocal은 제거하되 실행 중 훅 재진입 감시는 유지한다.
+- 실제 배열·ThreadLocal 검사를 위해 테스트 JVM에만 java.util/java.lang add-opens를 지정했다. 운영 소스는 JDK 내부 reflection이나 이 VM 옵션을 요구하지 않는다.
+- 메모리·NPE 회귀 7개 추가. 수정 전 5개 실패 확인 후 전체 65개 통과. 상세는 memory-npe-analysis.md 10절, 계측은 analysis/PoolMemoryProbe.java를 따른다.
+- 실제 JDK 17.0.10 clean verify **65개 통과**, 기존 안전성 probe **20개 통과**, 새 memory probe --check-compaction 성공. CLOSED 저장소 길이 0/8/0/1/0/1과 빈 ThreadLocal 키 없음을 확인했다. 독립 리뷰 중요 지적 없음. 커밋·push는 수행하지 않았다.
+
+## 22. 후속 변경 커밋 및 원격 반영 준비 (2026-10-20)
+
+- 사용자 push 요청으로 18–21절의 Jackson 설정·Sub 독립 컨테이너·초과 생성/idle 폐기·메모리 회수 보완을 테스트·분석 프로그램·README와 함께 develop에 커밋하여 origin/develop로 push한다. 각 단계의 미커밋 기록은 당시 이력이다.
+- push 전 실제 JDK 17.0.10 / Maven 3.9.11 clean verify를 재실행했다. 테스트 65개, 실패/오류/건너뜀 0. fetch 후 로컬/원격 develop의 앞섬/뒤처짐은 0/0이었다.
+- 별도 object-recycle-container 테스트 사용자 변경과 target/IDE 파일은 포함하지 않는다.

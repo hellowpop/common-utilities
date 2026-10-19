@@ -10,11 +10,14 @@ public final class SubPool<T> implements Closeable {
     private volatile SubPoolStats finalStats;
     final Object poolIdentity;
     final SubState<T> state;
+    final SubPoolContainer<T> container = new SubPoolContainer<>();
 
     SubPool(MainPool<T> main, SubState<T> state) {
         this.main = main; this.state = state; poolIdentity = main.identity;
     }
-    void detach(SubPoolStats snapshot) { finalStats = snapshot; main = null; }
+    void detach(SubPoolStats snapshot) {
+        container.releaseEmptyStorage(); finalStats = snapshot; main = null;
+    }
     public ObjectHolder<T> borrowObjectHolder() throws IOException {
         MainPool<T> current = main;
         if (current == null) throw new IllegalStateException("Sub pool is closed");

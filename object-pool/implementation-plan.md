@@ -79,3 +79,54 @@
 후속 판단: 이미 다른 스레드가 수행 중인 DESTROYING 작업을 close 재호출에서 다시 claim하지 않는다. 원인인 로깅 경로의 정리 실행 차단을 제거해 중복 폐기 없이 보장한다.
 
 후속 결과: JDK 17 clean verify 32/32, probe 20개 확인과 CLOSED/created=0/destroying=0. 독립 리뷰 중요 지적 없음. 커밋·push 없음.
+
+## PoolConfig Jackson 후속 변경 (2026-10-20)
+
+- [x] 기존 record와 기본 ObjectMapper 동작을 검토했다. 완전한 JSON은 기존에도 가능하나 빈/부분/null 속성의 기본값 적용은 불가능함을 확인했다.
+- [x] 15개 JSON 회귀 사례를 먼저 작성하고 수정 전 3개 오류를 확인했다.
+- [x] 불변성을 보존하는 명시적 creator와 nullable 속성 기본값 처리를 적용하고 전체 47개 테스트 통과를 확인했다.
+- [x] optional annotations/test databind 의존성과 README 사용 설명을 추가했다.
+- [x] 최종 Java 17 clean verify, JSON 예제 및 Jackson 없는 일반 사용을 검증한다.
+
+판단: setter 기반 가변 설정으로 전환하지 않아 Main 구성 후 외부 설정 변경으로 용량 불변식이 깨지는 경로를 만들지 않는다. ObjectMapper는 외부 애플리케이션이 제공하며 풀 내부에 보관하지 않는다.
+
+결과: JDK 17 clean verify 47/47, README JSON 예제 실행 시 부분 설정+기본값 확인, 기존 풀 예제의 Jackson 없는 런타임 실행 성공. 독립 리뷰 중요 지적 없음. 커밋·push 없음.
+
+## Sub 독립 컨테이너 후속 변경 (2026-10-20)
+
+- [x] 독립 소유권·로컬 재사용·초기 배정·JSON 초기 수·Main 이전 회귀 사례 5개를 추가한다.
+- [x] 이전 cross-Sub idle 회수 기대를 새 계약에 맞게 조정하고 수정 전 3개 실패를 확인한다.
+- [x] SubPoolContainer를 SubPool별로 소유하고 실제 entry 관리·idle 대여/반납을 수행하도록 변경한다.
+- [x] 다른 Sub의 idle 회수를 제거하고 초기 배정 완료 전 발급 금지·실패 rollback·지연 폐기 계약을 유지한다.
+- [x] 전체 52개 테스트 통과를 확인하고 독립 리뷰를 수행한다.
+- [x] README/기술문서와 최종 Java 17 clean verify·분석 probe 결과를 갱신한다.
+
+판단: initialObjectsPerSub를 그대로 사용해 기존 Jackson 설정과 생성자 호환성을 유지한다. 컨테이너는 독립 소유하되 Main의 조정 락을 사용해 종료·반납·생성 경쟁의 상태 전이를 원자적으로 유지한다.
+
+결과: JDK 17 clean verify 52/52, 분석 probe 20개 확인과 최종 CLOSED/created=0/destroying=0. 독립 리뷰 중요 지적 없음. 커밋·push 없음.
+
+## Main 초과 생성과 idle 상한 후속 변경 (2026-10-20)
+
+- [x] maxSize 초과 동시 대여, Main idle 상한, 지연 반납·Sub 종료·cache 초과·rollback·폐기 실패·동시 반납을 테스트한다.
+- [x] 이전 hard limit 기대를 수정하고 변경 전 8개 오류를 확인한다.
+- [x] 생성 수 제한을 제거하고 Main 반납을 recycleToMainLocked로 통합한다.
+- [x] Sub cache와 Main idle 상한의 설정 검증을 분리한다.
+- [x] 전체 58개 테스트 통과와 독립 리뷰를 확인한다.
+- [x] 최종 Java 17 clean verify·분석 probe를 실행하고 문서를 갱신한다.
+
+판단: maxSize는 Main idle만 제한한다. maxSubPools는 다른 설정이므로 활성·준비 Sub 수 제한을 유지한다. 기존 초기 수와 JSON 속성·공개 API는 유지한다.
+
+결과: JDK 17 clean verify 58/58, 분석 probe 20개 확인. 독립 리뷰 중요 지적 없음. 커밋·push 없음.
+
+## 메모리·NPE 재분석 및 적용 (2026-10-20)
+
+- [x] 현재 코드의 target/Main 참조, 예외·종료·독립 컨테이너 및 null 경계를 재검토한다.
+- [x] 버스트 후 내부 배열과 빈 ThreadLocal 잔존을 독립 계측·회귀 테스트로 재현한다.
+- [x] 수정 전 7개 회귀 중 5개 실패를 확인한다.
+- [x] 큰 관리 Map/idle Deque의 점진 축소, 종료 후 빈 저장소 교체, 일반 진입의 빈 ThreadLocal 제거를 구현한다.
+- [x] 전체 65개 통과 및 독립 리뷰를 확인한다.
+- [x] 최종 Java 17 clean verify, 기존 안전성 probe와 새 메모리 계측 probe를 검증하고 기술문서를 갱신한다.
+
+판단: target 누수와 최고 크기 배열 보관을 구분한다. 살아 있는 entry를 제거하지 않고 동일 락 아래 저장소만 재구성한다. 실제 객체 수나 강제 회수·생성 상한 정책은 변경하지 않는다.
+
+결과: JDK 17 clean verify 65/65, 기존 안전성 20개 확인 및 memory probe --check-compaction exit 0. 독립 리뷰 중요 지적 없음. 커밋·push 없음.
