@@ -6,7 +6,7 @@
 
 **Architecture:** 기존 http-payload-generator를 재사용하고 신규 독립 Maven 모듈에 컨텍스트, 저장소, 인자 구성, 로그 파싱, 프로세스 실행을 분리한다. stdout/stderr는 직접 파일로 기록하며 Closeable 컨텍스트가 모든 실행 자원을 소유한다.
 
-**Tech Stack:** Java 21, Maven, Netty 4.1.139.Final, JUnit 5, curl, JDK 로컬 HTTP/HTTPS 서버.
+**Tech Stack:** Java 17, Maven, Netty 4.1.139.Final, JUnit 5, curl, JDK 로컬 HTTP/HTTPS 서버. 초기 Java 21 구현 후 사용자 요청으로 기준 버전을 17로 변경했다.
 
 **Spec:** [project.md](project.md)
 

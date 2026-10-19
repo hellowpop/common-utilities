@@ -1,6 +1,6 @@
 # HTTP Payload Generator
 
-HTTP request/response 테스트용 dummy 본문과 Netty `HttpHeaders`를 생성하는 Java 21 라이브러리입니다.
+HTTP request/response 테스트용 dummy 본문과 Netty `HttpHeaders`를 생성하는 Java 17 라이브러리입니다.
 
 ## 빌드
 

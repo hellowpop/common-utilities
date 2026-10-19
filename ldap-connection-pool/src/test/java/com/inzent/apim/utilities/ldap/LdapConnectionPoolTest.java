@@ -56,18 +56,18 @@ class LdapConnectionPoolTest {
         try {
             f.pool.open(); f.pool.open();
             assertEquals(1, f.created.size());
-            assertEquals(1, f.created.getFirst().reads);
+            assertEquals(1, f.created.get(0).reads);
             LdapContext first = f.pool.borrow();
             assertEquals("cn=test", first.getNameInNamespace());
             first.close(); first.close();
-            assertEquals(0, f.created.getFirst().closes);
+            assertEquals(0, f.created.get(0).closes);
             assertThrows(NamingException.class, first::getNameInNamespace);
             LdapContext second = f.pool.borrow();
             assertNotSame(first, second);
             assertEquals(1, f.created.size());
             second.close();
         } finally { f.pool.dispose(); }
-        assertEquals(1, f.created.getFirst().closes);
+        assertEquals(1, f.created.get(0).closes);
     }
 
     @Test void runWithReturnsConnectionEvenWhenConsumerFails() throws Exception {
@@ -112,10 +112,10 @@ class LdapConnectionPoolTest {
         Fixture f = new Fixture(1, 1, 100);
         try {
             LdapContext first = f.pool.borrow();
-            f.created.getFirst().failRead = true;
+            f.created.get(0).failRead = true;
             assertThrows(CommunicationException.class, () -> first.getAttributes(""));
             first.close();
-            assertEquals(1, f.created.getFirst().closes);
+            assertEquals(1, f.created.get(0).closes);
             LdapContext second = f.pool.borrow();
             second.addToEnvironment(Context.SECURITY_PRINCIPAL, "other");
             second.close();
@@ -140,7 +140,7 @@ class LdapConnectionPoolTest {
 
     @Test void disposeContinuesAfterCloseFailure() throws Exception {
         Fixture f = new Fixture(2, 2, 100);
-        f.pool.open(); f.created.getFirst().failClose = true;
+        f.pool.open(); f.created.get(0).failClose = true;
         assertThrows(NamingException.class, f.pool::dispose);
         assertEquals(List.of(1, 1), f.created.stream().map(x -> x.closes).toList());
         f.pool.dispose();
@@ -156,9 +156,9 @@ class LdapConnectionPoolTest {
         props.setProperty(Context.PROVIDER_URL, "ldap://changed");
         try {
             pool.borrow().close();
-            assertEquals("ldap://example", received.getFirst().getProperty(Context.PROVIDER_URL));
-            assertFalse(received.getFirst().containsKey("ldap.pool.max"));
-            assertEquals("false", received.getFirst().getProperty("com.sun.jndi.ldap.connect.pool"));
+            assertEquals("ldap://example", received.get(0).getProperty(Context.PROVIDER_URL));
+            assertFalse(received.get(0).containsKey("ldap.pool.max"));
+            assertEquals("false", received.get(0).getProperty("com.sun.jndi.ldap.connect.pool"));
         } finally { pool.dispose(); }
     }
 
@@ -175,7 +175,7 @@ class LdapConnectionPoolTest {
         Fixture f = new Fixture(1, 0, 0);
         try {
             LdapContext parent = f.pool.borrow();
-            Fake child = new Fake(); f.created.getFirst().derived = child.context;
+            Fake child = new Fake(); f.created.get(0).derived = child.context;
             LdapContext derived = parent.newInstance(null);
             parent.close();
             assertEquals(1, child.closes);
@@ -184,7 +184,7 @@ class LdapConnectionPoolTest {
 
             LdapContext next = f.pool.borrow();
             CountDownLatch closed = new CountDownLatch(1);
-            f.created.getLast().derived = new NamingEnumeration<NameClassPair>() {
+            f.created.get(f.created.size() - 1).derived = new NamingEnumeration<NameClassPair>() {
                 public NameClassPair next() { return new NameClassPair("name", "class"); }
                 public boolean hasMore() { return true; }
                 public void close() { closed.countDown(); }
@@ -243,7 +243,7 @@ class LdapConnectionPoolTest {
             Fake child = new Fake();
             javax.naming.directory.SearchResult result = new javax.naming.directory.SearchResult(
                     "cn=child", child.context, new BasicAttributes());
-            f.created.getFirst().derived = new NamingEnumeration<Binding>() {
+            f.created.get(0).derived = new NamingEnumeration<Binding>() {
                 public Binding next() { return result; }
                 public boolean hasMore() { return true; }
                 public void close() { }
@@ -264,7 +264,7 @@ class LdapConnectionPoolTest {
         try {
             RuntimeException original = new RuntimeException("consumer");
             RuntimeException result = assertThrows(RuntimeException.class, () -> f.pool.runWith(ctx -> {
-                f.created.getFirst().failClose = true;
+                f.created.get(0).failClose = true;
                 try { ctx.setRequestControls(null); } catch (NamingException ex) { throw new AssertionError(ex); }
                 throw original;
             }));
@@ -278,7 +278,7 @@ class LdapConnectionPoolTest {
         Fixture f = new Fixture(1, 0, 0);
         try {
             LdapContext parent = f.pool.borrow();
-            f.created.getFirst().derived = new NamingEnumeration<NameClassPair>() {
+            f.created.get(0).derived = new NamingEnumeration<NameClassPair>() {
                 public NameClassPair next() { return null; }
                 public boolean hasMore() { return false; }
                 public void close() throws NamingException { throw new NamingException("enumeration close failed"); }
@@ -288,7 +288,7 @@ class LdapConnectionPoolTest {
             NamingEnumeration<NameClassPair> enumeration = parent.list("");
             assertThrows(NamingException.class, enumeration::close);
             parent.close();
-            assertEquals(1, f.created.getFirst().closes);
+            assertEquals(1, f.created.get(0).closes);
         } finally { f.pool.dispose(); }
     }
 
@@ -312,6 +312,6 @@ class LdapConnectionPoolTest {
             context.close(); pool.borrow().close();
             assertEquals(1, TestContextFactory.contexts.size());
         }
-        assertEquals(1, TestContextFactory.contexts.getFirst().closes);
+        assertEquals(1, TestContextFactory.contexts.get(0).closes);
     }
 }

@@ -1,6 +1,6 @@
 # LDAP Connection Pool 사용법
 
-Java 21 기반의 LDAP 연결 풀입니다. `Properties`로 LDAP 접속 정보와 풀 크기를 설정하고,
+Java 17 기반의 LDAP 연결 풀입니다. `Properties`로 LDAP 접속 정보와 풀 크기를 설정하고,
 `LdapContext` 프록시를 대여해 사용합니다. 실행 시 외부 라이브러리가 필요하지 않습니다.
 
 공개 클래스: `com.inzent.apim.utilities.ldap.LdapConnectionPool`
@@ -250,7 +250,7 @@ mvn clean verify
 ```
 
 결과 JAR: `target/ldap-connection-pool-1.0.0-SNAPSHOT.jar`.
-Java 21이 필요하며, 테스트는 대체 Context와 JNDI InitialContextFactory를 사용합니다.
+JDK 17 이상이 필요하며, 테스트는 대체 Context와 JNDI InitialContextFactory를 사용합니다.
 예제의 실제 인증·검색 실행에는 별도의 LDAP 서버와 위 샘플 엔트리가 필요합니다.
 
 구조 변경 및 메모리/NPE 분석은 [프로젝트 기술문서](../project.md)에 기록되어 있습니다.

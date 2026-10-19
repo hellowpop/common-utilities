@@ -4,7 +4,7 @@
 
 - 프로젝트 루트: `C:\Develop\codex-project\common-utilities`
 - 기술문서: `project.md`
-- Java: 21
+- Java: 17 (모든 모듈의 Maven compiler release 기준)
 - 클래스 패키지: `com.inzent.apim.utilities` 하위
 - 첫 번째 설계 대상: `object-recycle-container` 독립 유틸리티 모듈
 - Git 저장소: `https://github.com/hellowpop/common-utilities.git`
@@ -14,6 +14,24 @@
 - Git 제외 대상: Maven `target/`, IntelliJ `.idea/`, `*.iml`
 
 ## 구조 변경내역
+
+- 2026-10-19: 사용자 push 요청에 따라 5개 모듈의 Java 17 전환과 추가 안전성 보완을 develop에 커밋하여 origin/develop에 반영하도록 준비했다. push 전에 기술문서를 갱신하고 JDK 17.0.10 전체 195개 테스트 통과 기록 및 변경 파일 범위를 확인했다.
+
+- 2026-10-19: Java 17 전환 후 안전성 재분석. 재정의 가능한 Thread.getId를 이용한 소유자 오인을 약한 Thread 참조 동일성 검사로 수정하고, interrupt된 close의 작업 회수·본문/파일 종료 복합 오류 보존·실패한 spill writer 재시도 추적을 보강했다. curl/객체 재사용 모듈에 회귀 테스트 6개를 추가했다. 상세는 curl 실행기 resource-safety-review.md의 Java 17 재분석 기록에 정리한다.
+
+- 2026-10-19: 사용자 요청에 따라 5개 모듈의 기준을 Java 17로 통일했다. curl 실행기의 Thread builder/가상 스레드, 객체 재사용 컨테이너의 threadId, 테스트의 List getFirst/getLast 및 ExecutorService 자동 종료 구문을 Java 17 호환 API로 교체한다. 과거 Java 21 검증 기록은 이력으로 유지하고 현재 빌드 및 사용 문서는 Java 17로 갱신한다.
+
+### Java 17 전환 검증 (2026-10-19)
+
+- 모든 모듈의 `maven.compiler.release=17`. JDK 17.0.10과 Maven 3.9.11로 실제 컴파일·실행 검증했다.
+- HTTP Payload Generator `clean install` 43개, Curl HTTP Mock Executor `clean verify` 42개, Partial Input 13개, Object Recycle Container 58개, LDAP Connection Pool 33개: **총 189개 테스트, 실패/오류/건너뜀 0**.
+- 다섯 생성 JAR의 모든 클래스가 Java 17 major version 61이다. 라이브러리 공개 API와 기존 본문/자원 정리 계약을 유지한다.
+- 객체 재사용 컨테이너는 `WeakReference<Thread>`로 실제 소유 스레드의 동일성을 검사한다. Java 17에서 재정의 가능한 getId에 의존하지 않으며 강한 Thread 참조는 보관하지 않는다. 테스트의 ExecutorResource가 executor 종료와 interrupt 복원을 처리한다.
+- Object Recycle Container 예외 주입 테스트의 WARNING은 기존 의도된 진단이다. 독립 코드 리뷰에서 추가 중요 지적 없음. 이번 변경은 커밋/push하지 않았다.
+
+### 이전 변경 기록
+
+- 2026-10-19: Java 17 안전성 보완 최종 검증. 5개 모듈 clean verify 총 **195개 테스트(HTTP Payload Generator 43, curl 실행기 45, Partial Input 13, 객체 재사용 61, LDAP 33)** 통과. 독립 리뷰의 실패 spill writer 추적 누락을 재현·수정하고 재확인했다. 커밋/push는 수행하지 않았다.
 
 - 2026-10-19: 사용자 push 요청에 따라 curl 실행기 구현·메모리 누수/NPE 보완·회귀 테스트·기술문서를 develop에 커밋하여 origin/develop에 반영하도록 준비했다. 변경된 AGENTS.md 규칙과 사용자 추가 CallPatterns 사용 샘플을 포함하며, push 전에 기술문서를 갱신하고 실행기 clean verify를 재확인한다.
 
@@ -327,7 +345,7 @@ Path compactedPath = file.shrink(); // 원본 경로의 내용이 "12378"로 교
 2026-10-11 기준 아래 설계를 채택하여 독립 라이브러리로 구현하였다.
 기존 프록시 프로젝트와 별개이며 이 문서에 이 모듈의 구현·검증 기록을 유지한다.
 
-Java 21 환경에서 객체를 재사용하고, 호출 스레드가 빌린 객체를 다른 작업 스레드에서도
+Java 17 환경에서 객체를 재사용하고, 호출 스레드가 빌린 객체를 다른 작업 스레드에서도
 반환할 수 있는 독립 유틸리티를 만든다. 성공 기준은 객체의 중복 대여·중복 반환 방지,
 만료된 참조의 재사용 차단, 정상 반환 시 초기화, 누수 의심 자원의 탐지와 안전한 회수이다.
 객체 풀링의 성능 이점은 전제하지 않고 실제 객체 생성 비용과 경합을 측정한다.
@@ -391,7 +409,7 @@ common-utilities 프로젝트 아래에 독립 Maven 모듈을 추가하였다. 
 
 ```text
 object-recycle-container/
-  pom.xml                         Java 21, 일반 library JAR
+  pom.xml                         Java 17, 일반 library JAR
   src/main/java/com/inzent/apim/utilities/recycle/      공개 API 및 내부 구현
   src/test/java/com/inzent/apim/utilities/recycle/      수명·경쟁·장애 검증
 project.md                        이 문서에 설계와 변경내역 유지

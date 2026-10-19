@@ -2,7 +2,7 @@
 
 - 작성일: 2026-10-19
 - 상태: 구현 및 Windows 실제 curl 검증 완료.
-- 모듈: `curl-http-mock-executor` — Java 21 독립 Maven 라이브러리
+- 모듈: `curl-http-mock-executor` — Java 17 독립 Maven 라이브러리
 - Maven 좌표: `com.inzent.apim.utilities:curl-http-mock-executor:1.0.0-SNAPSHOT`
 - 신규 패키지: `com.inzent.apim.utilities.http.curl`
 
@@ -299,7 +299,7 @@ try (ExecuteContext context = ExecuteContext.builder()
 - 버전 확인 도중과 본 요청 도중 interrupt를 모두 복원한다. 프로세스를 회수하고 stdin 작업을 제한 시간 동안 기다리며 남은 작업도 컨텍스트가 추적한다.
 - 서버가 업로드를 조기 거절하더라도 curl 종료 코드가 0이고 최종 응답이 있으면 단순 stdin pipe 종료 때문에 완료 응답을 실패로 바꾸지 않는다. 본문 원본 읽기 오류는 별도로 실패 처리한다.
 - 컨텍스트는 역순으로 자원을 정리하여 공유 stdout을 참조하는 응답 스트림부터 닫는다. 정리 실패 시 나머지 정리를 계속하고 후속 close로 재시도한다.
-- Windows Java 21 및 실제 curl 환경에서 검증한다. Linux 런타임 검증은 이번 환경에서 수행하지 않는다.
+- 최초 구현은 Windows Java 21 및 실제 curl 환경에서 검증했다. 현재 Java 17 전환 검증은 아래에 별도 기록한다. Linux 런타임 검증은 이번 환경에서 수행하지 않는다.
 
 ### 최종 검증
 
@@ -319,3 +319,19 @@ try (ExecuteContext context = ExecuteContext.builder()
 - 추가 `ResourceSafetyTest` 12개: 실패 재현, 실제 프로세스 회수, 복합 오류/재시도, null 경계, 메모리 배열/조회 목록/훅/스레드/프로세스 참조 해제 확인.
 - 최종 `mvn -f curl-http-mock-executor/pom.xml clean verify`: **42개 테스트, 실패 0, 오류 0, 건너뜀 0, BUILD SUCCESS**, JAR 재생성 완료. 기존 실제 HTTP/HTTPS 30개를 포함한다.
 - 독립 리뷰에서 추가 구체적 자원 누수/NPE/락 문제 없음. 장기 heap/부하/다른 OS 검증을 수행했다는 의미는 아니다. 사용자 `CallPatterns.java`와 AGENTS.md 변경은 보존하고 커밋/push는 수행하지 않는다.
+
+## 15. Java 17 기준 변경 (2026-10-19)
+
+- 이 모듈과 의존하는 HTTP Payload Generator의 compiler release를 17로 변경했다. 저장소의 다른 세 모듈도 동일 기준으로 맞췄다.
+- stdin 스레드는 `new Thread(task, "curl-stdin")`와 `setDaemon(true)`로 생성한다. ThreadFactory 경계, 명시적 start, 프로세스 회수·interrupt·close 계약은 유지한다.
+- 테스트의 가상 스레드 executor는 일반 cached thread pool로 변경하고 기존 shutdownNow 정리를 유지한다. Thread builder와 List.getFirst를 Java 17 API로 교체했다.
+- 실제 JDK 17.0.10 / Maven 3.9.11 / Windows curl 8.21.0으로 `clean verify` 42개 테스트 통과. 생성 JAR의 모든 클래스 major version 61을 확인했다.
+- 독립 리뷰에서 Java 17 전환 관련 추가 중요 지적 없음. 이전 Java 21 실행 기록은 당시 검증 이력으로 유지한다.
+
+## 16. Java 17 안전성 재분석 (2026-10-19)
+
+- interrupt된 close에서도 2초 내 stdin 작업 회수를 시도하고 interrupt 상태를 복원한다. 완료된 작업 참조가 남지 않도록 했다.
+- BodyStore의 본문 처리/메모리 스냅샷/파일 종료 복합 오류에서 최초 원인을 보존한다. 종료가 실패한 출력 스트림은 pendingWriter로 추적하고 후속 close에서 재시도한다. 파일 삭제만으로 열린 핸들을 잃는 문제를 보완했다.
+- 내부 BodyFileFactory 경계로 파일 종료 실패를 재현했으며 공개 API는 유지한다. 독립 리뷰가 지적한 writer 참조 소실은 실패 테스트로 확인한 뒤 수정·재검토했다.
+- JDK 17.0.10의 최종 `clean verify`: **45개 테스트, 실패/오류/건너뜀 0**. 기존 null 입력·닫힌 스트림·부분 응답 검증을 포함한다. 새 내부 NPE는 별도로 재현되지 않았다.
+- 객체 재사용 모듈은 약한 Thread 참조로 소유자를 비교하고 61개 테스트가 통과했다. 다른 세 모듈까지 전체 195개 테스트 통과. 상세는 [resource-safety-review.md](resource-safety-review.md)의 Java 17 추가 분석에 정리한다.

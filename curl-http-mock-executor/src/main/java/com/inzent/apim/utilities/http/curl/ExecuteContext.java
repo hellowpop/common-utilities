@@ -89,13 +89,18 @@ public final class ExecuteContext implements Closeable {
             catch (Throwable e) { failure = Cleanup.merge(failure,e); }
         }
         if (inputWorker != null) {
+            boolean interrupted = Thread.interrupted();
             try {
                 inputWorker.interrupt();
-                inputWorker.join(2000);
+                long deadline = System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+                while (inputWorker.isAlive() && System.nanoTime() < deadline) {
+                    try { inputWorker.join(Math.max(1,java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline-System.nanoTime()))); }
+                    catch (InterruptedException e) { interrupted = true; }
+                }
                 if (inputWorker.isAlive()) failure = Cleanup.merge(failure,new IOException("Curl stdin worker is still running"));
                 else inputWorker = null;
-            } catch (InterruptedException e) { Thread.currentThread().interrupt(); failure = Cleanup.merge(failure,new IOException("Interrupted joining stdin worker",e)); }
-            catch (Throwable e) { failure = Cleanup.merge(failure,e); }
+            } catch (Throwable e) { failure = Cleanup.merge(failure,e); }
+            finally { if (interrupted) Thread.currentThread().interrupt(); }
         }
         for (var iterator = resources.listIterator(resources.size()); iterator.hasPrevious();) {
             try { iterator.previous().close(); iterator.remove(); }

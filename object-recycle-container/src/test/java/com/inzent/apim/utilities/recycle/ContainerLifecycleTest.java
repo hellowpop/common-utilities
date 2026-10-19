@@ -81,7 +81,7 @@ class ContainerLifecycleTest {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             clock.set(9); lease.touch(); clock.set(18); lease.touch();
             assertEquals(0, pool.patrol().detected()); clock.set(20); pool.patrol();
-            assertEquals(LeakEvent.Reason.BORROW_LIMIT, events.getFirst().reason()); lease.close(); sub.close();
+            assertEquals(LeakEvent.Reason.BORROW_LIMIT, events.get(0).reason()); lease.close(); sub.close();
         }
     }
 
@@ -125,12 +125,12 @@ class ContainerLifecycleTest {
         try (var logs = new Logs(); var pool = new Pool(cfg, event -> { events.add(event); event.forceClose(); }, clock)) {
             pool.start(); var oldSub = pool.borrowContainer(); var lease = oldSub.borrowObjectHolder();
             clock.set(10); assertEquals(1, pool.patrol().detected());
-            assertEquals(LeakEvent.Target.SUB, events.getFirst().target());
+            assertEquals(LeakEvent.Target.SUB, events.get(0).target());
             assertEquals(1, pool.destroyed.get()); assertFalse(lease.recycle());
             var newSub = pool.borrowContainer(); var current = newSub.borrowObjectHolder();
             assertThrows(IllegalStateException.class, oldSub::borrowObjectHolder);
             assertThrows(IllegalStateException.class, oldSub::patrol);
-            assertFalse(events.getFirst().forceClose());
+            assertFalse(events.get(0).forceClose());
             current.use(v -> v.append("current")); current.close(); oldSub.close(); newSub.close();
         }
     }
@@ -143,7 +143,7 @@ class ContainerLifecycleTest {
         try (var pool = new Pool(cfg, events::add, clock)) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             clock.set(9); sub.touch(); clock.set(10); sub.patrol();
-            assertEquals(1, events.size()); assertEquals(LeakEvent.Target.HOLDER, events.getFirst().target());
+            assertEquals(1, events.size()); assertEquals(LeakEvent.Target.HOLDER, events.get(0).target());
             lease.touch(); clock.set(18); assertEquals(0, pool.patrol().detected());
             clock.set(20); pool.patrol();
             assertTrue(events.stream().anyMatch(e -> e.target() == LeakEvent.Target.SUB
@@ -172,7 +172,7 @@ class ContainerLifecycleTest {
                 .holderIdleLimit(Duration.ofNanos(10)).captureBorrowStack(true).build();
         try (var logs = new Logs(); var pool = new Pool(cfg, events::add, clock)) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder(); clock.set(10); pool.patrol();
-            lease.touch(); var event = events.getFirst(); assertFalse(event.borrowStack().isEmpty());
+            lease.touch(); var event = events.get(0); assertFalse(event.borrowStack().isEmpty());
             assertTrue(event.forceClose()); assertFalse(event.forceClose()); assertFalse(lease.recycle());
             assertEquals(1, pool.destroyed.get()); sub.close();
         }
@@ -245,7 +245,7 @@ class ContainerLifecycleTest {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             sub.close(); sub.close(); lease.close();
             assertEquals(1, logs.messages.size());
-            assertTrue(logs.messages.getFirst().contains("borrow=1, recycle=0, difference=1, forced=0, outstanding=1, pending=0"));
+            assertTrue(logs.messages.get(0).contains("borrow=1, recycle=0, difference=1, forced=0, outstanding=1, pending=0"));
         }
         try (var logs = new Logs(); var pool = new Pool(config(1, 0, 1, 1))) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();

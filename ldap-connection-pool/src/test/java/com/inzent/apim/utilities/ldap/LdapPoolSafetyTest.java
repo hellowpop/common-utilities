@@ -50,7 +50,7 @@ class LdapPoolSafetyTest {
             LdapContext root = f.pool.borrow();
             Object lease = Proxy.getInvocationHandler(root);
             for (int i = 0; i < 500; i++) {
-                f.created.getFirst().derived = enumeration(new AtomicInteger());
+                f.created.get(0).derived = enumeration(new AtomicInteger());
                 root.list("").close();
             }
             assertEquals(0, ((Collection<?>) field(lease, "resources")).size());
@@ -66,7 +66,7 @@ class LdapPoolSafetyTest {
         try {
             LdapContext root = f.pool.borrow();
             AtomicInteger closes = new AtomicInteger();
-            f.created.getFirst().derived = enumeration(closes);
+            f.created.get(0).derived = enumeration(closes);
             NamingEnumeration<NameClassPair> enumeration = root.list("");
             assertFalse(enumeration.hasMore());
             assertEquals(1, closes.get());
@@ -84,7 +84,7 @@ class LdapPoolSafetyTest {
         var f = new LdapConnectionPoolTest.Fixture(1, 0, 0);
         try {
             LdapContext root = f.pool.borrow();
-            var child = new LdapConnectionPoolTest.Fake(); f.created.getFirst().derived = child.context;
+            var child = new LdapConnectionPoolTest.Fake(); f.created.get(0).derived = child.context;
             LdapContext one = root.newInstance(null), two = root.newInstance(null);
             assertSame(one, two);
             one.close(); two.close(); root.close();
@@ -96,7 +96,7 @@ class LdapPoolSafetyTest {
         var f = new LdapConnectionPoolTest.Fixture(1, 0, 0);
         try {
             LdapContext root = f.pool.borrow();
-            f.created.getFirst().derived = enumeration(new AtomicInteger());
+            f.created.get(0).derived = enumeration(new AtomicInteger());
             Iterator<NameClassPair> iterator = root.list("").asIterator();
             root.close();
             assertThrows(IllegalStateException.class, iterator::hasNext);
@@ -143,7 +143,7 @@ class LdapPoolSafetyTest {
         AssertionError failure = new AssertionError("close failure");
         try {
             LdapContext root = f.pool.borrow();
-            f.created.getFirst().derived = new NamingEnumeration<NameClassPair>() {
+            f.created.get(0).derived = new NamingEnumeration<NameClassPair>() {
                 public NameClassPair next() { return null; }
                 public boolean hasMore() { return false; }
                 public void close() { throw failure; }
@@ -153,7 +153,7 @@ class LdapPoolSafetyTest {
             NamingEnumeration<NameClassPair> child = root.list("");
             Object rootHandler = Proxy.getInvocationHandler(root), childHandler = Proxy.getInvocationHandler(child);
             assertSame(failure, assertThrows(AssertionError.class, f.pool::dispose));
-            assertEquals(1, f.created.getFirst().closes);
+            assertEquals(1, f.created.get(0).closes);
             assertNull(field(rootHandler, "entry")); assertNull(field(rootHandler, "owner"));
             assertNull(field(rootHandler, "resources"));
             assertNull(field(childHandler, "target")); assertNull(field(childHandler, "lease"));
@@ -167,10 +167,10 @@ class LdapPoolSafetyTest {
         var f = new LdapConnectionPoolTest.Fixture(1, 0, 0);
         try {
             LdapContext root = f.pool.borrow();
-            f.created.getFirst().derived = f.created.getFirst().context;
+            f.created.get(0).derived = f.created.get(0).context;
             root.newInstance(null);
             root.close();
-            assertEquals(1, f.created.getFirst().closes);
+            assertEquals(1, f.created.get(0).closes);
         } finally { f.pool.dispose(); }
     }
 
@@ -179,8 +179,8 @@ class LdapPoolSafetyTest {
         try {
             LdapContext root = f.pool.borrow();
             var one = new LdapConnectionPoolTest.Fake();
-            f.created.getFirst().derived = one.context; root.newInstance(null);
-            f.created.getFirst().derived = new NamingEnumeration<NameClassPair>() {
+            f.created.get(0).derived = one.context; root.newInstance(null);
+            f.created.get(0).derived = new NamingEnumeration<NameClassPair>() {
                 public NameClassPair next() { return null; }
                 public boolean hasMore() { return true; }
                 public void close() throws NamingException { root.close(); }
@@ -189,7 +189,7 @@ class LdapPoolSafetyTest {
             };
             root.list(""); root.close();
             assertEquals(1, one.closes);
-            assertEquals(1, f.created.getFirst().closes);
+            assertEquals(1, f.created.get(0).closes);
         } finally { f.pool.dispose(); }
     }
 
@@ -252,7 +252,7 @@ class LdapPoolSafetyTest {
                     call.get(3, TimeUnit.SECONDS);
                     returned.get(3, TimeUnit.SECONDS);
                     disposed.get(3, TimeUnit.SECONDS);
-                    assertEquals(1, f.created.getFirst().closes);
+                    assertEquals(1, f.created.get(0).closes);
                 } finally { f.pool.dispose(); }
             }
         } finally { executor.shutdownNow(); }
@@ -263,7 +263,7 @@ class LdapPoolSafetyTest {
         try {
             LdapContext root = f.pool.borrow();
             AtomicInteger closes = new AtomicInteger();
-            f.created.getFirst().derived = enumeration(closes);
+            f.created.get(0).derived = enumeration(closes);
             NamingEnumeration<NameClassPair> results = root.list("");
             assertFalse(results.hasMoreElements());
             assertNull(field(Proxy.getInvocationHandler(results), "target"));
@@ -280,7 +280,7 @@ class LdapPoolSafetyTest {
             Attribute provider = new BasicAttribute("cn", "name");
             Attributes original = new BasicAttributes(); original.put(provider);
             var result = new javax.naming.directory.SearchResult("cn=name", null, original);
-            f.created.getFirst().derived = new NamingEnumeration<NameClassPair>() {
+            f.created.get(0).derived = new NamingEnumeration<NameClassPair>() {
                 public NameClassPair next() { return result; }
                 public boolean hasMore() { return true; }
                 public void close() { }
@@ -323,7 +323,7 @@ class LdapPoolSafetyTest {
                         throw failure;
                     });
             var result = new javax.naming.directory.SearchResult("child", child.context, attributes);
-            f.created.getFirst().derived = new NamingEnumeration<NameClassPair>() {
+            f.created.get(0).derived = new NamingEnumeration<NameClassPair>() {
                 public NameClassPair next() { return result; }
                 public boolean hasMore() { return true; }
                 public void close() { }
@@ -349,7 +349,7 @@ class LdapPoolSafetyTest {
                 public javax.net.ssl.SSLSession negotiate(javax.net.ssl.SSLSocketFactory factory) { return null; }
                 public void close() { closes.incrementAndGet(); }
             };
-            f.created.getFirst().derived = tls;
+            f.created.get(0).derived = tls;
             var returned = (javax.naming.ldap.StartTlsResponse) root.extendedOperation(new javax.naming.ldap.StartTlsRequest());
             assertNotSame(tls, returned);
             returned.setHostnameVerifier(null);

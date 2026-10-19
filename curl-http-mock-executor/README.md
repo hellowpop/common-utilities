@@ -1,10 +1,12 @@
 # Curl HTTP Mock Executor
 
-Java 21 라이브러리로 더미 HTTP 요청을 실제 curl 프로세스에서 실행하고, 요청/응답과 실행 단계를 `ExecuteContext`에 기록합니다. HTTP/1.1 단일 요청을 실행하며 응답은 대상 서버의 실제 응답입니다.
+Java 17 라이브러리로 더미 HTTP 요청을 실제 curl 프로세스에서 실행하고, 요청/응답과 실행 단계를 `ExecuteContext`에 기록합니다. HTTP/1.1 단일 요청을 실행하며 응답은 대상 서버의 실제 응답입니다.
 
 ## 빌드
 
 저장소 루트에서 기존 생성기를 먼저 설치한 뒤 실행기 모듈을 빌드합니다.
+
+JDK 17 이상을 사용합니다. Maven의 `maven.compiler.release`는 17이며, 기존에 Java 21로 설치한 생성기가 있으면 아래 install 명령으로 다시 빌드합니다. Java 17에서도 일반 daemon 스레드로 stdin 공급을 처리하며 가상 스레드를 요구하지 않습니다.
 
 ```powershell
 mvn -f http-payload-generator/pom.xml install
@@ -168,5 +170,7 @@ close는 IOException을 선언합니다. 한 자원 정리에 실패해도 나�
 정리 중 RuntimeException/Error도 나머지 자원 정리를 마친 뒤 원래 타입으로 전달합니다. 닫힌 조회 스트림의 read/reset은 IOException이며 mark는 무동작, markSupported는 false입니다. URL 미지정 실행은 VALIDATE 단계의 IllegalArgumentException으로 기록하고, 명시적인 null API 인자는 경계에서 즉시 거부합니다.
 
 메모리 누수·NPE 분석, 재현과 보완 범위는 [resource-safety-review.md](resource-safety-review.md)에 정리했습니다. 컨텍스트/예외 메타데이터 보존과 호출자 소유 참조에 대한 한계도 포함합니다.
+
+Java 17에서도 close 호출 스레드가 이미 interrupt되어 있으면 제한 시간 내 작업 회수를 시도한 뒤 interrupt 상태를 복원합니다. spill 출력의 종료가 실패하면 해당 스트림도 추적하여 다음 close에서 재시도합니다. 본문 처리 오류와 종료 오류가 함께 발생하면 최초 원인을 유지합니다.
 
 설계와 구현 내역은 [project.md](project.md), 작업 계획과 검증 기록은 [implementation-plan.md](implementation-plan.md)를 참고하세요.

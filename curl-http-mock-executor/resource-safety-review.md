@@ -46,3 +46,18 @@
 `ResourceSafetyTest`는 닫힌 reader mark/reset, 연속 reader 정리 실패, null 입력과 필수 URL, 메모리/자원 목록 참조 해제, 스레드 start 실패 시 curl 회수, 프로세스 스트림 Error, interrupt 실패 및 정리 재시도를 검증한다. 기존 테스트는 실제 curl timeout/interrupt/부분 응답/대용량 본문/헤더 복사/HTTPS 검증을 계속 확인한다.
 
 최종 실행 결과는 [project.md](project.md)의 안전성 보완 검증 기록에 정리한다.
+
+## Java 17 전환 후 재분석 및 추가 보완 (2026-10-19)
+
+Java 17.0.10에서 기존 null 경계·닫힌 스트림·실행 실패 검증을 재실행하고, 다음 실패 경로를 추가로 재현했다.
+
+| 항목 | 재현 결과 | 보완 |
+|---|---|---|
+| J17-01 / 작업 참조 잔존 | 호출 스레드가 이미 interrupt된 상태에서 close하면 join이 즉시 중단되어 회수 가능한 stdin 작업도 참조가 남는다. | 최대 2초 정리 구간에서 interrupt를 기록하면서 join을 계속하고 완료 후 interrupt 상태를 복원한다. 종료된 작업 참조를 해제한다. |
+| J17-02 / 최초 오류 소실 | 본문 읽기와 spill 파일 close가 함께 실패하면 close 오류가 최초 읽기 오류를 덮어쓴다. | 읽기/메모리 스냅샷/출력 종료 오류를 순서대로 병합한다. 본문 처리 실패 시에도 파일 종료를 항상 시도하고 후속 오류는 suppressed로 보존한다. |
+| J17-03 / 실제 파일 핸들 잔존 | spill writer의 close가 하위 스트림을 닫기 전에 실패하면 지역 변수에만 있던 출력 스트림을 잃어, 파일 삭제 후에도 열린 핸들이 남을 수 있다. | pendingWriter 필드로 실패한 출력을 추적하고 BodyStore.close에서 재시도한다. 성공한 close 뒤에만 참조를 해제한다. 독립 리뷰 및 오류 주입 테스트로 재현했다. |
+| J17-04 / 소유 스레드 경계 | 객체 재사용 모듈에서 Java 17의 재정의 가능한 Thread.getId를 동일성 검사에 사용해 다른 스레드가 소유자를 가장하거나 실제 소유자가 거부될 수 있다. | SubState는 WeakReference<Thread>로 실제 Thread 객체를 비교한다. 강한 Thread 참조를 보관하지 않으며 worker 반환 경로도 같은 기준을 사용한다. |
+
+추가 회귀 테스트는 curl ResourceSafetyTest 3개와 객체 재사용 Java17SafetyTest 3개다. 이번 재분석에서 별도의 새 내부 NPE는 재현되지 않았으며, 기존 null 입력·미수신 Optional·닫힌 reader 검증은 계속 유지한다. 약한 참조의 실제 GC 시점이나 장기 heap 사용량을 검증했다는 의미는 아니다.
+
+최종 JDK 17.0.10 clean verify 결과: curl 45개, 객체 재사용 61개, HTTP Payload Generator 43개, Partial Input 13개, LDAP 33개, **총 195개 통과(실패/오류/건너뜀 0)**. 독립 리뷰에서 writer 재시도 보완을 재확인했고 추가 지적은 없었다. 기존 Java 17 전환 변경과 사용자 샘플은 유지하며 커밋/push는 수행하지 않았다.

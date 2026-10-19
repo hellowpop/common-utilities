@@ -36,7 +36,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
     }
     static final class SubState<T> {
         final long id;
-        final long ownerThreadId;
+        final WeakReference<Thread> ownerThread = new WeakReference<>(Thread.currentThread());
         final SubContainer<T> handle;
         final long borrowedAt;
         final List<StackTraceElement> borrowStack;
@@ -46,7 +46,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
         boolean force;
         SubLife life = SubLife.PREPARING;
         SubState(long id, SubContainer<T> handle, long now, List<StackTraceElement> borrowStack) {
-            this.id = id; this.handle = handle; ownerThreadId = Thread.currentThread().threadId();
+            this.id = id; this.handle = handle;
             borrowedAt = lastUsedAt = now; this.borrowStack = borrowStack;
         }
     }
@@ -435,7 +435,7 @@ public abstract class MainContainer<T> implements AutoCloseable {
             slot.cleaning = false; slot.lease = null;
             if (owner != null && owner.life == SubLife.ACTIVE) {
                 Token token = new Token(slot.id, slot.generation);
-                if (Thread.currentThread().threadId() == owner.ownerThreadId) {
+                if (owner.ownerThread.get() == Thread.currentThread()) {
                     slot.life = SlotLife.LOCAL; owner.handle.stack.push(token);
                 } else { slot.life = SlotLife.RETURNED; owner.returns.addLast(token); }
             } else {

@@ -30,7 +30,7 @@ public class SubContainer<T> implements AutoCloseable {
     void checkOwner() {
         MainContainer<T> main = main();
         if (main != null) main.checkEntry();
-        if (state == null || Thread.currentThread().threadId() != state.ownerThreadId)
+        if (state == null || state.ownerThread.get() != Thread.currentThread())
             throw new IllegalStateException("Sub operations require the borrowing thread");
     }
     public HolderLease<T> borrowObjectHolder() { checkOwner(); return requireMain().borrowHolder(this); }

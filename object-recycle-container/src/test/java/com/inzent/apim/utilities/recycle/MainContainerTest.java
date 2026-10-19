@@ -70,7 +70,7 @@ class MainContainerTest {
     }
 
     @Test void workerReturnUsesInboxAndRejectsDirectSubCalls() throws Exception {
-        try (var pool = new Pool(config(1, 0, 1, 1)); var executor = Executors.newSingleThreadExecutor()) {
+        try (var pool = new Pool(config(1, 0, 1, 1)); var executor = ExecutorResource.singleThread()) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             executor.submit(() -> {
                 assertThrows(IllegalStateException.class, sub::borrowObjectHolder);
@@ -105,7 +105,7 @@ class MainContainerTest {
             old.touch(); clock.set(19); assertEquals(1, pool.patrol().detected());
             assertEquals(0, pool.destroyed.get());
             assertTrue(old.recycle()); var next = sub.borrowObjectHolder();
-            assertFalse(events.getFirst().forceClose()); next.use(v -> v.append("valid"));
+            assertFalse(events.get(0).forceClose()); next.use(v -> v.append("valid"));
             next.close(); sub.close();
         }
     }
@@ -114,7 +114,7 @@ class MainContainerTest {
         var clock = new AtomicLong(); var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
         var cfg = ContainerConfig.builder().initial(1).min(0).max(1).initialObjectsPerSub(1)
                 .holderBorrowLimit(Duration.ofNanos(10)).build();
-        try (var pool = new Pool(cfg, null, clock); var executor = Executors.newSingleThreadExecutor()) {
+        try (var pool = new Pool(cfg, null, clock); var executor = ExecutorResource.singleThread()) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             var task = executor.submit(() -> lease.use(v -> { entered.countDown(); await(release); }));
             try {
@@ -131,7 +131,7 @@ class MainContainerTest {
 
     @Test void returnDuringUseCleansOnlyAfterUseAndConcurrentUseIsRejected() throws Exception {
         var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
-        try (var pool = new Pool(config(1, 0, 1, 1)); var executor = Executors.newSingleThreadExecutor()) {
+        try (var pool = new Pool(config(1, 0, 1, 1)); var executor = ExecutorResource.singleThread()) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             var task = executor.submit(() -> lease.use(v -> { entered.countDown(); await(release); }));
             try {
@@ -179,7 +179,7 @@ class MainContainerTest {
     }
 
     @Test void mainCanRevokeSubFromAnotherThreadWithoutAccessingItsStack() throws Exception {
-        try (var pool = new Pool(config(1, 0, 1, 1)); var executor = Executors.newSingleThreadExecutor()) {
+        try (var pool = new Pool(config(1, 0, 1, 1)); var executor = ExecutorResource.singleThread()) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             assertTrue(executor.submit(() -> pool.recycleContainer(sub)).get(5, TimeUnit.SECONDS));
             assertFalse(lease.recycle()); assertThrows(IllegalStateException.class, sub::borrowObjectHolder);

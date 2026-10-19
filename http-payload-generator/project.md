@@ -2,7 +2,9 @@
 
 ## 목적과 계약
 
-Java 21 독립 Maven 모듈. 모든 클래스는 `com.inzent.apim.utilities.http.payload`에 둔다.
+Java 17 독립 Maven 모듈. 모든 클래스는 `com.inzent.apim.utilities.http.payload`에 둔다.
+
+2026-10-19: Java 기준을 21에서 17로 변경했다. JDK 17.0.10에서 `clean install` 43개 테스트를 통과하고 생성 JAR의 모든 클래스 major version 61을 확인했다. 아래의 JDK 21 검증 기록은 최초 구현 시점의 이력이다.
 Netty `HttpHeaders`와 payload `InputStream`을 동기 콜백에 전달한다.
 `ContentType.generate(long contentLength, long blockSize, Consumer<InputStream>)`로 원문만 생성할 수도 있다.
 `HttpPayloadGenerator.generate(boolean chunked, ContentType contentType, ContentEncoding encoding, long contentLength, long blockSize, BiConsumer<HttpHeaders, InputStream>)`를 공개한다.

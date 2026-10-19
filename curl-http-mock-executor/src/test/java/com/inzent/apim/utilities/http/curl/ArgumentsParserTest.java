@@ -45,7 +45,7 @@ class ArgumentsParserTest {
         var record = new ExecutionRecord();
         CurlLogParser.parse(log, record);
         assertEquals(1, record.request().sentHeaders().size());
-        assertEquals("test", record.request().sentHeaders().getFirst().get(HttpHeaderNames.HOST));
+        assertEquals("test", record.request().sentHeaders().get(0).get(HttpHeaderNames.HOST));
         assertEquals(2, record.response().headerBlocks().size());
         assertEquals(201, record.response().status().orElseThrow().code());
         assertEquals(List.of("a=1", "b=2"), record.response().headers().getAll(HttpHeaderNames.SET_COOKIE));

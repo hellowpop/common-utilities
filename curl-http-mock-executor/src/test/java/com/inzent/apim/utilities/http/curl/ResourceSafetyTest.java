@@ -200,6 +200,77 @@ class ResourceSafetyTest {
         }
     }
 
+    @Test void interruptedCloseStillJoinsWorkerAndRestoresInterrupt() throws Exception {
+        ExecuteContext context = context().build();
+        CountDownLatch ready = new CountDownLatch(1), interrupted = new CountDownLatch(1), release = new CountDownLatch(1);
+        Thread worker = new Thread(() -> {
+            ready.countDown();
+            try { release.await(); } catch (InterruptedException expected) {
+                interrupted.countDown();
+                try { release.await(); } catch (InterruptedException ignored) { }
+            }
+        });
+        AtomicReference<Throwable> failure = new AtomicReference<>(); AtomicBoolean restored = new AtomicBoolean();
+        Thread closer = new Thread(() -> {
+            Thread.currentThread().interrupt();
+            try { context.close(); } catch (Throwable e) { failure.set(e); }
+            restored.set(Thread.currentThread().isInterrupted());
+        });
+        worker.start(); assertTrue(ready.await(5,TimeUnit.SECONDS)); context.inputWorker(worker); closer.start();
+        try {
+            assertTrue(interrupted.await(5,TimeUnit.SECONDS));
+            long deadline = System.nanoTime()+TimeUnit.SECONDS.toNanos(2);
+            while (closer.isAlive() && closer.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < deadline)
+                java.util.concurrent.locks.LockSupport.parkNanos(100_000);
+            release.countDown(); closer.join(5000); worker.join(5000);
+            assertFalse(closer.isAlive()); assertFalse(worker.isAlive());
+            assertNull(failure.get()); assertTrue(restored.get());
+            assertNull(field(ExecuteContext.class,"inputWorker").get(context));
+        } finally { release.countDown(); worker.interrupt(); closer.join(5000); worker.join(5000); context.close(); }
+    }
+
+    @Test void bodyReadFailureSurvivesSimultaneousSpillCloseFailure() throws Exception {
+        IOException sourceFailure = new IOException("source failed"), closeFailure = new IOException("spill close failed");
+        AtomicBoolean diskClosed = new AtomicBoolean();
+        try (BodyStore body = new BodyStore(temp,path -> new FilterOutputStream(new BufferedOutputStream(Files.newOutputStream(path))) {
+            @Override public void close() throws IOException { super.close(); if (diskClosed.compareAndSet(false,true)) throw closeFailure; }
+        })) {
+            InputStream source = new InputStream() {
+                private int remaining = 1048577;
+                @Override public int read() throws IOException { throw new UnsupportedOperationException(); }
+                @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+                    if (remaining == 0) throw sourceFailure;
+                    int count = Math.min(remaining,length); Arrays.fill(buffer,offset,offset+count,(byte)1); remaining -= count; return count;
+                }
+            };
+            IOException actual = assertThrows(IOException.class, () -> body.copyFrom(source));
+            assertSame(sourceFailure,actual);
+            assertArrayEquals(new Throwable[]{closeFailure},actual.getSuppressed());
+            assertTrue(diskClosed.get());
+        }
+        try (var files = Files.list(temp)) { assertEquals(0,files.count()); }
+    }
+
+    @Test void failedSpillWriterCloseIsRetainedForContextCleanupRetry() throws Exception {
+        IOException closeFailure = new IOException("close before release");
+        AtomicInteger closes = new AtomicInteger(); AtomicReference<OutputStream> stream = new AtomicReference<>();
+        BodyStore body = new BodyStore(temp,path -> {
+            OutputStream output = new BufferedOutputStream(Files.newOutputStream(path)) {
+                @Override public void close() throws IOException {
+                    if (closes.incrementAndGet() == 1) throw closeFailure;
+                    super.close();
+                }
+            };
+            stream.set(output); return output;
+        });
+        try {
+            assertSame(closeFailure,assertThrows(IOException.class, () -> body.copyFrom(new ByteArrayInputStream(new byte[1048577]))));
+            body.close();
+            assertEquals(2,closes.get());
+            try (var files = Files.list(temp)) { assertEquals(0,files.count()); }
+        } finally { if (stream.get() != null) stream.get().close(); body.close(); }
+    }
+
     ExecuteContext.Builder context() {
         return ExecuteContext.builder().url(URI.create("http://127.0.0.1/"))
             .configure(ExecuteConfigure.builder().temporaryDirectory(temp).build());

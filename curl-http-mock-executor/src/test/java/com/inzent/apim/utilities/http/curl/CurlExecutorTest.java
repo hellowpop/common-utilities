@@ -26,7 +26,7 @@ class CurlExecutorTest {
 
     @BeforeEach void startServer() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
-        workers = Executors.newVirtualThreadPerTaskExecutor(); server.setExecutor(workers);
+        workers = Executors.newCachedThreadPool(); server.setExecutor(workers);
         server.createContext("/", exchange -> {
             try {
                 receivedHeaders.set(exchange.getRequestHeaders());
@@ -224,10 +224,11 @@ class CurlExecutorTest {
         });
         var c = context("/interrupt").build();
         AtomicBoolean interrupted = new AtomicBoolean(); AtomicReference<Throwable> failure = new AtomicReference<>();
-        Thread worker = Thread.ofPlatform().start(() -> {
+        Thread worker = new Thread(() -> {
             try { new CurlHttpMockExecutor().handle(c); }
             catch (Throwable e) { failure.set(e); interrupted.set(Thread.currentThread().isInterrupted()); }
         });
+        worker.start();
         try {
             assertTrue(entered.await(5,TimeUnit.SECONDS)); worker.interrupt(); worker.join(5000);
             assertFalse(worker.isAlive()); assertTrue(interrupted.get());
@@ -252,12 +253,12 @@ class CurlExecutorTest {
         Assumptions.assumeTrue(Files.isExecutable(executable));
         try (var c = context("/").configure(ExecuteConfigure.builder().curlExecutable(executable).temporaryDirectory(temp).build()).build()) {
             AtomicBoolean restored = new AtomicBoolean();
-            Thread worker = Thread.ofPlatform().start(() -> {
+            Thread worker = new Thread(() -> {
                 Thread.currentThread().interrupt();
                 try { new CurlHttpMockExecutor().handle(c); } catch (CurlExecutionException expected) { }
                 restored.set(Thread.currentThread().isInterrupted());
             });
-            worker.join(6000); assertFalse(worker.isAlive()); assertTrue(restored.get());
+            worker.start(); worker.join(6000); assertFalse(worker.isAlive()); assertTrue(restored.get());
         }
     }
 
@@ -265,14 +266,14 @@ class CurlExecutorTest {
         try (var c = context("/").requestHeader("X-Empty", "").build()) {
             new CurlHttpMockExecutor().handle(c);
             assertEquals("",receivedHeaders.get().getFirst("X-Empty"));
-            assertEquals("",c.record().request().sentHeaders().getFirst().get("X-Empty"));
+            assertEquals("",c.record().request().sentHeaders().get(0).get("X-Empty"));
         }
     }
 
     @Test void colonInRequestTargetDoesNotLoseSentHeaders() throws Exception {
         try (var c = context("/urn:123").requestHeader("X-Test", "present").build()) {
             new CurlHttpMockExecutor().handle(c);
-            assertEquals("present",c.record().request().sentHeaders().getFirst().get("X-Test"));
+            assertEquals("present",c.record().request().sentHeaders().get(0).get("X-Test"));
         }
     }
 

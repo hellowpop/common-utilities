@@ -21,7 +21,7 @@ class ContainerConcurrencyTest {
                 }
                 return new ObjectHolder<>(new StringBuilder());
             }
-        }; var executor = Executors.newSingleThreadExecutor()) {
+        }; var executor = ExecutorResource.singleThread()) {
             pool.start(); var original = pool.borrowContainer(); original.borrowObjectHolder(); original.borrowObjectHolder();
             var revoked = executor.submit(() -> pool.recycleContainer(original));
             SubContainer<StringBuilder> currentSub;
@@ -42,7 +42,7 @@ class ContainerConcurrencyTest {
         var originalSub = new AtomicReference<SubContainer<StringBuilder>>();
         var ready = new CountDownLatch(1); var allocate = new CountDownLatch(1);
         var paused = new AtomicBoolean();
-        try (var pool = new Pool(config(1, 0, 1, 0)); var executor = Executors.newSingleThreadExecutor()) {
+        try (var pool = new Pool(config(1, 0, 1, 0)); var executor = ExecutorResource.singleThread()) {
             // Pause after allocation's reservation transaction, without adding test hooks to production.
             var field = MainContainer.class.getDeclaredField("lock"); field.setAccessible(true);
             field.set(pool, new ReentrantLock() {
@@ -84,7 +84,7 @@ class ContainerConcurrencyTest {
             @Override protected ObjectHolder<StringBuilder> createNewHolder() {
                 entered.countDown(); await(release); return super.createNewHolder();
             }
-        }; var executor = Executors.newSingleThreadExecutor()) {
+        }; var executor = ExecutorResource.singleThread()) {
             pool.start(); var task = executor.submit(pool::borrowContainer);
             try {
                 assertTrue(entered.await(5, TimeUnit.SECONDS));
@@ -104,7 +104,7 @@ class ContainerConcurrencyTest {
             @Override protected ObjectHolder<StringBuilder> createNewHolder() {
                 entered.countDown(); await(release); return super.createNewHolder();
             }
-        }; var executor = Executors.newSingleThreadExecutor()) {
+        }; var executor = ExecutorResource.singleThread()) {
             var task = executor.submit(pool::start);
             try {
                 assertTrue(entered.await(5, TimeUnit.SECONDS));
@@ -120,7 +120,7 @@ class ContainerConcurrencyTest {
     @Test void mainCloseDuringUseReturnsBeforeCallbackAndDefersDestroy() throws Exception {
         var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
         try (var logs = new ContainerLifecycleTest.Logs(); var pool = new Pool(config(1, 0, 1, 1));
-             var executor = Executors.newSingleThreadExecutor()) {
+             var executor = ExecutorResource.singleThread()) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             var task = executor.submit(() -> lease.use(v -> { entered.countDown(); await(release); }));
             try {
@@ -134,7 +134,7 @@ class ContainerConcurrencyTest {
 
     @Test void subNormalCloseAfterAcceptedReturnWaitsForUseThenReturnsToMain() throws Exception {
         var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
-        try (var pool = new Pool(config(1, 0, 1, 1)); var executor = Executors.newSingleThreadExecutor()) {
+        try (var pool = new Pool(config(1, 0, 1, 1)); var executor = ExecutorResource.singleThread()) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             var task = executor.submit(() -> lease.use(v -> { entered.countDown(); await(release); }));
             try {
@@ -159,7 +159,7 @@ class ContainerConcurrencyTest {
             @Override protected void onDestroy(ObjectHolder<StringBuilder> holder) {
                 if (recyclingNow.get()) overlap.set(true); super.onDestroy(holder);
             }
-        }; var executor = Executors.newSingleThreadExecutor()) {
+        }; var executor = ExecutorResource.singleThread()) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             var task = executor.submit(lease::recycle);
             try {
@@ -176,7 +176,7 @@ class ContainerConcurrencyTest {
         var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
         var cfg = ContainerConfig.builder().initial(1).min(1).max(1).initialObjectsPerSub(1).maxSubContainers(1).build();
         try (var logs = new ContainerLifecycleTest.Logs(); var pool = new Pool(cfg);
-             var executor = Executors.newSingleThreadExecutor()) {
+             var executor = ExecutorResource.singleThread()) {
             pool.start(); var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder();
             var task = executor.submit(() -> lease.use(v -> { entered.countDown(); await(release); }));
             try {
@@ -196,7 +196,7 @@ class ContainerConcurrencyTest {
             @Override protected ObjectHolder<StringBuilder> createNewHolder() {
                 entered.countDown(); await(release); return super.createNewHolder();
             }
-        }; var executor = Executors.newFixedThreadPool(2)) {
+        }; var executor = ExecutorResource.fixedThreads(2)) {
             pool.start(); var tasks = new ArrayList<Future<?>>();
             for (int i = 0; i < 2; i++) tasks.add(executor.submit(() -> {
                 try (var sub = pool.borrowContainer()) { sub.borrowObjectHolder().close(); }
@@ -219,7 +219,7 @@ class ContainerConcurrencyTest {
                 assertThrows(IllegalStateException.class, this::stats);
                 entered.countDown(); await(release); return super.createNewHolder();
             }
-        }; var executor = Executors.newSingleThreadExecutor()) {
+        }; var executor = ExecutorResource.singleThread()) {
             pool.start(); var task = executor.submit(() -> { try (var sub = pool.borrowContainer()) {} });
             try {
                 assertTrue(entered.await(5, TimeUnit.SECONDS)); assertEquals(1, pool.stats().creating());
@@ -237,7 +237,7 @@ class ContainerConcurrencyTest {
                     @Override protected void onBorrow() { entered.countDown(); await(release); }
                 };
             }
-        }; var executor = Executors.newSingleThreadExecutor()) {
+        }; var executor = ExecutorResource.singleThread()) {
             pool.start(); var task = executor.submit(pool::borrowContainer);
             try { assertTrue(entered.await(5, TimeUnit.SECONDS)); pool.close(); }
             finally { release.countDown(); }
@@ -253,7 +253,7 @@ class ContainerConcurrencyTest {
                 .holderBorrowLimit(Duration.ofNanos(10)).build();
         try (var logs = new ContainerLifecycleTest.Logs(); var pool = new Pool(cfg, event -> {
             eventRef.set(event); entered.countDown(); await(release);
-        }, clock); var executor = Executors.newSingleThreadExecutor()) {
+        }, clock); var executor = ExecutorResource.singleThread()) {
             pool.start(); var sub = pool.borrowContainer(); sub.borrowObjectHolder(); clock.set(10);
             var task = executor.submit(() -> { return pool.patrol(); });
             try {
@@ -286,7 +286,7 @@ class ContainerConcurrencyTest {
 
     @Test void racingWorkerReturnWithSubClosePreservesAccountingAndCleansOnce() throws Exception {
         try (var logs = new ContainerLifecycleTest.Logs(); var pool = new Pool(config(1, 0, 1, 1));
-             var executor = Executors.newSingleThreadExecutor()) {
+             var executor = ExecutorResource.singleThread()) {
             pool.start();
             for (int i = 0; i < 100; i++) {
                 var sub = pool.borrowContainer(); var lease = sub.borrowObjectHolder(); var barrier = new CyclicBarrier(2);
@@ -305,7 +305,7 @@ class ContainerConcurrencyTest {
 
     @Test void concurrentLoadNeverSharesAValueAndFinishesWithOnlyIdleSlots() throws Exception {
         var active = Collections.newSetFromMap(new ConcurrentHashMap<StringBuilder, Boolean>());
-        try (var pool = new Pool(config(16, 8, 32, 2)); var executor = Executors.newFixedThreadPool(8)) {
+        try (var pool = new Pool(config(16, 8, 32, 2)); var executor = ExecutorResource.fixedThreads(8)) {
             pool.start(); var tasks = new ArrayList<Future<?>>();
             for (int t = 0; t < 8; t++) tasks.add(executor.submit(() -> {
                 for (int i = 0; i < 200; i++) {

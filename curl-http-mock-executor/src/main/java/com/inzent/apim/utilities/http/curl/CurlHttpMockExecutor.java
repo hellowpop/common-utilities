@@ -7,7 +7,13 @@ import static com.inzent.apim.utilities.http.curl.ExecutionRecord.Stage.*;
 /** Synchronous single-request curl executor. Distinct contexts can execute concurrently. */
 public final class CurlHttpMockExecutor {
     private final ThreadFactory inputThreads;
-    public CurlHttpMockExecutor() { this(task -> Thread.ofPlatform().daemon(true).name("curl-stdin").unstarted(task)); }
+    public CurlHttpMockExecutor() {
+        this(task -> {
+            Thread thread = new Thread(task,"curl-stdin");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
     CurlHttpMockExecutor(ThreadFactory inputThreads) { this.inputThreads = Objects.requireNonNull(inputThreads,"inputThreads"); }
     public void handle(ExecuteContext context) {
         Objects.requireNonNull(context,"context").begin();
