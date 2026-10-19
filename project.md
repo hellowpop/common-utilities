@@ -15,6 +15,20 @@
 
 ## 구조 변경내역
 
+- 2026-10-20: 사용자 push 요청에 따라 object-pool 모듈의 구현·안전성 보완·테스트·README·분석 문서를 develop에 커밋하여 origin/develop에 반영하도록 준비했다. push 전에 기술문서를 갱신하고 실제 JDK 17 clean verify 32개 테스트 통과와 원격 동기 상태를 확인했다. 별도 사용자 변경인 object-recycle-container의 ContainerSafetyTest.java는 이번 커밋에서 제외한다.
+
+- 2026-10-20: object-pool/README.md에 설계 구조·클래스 책임·소유권·수명 상태·호출 흐름도, 공개 API, 전체 사용 예제와 명시적 recycle/늦은 반납, 단계별 상태 카운트·예외 계약을 정리했다. Java 17에서 전체 예제와 추가 예제 두 개의 컴파일·실행을 확인했다. 문서만 수정했다.
+
+- 2026-10-20: 사용자 “분석적용” 요청으로 Object Pool 종료 로깅 실패에 따른 cleanup 유실 결함을 수정했다. Main 락 안에서는 경고 snapshot만 수집하고 물리 폐기 후 락 밖에서 모든 진단을 수행하며 오류를 집계한다. 회귀 사례 8개 추가, 수정 전 5개 실패 확인, JDK 17 clean verify 총 32개 통과 및 probe 20개 확인. 로깅 NPE 후 CLOSED/created=0/destroying=0을 검증했고 독립 리뷰 중요 지적 없음. 상세 적용 내용은 object-pool/memory-npe-analysis.md 7절. 커밋·push는 수행하지 않았다.
+
+- 2026-10-20: Object Pool 메모리 누수·NPE 분석서를 object-pool/memory-npe-analysis.md에 작성했다. 기존 24개 테스트 재실행 및 Java 17 독립 probe 20개 검사항목을 확인하고, 경고 로거 NPE로 Main.close cleanup이 유실되어 CLOSING/created=1/destroying=1이 남는 결함을 재현했다. 정상 참조 해제, 의도된 미반납 유지, 훅 NPE·외부 자원 실패를 구분했다. 운영 구현은 수정하지 않았다.
+
+- 2026-10-20: 사용자 승인 후 `object-pool` Java 17 독립 utility module을 구현했다. Closeable Main/Sub/ObjectHolder, 대여별 핸들, Sub 초기 배정과 6개 필수 상태 항목, 생성 예약·동일성 중복 방지·지연 폐기·오류 집계를 추가했다. JDK 17.0.10 clean verify 24개 테스트 통과, JAR 전체 major 61, README 예제 컴파일·실행, 독립 리뷰(Critical/Important 없음)를 확인했다. 상세는 object-pool/project.md와 README.md. 커밋·push는 수행하지 않았다.
+
+- 2026-10-20: Object Pool 설계에 Main의 created/idle object count·active sub pool count와 Sub의 initial/managed/idle object count를 추가했다. 현재 수량과 누계, Main/Sub idle 소유 범위, Sub 초기 배정·준비 예약·실패 rollback 및 종료 후 카운트 갱신 규칙을 구체화했다. 설계 검토 단계로 구현은 시작하지 않았다.
+
+- 2026-10-20: `object-pool/project.md`에 Java 17 Main/Sub Object Pool 설계 검토안을 작성했다. 기존 object-recycle-container와 API를 분리하고 Closeable·get 기반 대여 핸들, 소유권·상태 전이, Sub 종료 후 지연 반납, Main 종료 시 사용 중 target의 지연 폐기, 동시성·실패 처리·수용 조건을 정리했다. 설계 확정 전으로 구현은 시작하지 않았다.
+
 - 2026-10-19: 사용자 push 요청에 따라 5개 모듈의 Java 17 전환과 추가 안전성 보완을 develop에 커밋하여 origin/develop에 반영하도록 준비했다. push 전에 기술문서를 갱신하고 JDK 17.0.10 전체 195개 테스트 통과 기록 및 변경 파일 범위를 확인했다.
 
 - 2026-10-19: Java 17 전환 후 안전성 재분석. 재정의 가능한 Thread.getId를 이용한 소유자 오인을 약한 Thread 참조 동일성 검사로 수정하고, interrupt된 close의 작업 회수·본문/파일 종료 복합 오류 보존·실패한 spill writer 재시도 추적을 보강했다. curl/객체 재사용 모듈에 회귀 테스트 6개를 추가했다. 상세는 curl 실행기 resource-safety-review.md의 Java 17 재분석 기록에 정리한다.
