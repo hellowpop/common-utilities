@@ -15,6 +15,16 @@
 
 ## 구조 변경내역
 
+- 2026-10-22: 사용자 push 요청에 따라 HTTP mock response server 모듈과 관련 문서를 develop에 커밋하고 origin/develop에 반영하도록 준비했다. push 전 실제 JDK 17 clean verify 27개 통과와 원격 동기 상태를 확인했다. 기존 Object Pool 및 Object Recycle Container 미커밋 변경은 제외한다.
+
+- 2026-10-22: 사용자 승인 후 `http-mock-response-server` Java 17 독립 모듈을 구현했다. enum/point 절차, disconnect 대기·지연 읽기, close/HTTP response 제어 예외, 소켓 옵션, 예외 격리 listener chain, 다중 바인딩·종료 회수를 제공한다. 독립 리뷰의 시작/종료 및 응답 완료 경합 2건을 회귀 테스트로 재현·수정했다. 실제 JDK 17 clean verify 27개 통과, JAR major 61 및 README 예제 실행을 확인했다. 커밋/push는 수행하지 않았다.
+
+- 2026-10-22: HTTP mock response server listener 체인의 실패 정책을 개별 예외 catch → logging → 다음 listener 실행으로 수정했다. 집계 예외 전파와 listener 실패에 따른 client 종료/start rollback을 제거하고 로깅 예외도 격리하도록 설계했다. 구현 전 설계 검토 단계다.
+
+- 2026-10-22: HTTP mock response server의 listener 설계를 불변 체인으로 변경했다. of/andThen 구성, 등록 순서 전달, 중간 listener 실패 후 후속 호출 및 실패 집계, 기존 종료 정책 적용 시점을 명시했다. 설계 검토 단계로 구현은 시작하지 않았다.
+
+- 2026-10-22: `http-mock-response-server/project.md`에 Java 17 HTTP mock response server 설계 검토안을 작성했다. enum별 point 절차, disconnect 대기·지연 읽기, NextActionException, 소켓 옵션, listener, 실행기 수명과 종료·실패 계약을 정리했다. 설계 확정 전이며 구현은 시작하지 않았다.
+
 - 2026-10-20: 사용자 push 요청에 따라 Object Pool의 Jackson 설정 로딩, 독립 Sub 컨테이너·초기 배정, Main idle 초과 폐기 정책, 메모리 저장소 회수 보완과 관련 테스트·문서를 develop에 커밋하여 origin/develop에 반영하도록 준비했다. push 전 기술문서를 갱신하고 JDK 17 clean verify 65개 테스트 통과 및 원격 동기 상태를 확인했다. 별도 ContainerSafetyTest.java 사용자 변경은 제외한다.
 
 - 2026-10-20: Object Pool 메모리·NPE 재분석 후 버스트 최고 용량 Map/Deque와 빈 ThreadLocal 항목 보관을 보완했다. 4,096개 반납 후 내부 배열의 과다 유지를 재현하고 점진 축소·종료 시 빈 저장소 교체를 적용했다. 메모리·NPE 회귀 7개 추가, 수정 전 5개 실패 후 JDK 17 clean verify 65개 통과. 기존 안전성 20개 및 새 memory probe 계측 검증 성공, 독립 리뷰 중요 지적 없음. 정상 target 참조 누수나 새로운 일반 경로 내부 NPE는 확인하지 못했다. 상세는 object-pool/memory-npe-analysis.md 10절. 커밋·push는 수행하지 않았다.
