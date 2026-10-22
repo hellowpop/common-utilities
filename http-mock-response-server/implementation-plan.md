@@ -65,6 +65,16 @@ Interfaces: `addMock(enum,address,port[,options],listener)`, `start()/stop()/clo
 
 ## 실행 기록
 
+## 자원 안전성 보완 계획 (2026-10-22)
+
+사용자 분석결과 적용 지시에 따라 R1/R2/R3를 수정한다. 새 모듈 설계가 아닌 재현된 결함 보완이며 기존 다른 모듈의 변경은 유지한다.
+
+- [x] ResourceSafetyTest에 worker/closer 생성 실패, 종료 단계 실패·재시도, 이벤트의 원본 제어 예외 참조 보존을 재현하고 수정 전 실패를 확인한다.
+- [x] 미실행 작업을 포함한 session 소유권을 단 한 번 회수하며 accept부터 worker 인계까지 실패 경로를 보호한다.
+- [x] close 제출 실패는 직접 close로 복구하고 interrupt 실패가 close를 막지 않게 한다. 종료 단계 실패를 격리하고 미완료 정리는 후속 stop으로 재시도한다.
+- [x] 이벤트의 원본 Throwable를 본문 없는 ThrowableSnapshot으로 변환한다. cause/suppressed도 제한된 크기로 복사하고 action의 closeDelay/응답 메타데이터를 제공한다.
+- [x] 전체 테스트, 수정된 분석 probe, 독립 리뷰 및 Java 17 clean verify를 수행하고 README/분석서를 갱신한다. 커밋/push는 요청 범위에 포함하지 않는다.
+
 - 2026-10-22: 설계 확정 및 개발 지시. 기존 모듈을 수정하지 않는 독립 모듈이므로 새 모듈 전체 테스트를 검증 단위로 한다.
 - Task 1 complete: 신규 타입 부재 실패 확인 후 contracts 7개 통과. 체인 순서·예외/로깅 실패 격리·불변성과 입력 검증을 확인했다.
 - Task 2/3 complete: 실제 소켓 통합 테스트 20개 통과. 추가 enum, 응답 byte 길이, close delay, bind rollback, 수용 상한, write deadline, stop/interrupt/시작 경합을 검증했다.
@@ -73,3 +83,5 @@ Interfaces: `addMock(enum,address,port[,options],listener)`, `start()/stop()/clo
 - Task 4 complete: JDK 17.0.10 / Maven 3.9.11 clean verify 27개 통과, JAR의 32개 class 모두 major 61. README 전체 예제를 생성 JAR만 사용하는 classpath로 컴파일·실행했다.
 - 완료 상태: develop 작업 디렉터리에 구현을 보존하며 커밋/push 및 기존 모듈 변경은 수행하지 않았다.
 - 후속 사용자 push 요청: 기술문서 갱신 후 JDK 17 clean verify 27개를 재확인했다. HTTP mock response server 및 해당 루트 변경 기록만 커밋/push 대상으로 지정하고 기존 다른 모듈 변경은 유지한다.
+
+- 2026-10-22 후속 push 요청: 자원 안전성 수정 R1/R2/R3와 관련 문서를 develop에 커밋하여 origin/develop에 반영한다. 테스트 32개와 안전성 프로브 14개를 확인했으며 다른 모듈의 미커밋 변경은 제외한다.

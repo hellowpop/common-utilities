@@ -121,7 +121,7 @@ class ServerIntegrationTest {
             var types = events.all.stream().map(ServiceEvent::type).toList();
             assertTrue(types.indexOf(ServiceEventType.RESPONSE_SEND) < types.indexOf(ServiceEventType.RESPONSE_SENT));
             assertEquals(TerminationReason.RESPONSE_COMPLETED, events.all.get(events.all.size()-1).reason());
-            assertTrue(events.all.stream().anyMatch(e -> e.exception() instanceof SendResponseException && e.action()));
+            assertTrue(events.all.stream().anyMatch(e -> e.exception() instanceof ThrowableSnapshot s && s.originalType().equals(SendResponseException.class.getName()) && e.action()));
             assertEquals(0, events.count(ServiceEventType.POINT_EXIT));
         }
     }
@@ -236,7 +236,7 @@ class ServerIntegrationTest {
             assertEquals(TerminationReason.ERROR, ended.reason());
             assertEquals(1, events.count(ServiceEventType.RESPONSE_SEND));
             assertEquals(0, events.count(ServiceEventType.RESPONSE_SENT));
-            assertTrue(events.all.stream().anyMatch(e -> e.exception() instanceof SocketTimeoutException));
+            assertTrue(events.all.stream().anyMatch(e -> e.exception() instanceof ThrowableSnapshot s && s.originalType().equals(SocketTimeoutException.class.getName())));
         }
     }
 
@@ -282,7 +282,8 @@ class ServerIntegrationTest {
             assertEquals(80, point.socketOptions().get("readTimeoutMillis"));
             assertTrue((Integer) point.socketOptions().get("receiveBufferSize") > 0);
             var exception = events.await(ServiceEventType.EXCEPTION_RECEIVED);
-            assertInstanceOf(SocketTimeoutException.class, exception.exception());
+            assertEquals(SocketTimeoutException.class.getName(),
+                assertInstanceOf(ThrowableSnapshot.class, exception.exception()).originalType());
             assertFalse(exception.action());
             assertEquals(TerminationReason.ERROR, events.await(ServiceEventType.CLIENT_DISCONNECTED).reason());
         }

@@ -19,6 +19,7 @@ final class ClientSession implements Runnable {
     final AtomicReference<TerminationReason> cancellation = new AtomicReference<>();
     private final AtomicReference<WriteState> writeState = new AtomicReference<>(WriteState.IDLE);
     private final AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+    private final AtomicBoolean claimed = new AtomicBoolean();
     volatile Thread runner;
     MockClientContext context;
     String failedPoint;
@@ -33,10 +34,26 @@ final class ClientSession implements Runnable {
     }
 
     @Override public void run() {
+        if (!claimed.compareAndSet(false, true)) return;
+        runClaimed(null);
+    }
+
+    void abortBeforeRun(Throwable submissionFailure, TerminationReason cause) {
+        cancellation.compareAndSet(null, cause);
+        if (claimed.compareAndSet(false, true)) runClaimed(submissionFailure);
+    }
+
+    private void runClaimed(Throwable submissionFailure) {
         runner = Thread.currentThread();
         ExecutionGuard.enter();
         try {
             event(ServiceEventType.CLIENT_CONNECTED, null, false, 0, null);
+            if (submissionFailure != null) {
+                failure = submissionFailure;
+                reason = TerminationReason.ERROR;
+                event(ServiceEventType.EXCEPTION_RECEIVED, submissionFailure, false, 0, null);
+                return;
+            }
             if (!admitted) { reason = TerminationReason.CAPACITY_REJECTED; return; }
             context = new MockClientContext(this);
             context.checkCancelled();
@@ -98,8 +115,12 @@ final class ClientSession implements Runnable {
         writeState.getAndUpdate(current -> current == WriteState.IDLE || current == WriteState.WRITING
             ? WriteState.CANCELLED : current);
         Thread t = runner;
-        if (t != null) t.interrupt();
-        executor.closeAsync(this);
+        try {
+            if (t != null) t.interrupt();
+        } finally {
+            // Permission/interrupt failures must never prevent physical socket closure.
+            executor.closeAsync(this);
+        }
     }
 
     void forceClose() {

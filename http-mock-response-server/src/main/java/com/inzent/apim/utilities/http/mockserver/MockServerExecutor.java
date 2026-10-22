@@ -124,18 +124,29 @@ public final class MockServerExecutor implements Closeable {
             while (state == State.RUNNING && !binding.failed) {
                 Socket socket = binding.socket.accept();
                 ClientSession session;
-                synchronized (registryLock) {
-                    boolean admitted = state == State.RUNNING && !binding.failed && slots.tryAcquire();
-                    session = new ClientSession(this, binding, socket, clientIds.incrementAndGet(), admitted);
-                    sessions.put(session.id, session);
-                    if (state != State.RUNNING) session.cancellation.set(TerminationReason.STOP);
+                boolean admitted = false;
+                try {
+                    synchronized (registryLock) {
+                        admitted = state == State.RUNNING && !binding.failed && slots.tryAcquire();
+                        session = new ClientSession(this, binding, socket, clientIds.incrementAndGet(), admitted);
+                        sessions.put(session.id, session);
+                        if (state != State.RUNNING) session.cancellation.set(TerminationReason.STOP);
+                    }
+                } catch (RuntimeException | Error failure) {
+                    if (admitted) slots.release();
+                    try { socket.close(); }
+                    catch (Throwable close) { if (close != failure) failure.addSuppressed(close); }
+                    throw failure;
                 }
                 if (!session.admitted) { session.run(); continue; }
                 try { workers.execute(session); }
                 catch (RejectedExecutionException rejected) {
-                    session.cancellation.compareAndSet(null, state == State.RUNNING
+                    session.abortBeforeRun(null, state == State.RUNNING
                         ? TerminationReason.CAPACITY_REJECTED : TerminationReason.STOP);
-                    session.run();
+                } catch (RuntimeException | Error failure) {
+                    try { session.abortBeforeRun(failure, TerminationReason.ERROR); }
+                    catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+                    throw failure;
                 }
             }
         } catch (InterruptedException interrupted) {
@@ -174,7 +185,8 @@ public final class MockServerExecutor implements Closeable {
 
     private void beginShutdown() {
         synchronized (registryLock) {
-            if (shutdownThread != null) return;
+            if (shutdownThread != null && (shutdownThread.isAlive() || state != State.STOPPING)) return;
+            shutdownFailure = null;
             state = State.STOPPING;
             startGate.countDown();
             shutdownThread = threadFactory("shutdown").newThread(this::shutdownResources);
@@ -188,32 +200,35 @@ public final class MockServerExecutor implements Closeable {
             // No callbacks run until cancellation and socket closure have been requested everywhere.
             for (MockBinding binding : bindings) {
                 try { binding.closeSocket(); }
-                catch (Exception failure) { recordShutdownFailure(failure); }
+                catch (Throwable failure) { recordShutdownFailure(failure); }
             }
             synchronized (registryLock) {
-                for (ClientSession session : sessions.values()) session.cancel(TerminationReason.STOP);
+                for (ClientSession session : sessions.values()) cleanupStep(() -> session.cancel(TerminationReason.STOP));
             }
             // Startup callbacks may block. The caller's deadline still applies while this
             // coordinator waits, and any resources published by startup are closed again below.
             startupFinished.await();
             for (MockBinding binding : bindings) {
                 try { binding.closeSocket(); }
-                catch (Exception failure) { recordShutdownFailure(failure); }
+                catch (Throwable failure) { recordShutdownFailure(failure); }
             }
             synchronized (registryLock) {
-                for (ClientSession session : sessions.values()) session.cancel(TerminationReason.STOP);
+                for (ClientSession session : sessions.values()) cleanupStep(() -> session.cancel(TerminationReason.STOP));
             }
-            if (workers != null) workers.shutdown();
-            if (scheduler != null) scheduler.shutdownNow();
+            cleanupStep(() -> { if (workers != null) workers.shutdown(); });
+            cleanupStep(() -> { if (scheduler != null) scheduler.shutdownNow(); });
             for (MockBinding binding : bindings) {
                 Thread thread = binding.acceptThread;
-                if (thread != null) thread.join();
+                if (thread != null && (binding.socket == null || binding.socket.isClosed())) thread.join();
             }
             // Late accepts have completed before the close executor is shut down.
-            awaitTermination(workers);
             awaitTermination(scheduler);
-            if (closers != null) closers.shutdown();
+            cleanupStep(() -> { if (closers != null) closers.shutdown(); });
             awaitTermination(closers);
+            awaitTermination(workers);
+            if (!sessions.isEmpty() || !terminated(workers) || !terminated(scheduler) || !terminated(closers)
+                || bindings.stream().anyMatch(b -> (b.socket != null && !b.socket.isClosed())
+                    || (b.acceptThread != null && b.acceptThread.isAlive()))) return;
             for (MockBinding binding : bindings) {
                 try { binding.closedEvent(); }
                 catch (Throwable failure) { recordShutdownFailure(failure); }
@@ -234,7 +249,15 @@ public final class MockServerExecutor implements Closeable {
     }
 
     private static void awaitTermination(ExecutorService executor) throws InterruptedException {
-        if (executor != null) while (!executor.awaitTermination(1, TimeUnit.DAYS)) { /* wait in coordinator */ }
+        if (executor != null && executor.isShutdown()) while (!executor.awaitTermination(1, TimeUnit.DAYS)) { /* wait in coordinator */ }
+    }
+    private interface CleanupStep { void run() throws Exception; }
+    private void cleanupStep(CleanupStep step) {
+        try { step.run(); }
+        catch (Throwable failure) { recordShutdownFailure(failure); }
+    }
+    private static boolean terminated(ExecutorService executor) {
+        return executor == null || executor.isTerminated();
     }
     private void recordShutdownFailure(Throwable failure) {
         if (shutdownFailure == null) shutdownFailure = failure;
@@ -256,14 +279,24 @@ public final class MockServerExecutor implements Closeable {
     }
 
     void sessionFinished(ClientSession session) {
-        sessions.remove(session.id);
-        if (session.admitted) slots.release();
+        if (sessions.remove(session.id, session) && session.admitted) slots.release();
     }
     void closeAsync(ClientSession session) {
         ExecutorService executor = closers;
         if (executor == null || executor.isShutdown()) { session.forceClose(); return; }
         try { executor.execute(session::forceClose); }
-        catch (RejectedExecutionException rejected) { session.forceClose(); }
+        catch (RuntimeException failure) {
+            session.forceClose();
+            logCleanupFailure("Close task submission failed; socket closed directly", failure);
+        } catch (Error fatal) {
+            session.forceClose();
+            throw fatal;
+        }
+    }
+
+    private static void logCleanupFailure(String message, Throwable failure) {
+        try { System.getLogger(MockServerExecutor.class.getName()).log(System.Logger.Level.WARNING, message, failure); }
+        catch (Exception loggingFailure) { /* diagnostics must not interrupt resource cleanup */ }
     }
     ScheduledFuture<?> schedule(Runnable task, Duration duration) {
         return scheduler.schedule(task, duration.toNanos(), TimeUnit.NANOSECONDS);

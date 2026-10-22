@@ -15,6 +15,12 @@
 
 ## 구조 변경내역
 
+- 2026-10-22 후속 push 요청: 자원 안전성 수정 R1/R2/R3와 관련 문서를 develop에 커밋하여 origin/develop에 반영한다. 테스트 32개와 안전성 프로브 14개를 확인했으며 다른 모듈의 미커밋 변경은 제외한다.
+
+
+- 2026-10-22: HTTP mock response server 분석 R1/R2/R3 적용. 미실행 세션/permit 반환, close fallback, 종료 단계 예외 격리·재시도, 본문 참조 없는 ThrowableSnapshot 추가. 테스트 32개 및 SafetyProbe 14개 통과, 독립 리뷰 중요 지적 없음. 커밋/push 미수행.
+- 2026-10-22: HTTP mock response server 자원 누수/NPE 분석서를 작성했다. 기존 테스트 27개 및 독립 probe 14개 진단을 확인하고, worker 제출 실패의 세션/permit 잔존과 close worker 생성 실패의 종료 중단·socket 잔존을 장애 주입으로 재현했다. 이벤트 보관에 따른 응답 body 간접 보존도 확인했다. 정상 입력의 내부 NPE는 미확인. 운영 소스 수정·커밋·push는 수행하지 않았다. 상세는 http-mock-response-server/resource-safety-review.md.
+
 - 2026-10-22: 사용자 push 요청에 따라 HTTP mock response server 모듈과 관련 문서를 develop에 커밋하고 origin/develop에 반영하도록 준비했다. push 전 실제 JDK 17 clean verify 27개 통과와 원격 동기 상태를 확인했다. 기존 Object Pool 및 Object Recycle Container 미커밋 변경은 제외한다.
 
 - 2026-10-22: 사용자 승인 후 `http-mock-response-server` Java 17 독립 모듈을 구현했다. enum/point 절차, disconnect 대기·지연 읽기, close/HTTP response 제어 예외, 소켓 옵션, 예외 격리 listener chain, 다중 바인딩·종료 회수를 제공한다. 독립 리뷰의 시작/종료 및 응답 완료 경합 2건을 회귀 테스트로 재현·수정했다. 실제 JDK 17 clean verify 27개 통과, JAR major 61 및 README 예제 실행을 확인했다. 커밋/push는 수행하지 않았다.

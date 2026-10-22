@@ -214,3 +214,20 @@ blocking write의 제한 시간은 별도 scheduler가 socket close를 요청하
 
 - [설계와 구현 구성](project.md)
 - [구현 계획 및 검증 기록](implementation-plan.md)
+
+## 장애 처리와 이벤트 예외 조회
+
+worker 생성 실패 시 미실행 세션과 연결 한도를 회수한다. 비동기 close 제출이 실패하면 소켓을 직접 닫는다. 종료 단계가 실패하면 다른 자원 정리를 계속하고 MockServerStopException으로 알린다. 실패 원인을 해소한 다음 stop()을 다시 호출하면 미완료 정리를 재시도한다.
+
+ServiceEvent.exception()은 원본 예외 대신 ThrowableSnapshot을 반환한다. 원래 종류는 다음과 같이 조회한다. 기존 instanceof SendResponseException 등의 검사는 originalType() 비교로 변경해야 한다.
+
+```java
+if (event.exception() instanceof ThrowableSnapshot diagnostic) {
+    String originalType = diagnostic.originalType();
+    String message = diagnostic.getMessage();
+    // diagnostic.getCause(), getSuppressed(), getStackTrace()
+    // diagnostic.closeDelay(), response(): 해당 action이 아니면 null
+}
+```
+
+스냅샷은 응답 본문을 보유하지 않는다. 응답 상태·content type·길이는 event.response() 또는 diagnostic.response()로 확인한다. 진단 그래프는 크기 제한이 있으며 순환·중복 참조를 생략한다. 리스너에서 스냅샷을 변경하지 않는다. 이벤트를 무제한 수집하면 메타데이터 자체는 계속 누적되므로 보관 개수/기간은 호출자가 제한한다.

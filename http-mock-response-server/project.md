@@ -288,3 +288,26 @@ try (MockServerExecutor server = new MockServerExecutor()) {
 - 테스트의 listener 예외 WARNING은 후속 listener 호출을 검증하기 위한 의도된 진단이다. README 전체 caller 예제는 실제 JDK 17로 컴파일·실행했다.
 - 최종 Windows JDK 17.0.10 / Maven 3.9.11 `clean verify`: **27개 테스트, 실패/오류/건너뜀 0, BUILD SUCCESS**. 생성 JAR의 모든 class major version 61 및 JAR 단독 classpath의 README 예제 컴파일/실행을 확인했다. 다른 OS와 대규모 장기 부하 검증은 수행하지 않았다.
 - 2026-10-22 사용자 push 요청에 따라 이 모듈과 관련 기술문서를 develop에 커밋하여 origin/develop에 반영한다. push 전 JDK 17 clean verify 27개 통과 및 원격 동기 상태를 재확인했다. 기존 다른 모듈의 사용자 변경은 제외한다.
+
+## 14. 자원 누수 / NPE 분석 (2026-10-22)
+
+- 상세: [resource-safety-review.md](resource-safety-review.md), 재현 코드: [analysis/SafetyProbe.java](analysis/SafetyProbe.java).
+- 기존 27개 테스트를 재실행해 통과했고 JDK 17 독립 probe 14개 진단 항목을 확인했다. 정상 100응답 후 세션/예약 큐는 비었고 permit 64개 및 전체 executor 종료를 확인했다.
+- 장애 주입으로 close worker 생성 실패 시 종료 coordinator 중단·정리 재시도 불가·열린 socket 잔존, client worker 생성 실패 시 미실행 세션/permit 잔존을 재현했다.
+- 공개 API로 이벤트를 보관할 때 SendResponseException을 통해 응답 body가 보존되는 것도 확인했다. 1 MiB 응답 4건 후 세션은 0이나 이벤트가 body 4 MiB를 참조했다.
+- 정상 입력의 내부 NPE는 확인하지 못했다. 필수 null 경계 17개와 listener/logger NPE 격리를 확인했다.
+- 이번 작업은 분석 문서와 독립 재현 코드만 추가하며 운영 구현 수정·커밋·push는 수행하지 않았다.
+
+## 자원 안전성 수정 적용 (2026-10-22)
+
+분석 R1/R2/R3를 구현에 반영했다. 아래 최초 분석 내용은 수정 전 기록이며 현재 동작은 이 절을 따른다.
+
+- worker 제출 실패 시 실행되지 않은 세션을 정확히 한 번 정리하고 소켓·permit을 반환한다.
+- close executor 제출 실패 시 직접 close로 전환한다. interrupt 실패도 close 요청을 막지 않는다.
+- 종료 단계별 오류를 수집하며 나머지 자원 정리를 계속한다. 종료 작업이 실패해 끝난 STOPPING 상태는 후속 stop으로 재시도한다. 모든 자원 정리 전 SERVICE_STOP을 발행하지 않는다.
+- 이벤트의 Throwable은 원본이 아닌 ThrowableSnapshot이다. originalType(), 메시지, stack, cause/suppressed, closeDelay 및 응답 메타데이터만 복사하고 원본 제어 예외·응답 본문을 참조하지 않는다. 최대 깊이 8, 노드 64, 노드별 suppressed 8개, stack 64개, 메시지 4096자로 제한하며 순환·중복 참조는 생략한다.
+- 기존 필수 null 거부와 listener/logger 예외 격리 계약은 유지한다. 이벤트의 nullable 필드는 사용자가 확인해야 한다.
+- 회귀 테스트 5개 추가. 전체 32개 테스트와 독립 SafetyProbe 14개 검사항목 통과. 프로브는 정상 100응답 회수, worker/closer 생성 실패, 이벤트 참조 제거, null 경계를 확인한다.
+- 독립 코드 리뷰에서 중요한 추가 결함 없음. Windows JDK 17 환경 검증이며 실제 OS 자원 고갈·장기 부하는 검증하지 않았다. 커밋/push는 수행하지 않았다.
+
+- 2026-10-22 후속 push 요청: 자원 안전성 수정 R1/R2/R3와 관련 문서를 develop에 커밋하여 origin/develop에 반영한다. 테스트 32개와 안전성 프로브 14개를 확인했으며 다른 모듈의 미커밋 변경은 제외한다.

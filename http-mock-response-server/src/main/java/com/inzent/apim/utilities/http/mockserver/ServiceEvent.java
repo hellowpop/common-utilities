@@ -16,6 +16,9 @@ public record ServiceEvent(Instant timestamp, long registrationId, String mockCa
         Objects.requireNonNull(mockCase);
         Objects.requireNonNull(type);
         socketOptions = Map.copyOf(socketOptions);
+        ThrowableSnapshot snapshot = ThrowableSnapshot.capture(exception);
+        exception = snapshot;
+        if (response == null && action && snapshot != null) response = snapshot.response();
     }
     public record ResponseMetadata(int statusCode, String contentType, int contentLength) {}
 }
