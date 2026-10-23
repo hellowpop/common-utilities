@@ -22,7 +22,7 @@ final class ClientSession implements Runnable {
     private final AtomicBoolean claimed = new AtomicBoolean();
     volatile Thread runner;
     MockClientContext context;
-    String failedPoint;
+    Enum<?> failedPoint;
     private Map<String, Object> socketOptions = Map.of();
     private TerminationReason reason;
     private Throwable failure;
@@ -86,10 +86,14 @@ final class ClientSession implements Runnable {
             try {
                 finish();
             } finally {
-                runner = null;
-                context = null;
-                executor.sessionFinished(this);
-                ExecutionGuard.exit();
+                try {
+                    if (context != null) context.release();
+                } finally {
+                    runner = null;
+                    context = null;
+                    try { executor.sessionFinished(this); }
+                    finally { ExecutionGuard.exit(); }
+                }
             }
         }
     }
@@ -191,7 +195,7 @@ final class ClientSession implements Runnable {
 
     void event(ServiceEventType type, Throwable exception, boolean action, int bytes,
                ServiceEvent.ResponseMetadata response) {
-        String point = context == null ? null : context.point();
+        Enum<?> point = context == null ? null : context.point();
         if (point == null) point = failedPoint;
         binding.emit(new ServiceEvent(Instant.now(), binding.id, binding.name, id, type, local, remote,
             point, bytes, context == null ? 0 : context.totalBytes(), reason, exception, action, response, socketOptions));

@@ -8,17 +8,17 @@ public enum MockCase implements MockScenario {
         @Override public void execute(MockClientContext context) throws Exception { consume(context, true); }
     };
 
-    private static void consume(MockClientContext c, boolean slow) throws Exception {
-        c.runPoint("onConnected", () -> MockPoints.onConnected(c));
+    private static void consume(MockClientContext clientContext, boolean slow) throws Exception {
+        clientContext.runPoint(MockPoint.ON_CONNECTED);
         while (true) {
-            c.runPoint("beforeRead", () -> MockPoints.beforeRead(c));
-            c.runPoint("readChunk", () -> MockPoints.readChunk(c));
-            if (c.lastRead() < 0) {
-                c.runPoint("onPeerEof", () -> MockPoints.onPeerEof(c));
+            clientContext.runPoint(MockPoint.BEFORE_READ);
+            clientContext.runPoint(MockPoint.READ_CHUNK);
+            if (clientContext.lastRead() < 0) {
+                clientContext.runPoint(MockPoint.ON_PEER_EOF);
                 return;
             }
-            c.runPoint("onChunkReceived", () -> MockPoints.onChunkReceived(c));
-            if (slow) c.runPoint("delayBeforeNextRead", () -> MockPoints.delayBeforeNextRead(c));
+            clientContext.runPoint(MockPoint.ON_CHUNK_RECEIVED);
+            if (slow) clientContext.runPoint(MockPoint.DELAY_BEFORE_NEXT_READ);
         }
     }
 }

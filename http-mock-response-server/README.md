@@ -36,10 +36,11 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MockServerExample {
+    enum Point { SEND_JSON }
     enum ReplyCase implements MockScenario {
         JSON;
         @Override public void execute(MockClientContext context) throws Exception {
-            context.runPoint("sendJson", () -> {
+            context.runPoint(Point.SEND_JSON, () -> {
                 throw new SendResponseException(
                     MockResponse.utf8(200, "application/json; charset=UTF-8", "{\"ok\":true}"));
             });
@@ -102,18 +103,21 @@ TCP는 byte stream이므로 read chunk는 송신 write 또는 네트워크 패�
 
 enum 상수의 `execute`에 절차를 정의한다. enum에 연결별 mutable 상태를 저장하지 않는다. `MockClientContext`는 해당 연결 worker에서만 접근하며 socket을 직접 노출하지 않는다.
 
+context는 연결 실행 수명에 한정된다. 마지막 CLIENT_DISCONNECTED callback 전달이 끝나면 session·worker·읽기 버퍼·HTTP decoder 참조를 해제하고 모든 public context 연산을 IllegalStateException으로 거부한다. 연결 종료 후 사용할 정보는 실행 중 `HttpProtocolResult`/`HttpRequestSnapshot`이나 이벤트의 값으로 저장한다. 반환된 snapshot은 context 종료 후에도 유효하며, 저장한 snapshot의 본문은 저장 기간 동안 유지된다. stop timeout으로 callback이 아직 실행 중이면 그 실행이 끝난 뒤 정리한다.
+
 ```java
+enum UploadPoint { INSPECT_CHUNK }
 enum UploadCase implements MockScenario {
     CLOSE_AFTER_FIRST_CHUNK;
     @Override public void execute(MockClientContext context) throws Exception {
-        context.runPoint("onConnected", () -> MockPoints.onConnected(context));
-        context.runPoint("beforeRead", () -> MockPoints.beforeRead(context));
-        context.runPoint("readChunk", () -> MockPoints.readChunk(context));
+        context.runPoint(MockPoint.ON_CONNECTED);
+        context.runPoint(MockPoint.BEFORE_READ);
+        context.runPoint(MockPoint.READ_CHUNK);
         if (context.lastRead() < 0) {
-            context.runPoint("onPeerEof", () -> MockPoints.onPeerEof(context));
+            context.runPoint(MockPoint.ON_PEER_EOF);
             return;
         }
-        context.runPoint("inspectChunk", () -> {
+        context.runPoint(UploadPoint.INSPECT_CHUNK, () -> {
             // chunk()는 읽기 전용 view다. 다음 read 이후 보관하려면 복사한다.
             System.out.println("received=" + context.chunk().remaining());
             throw new CloseClientException(Duration.ofSeconds(2));
@@ -122,7 +126,11 @@ enum UploadCase implements MockScenario {
 }
 ```
 
-`runPoint`는 POINT_ENTER를 보내고 정상 완료에만 POINT_EXIT를 보낸다. 예외가 발생하면 이후 point는 실행하지 않는다. context의 `readChunk()`, `delay(Duration)`, `lastRead()`, `totalBytes()`, `options()`, `clientId()`를 사용할 수 있다.
+`runPoint(Enum<?>, PointOperation)`은 기본 MockPoint 또는 사용자 enum 상수를 받는다. 현재 point는 AtomicReference의 getAndSet으로 전환하며, 중첩 point 종료 시 예외 여부와 관계없이 이전 값으로 복원한다. POINT_ENTER를 보내고 정상 완료에만 POINT_EXIT를 보낸다. 전파되는 예외 이후 point는 실행하지 않는다. context의 `readChunk()`, `delay(Duration)`, `lastRead()`, `totalBytes()`, `options()`, `clientId()`를 사용할 수 있다.
+
+기본 동작은 `MockClientContext.runPoint(MockPoint)`에서 분기한다. ON_CONNECTED/BEFORE_READ/ON_CHUNK_RECEIVED/ON_PEER_EOF는 취소 확인, READ_CHUNK는 raw 읽기, DELAY_BEFORE_NEXT_READ는 readInterval 지연, READ_HTTP_PROTOCOL은 HTTP 해석 읽기를 수행한다. 이 overload는 point 전환·POINT_ENTER/POINT_EXIT·중첩 복원을 함께 처리하므로 별도 runPoint로 감쌀 필요가 없다. 이전 MockPoints 클래스는 제거했다. `context.runPoint(point, () -> MockPoints.execute(point, context))`는 `context.runPoint(point)`로 변경해 재컴파일한다. 사용자 정의 동작은 기존 `runPoint(Enum<?>, PointOperation)`을 사용한다. HTTP 실행 결과는 `context.httpProtocol()`에서 조회한다.
+
+기존 `runPoint("name", ...)`는 `runPoint(MyPoint.NAME, ...)`로 변경한다. `context.point()`와 `event.point()`도 `Enum<?>`를 반환한다. 비교는 `event.point() == MockPoint.READ_CHUNK`, 문자열 출력은 null 확인 후 `event.point().name()`을 사용한다. 이 변경은 기존 String 기반 API와 소스/바이너리 호환되지 않으므로 호출 코드를 수정해 재컴파일한다. AtomicReference는 point 전환을 관리하며 context I/O의 worker 전용 접근 계약은 유지한다.
 
 | point 결과 | 동작 |
 | --- | --- |
@@ -134,6 +142,59 @@ enum UploadCase implements MockScenario {
 | 미지원 NextActionException 하위 타입 | 제어 예외 및 미지원 오류 이벤트 후 해당 연결 종료 |
 
 `closeDelay`는 close 호출 **전** 대기 시간이다. SO_LINGER는 close 자체의 OS 동작이다. 일반 close가 TCP RST를 보장하지는 않는다.
+
+## HTTP 요청 단계별 수신
+
+`readHttpProtocol()`은 한 번 소켓을 읽고 해당 read의 모든 bytes를 해석하여 `HttpProtocolResult`를 반환한다. `httpProtocol()`은 추가 I/O 없이 마지막 결과를 조회한다. 한 read로 요청이 끝나지 않으면 다음 호출에 해석 상태를 이어간다. 한 read에 여러 요청이 들어 있으면 모두 해석한다.
+
+```java
+enum HttpCase implements MockScenario {
+    RECEIVE_AND_REPLY;
+    @Override public void execute(MockClientContext context) throws Exception {
+        while (true) {
+            context.runPoint(MockPoint.READ_HTTP_PROTOCOL);
+            HttpProtocolResult result = context.httpProtocol();
+            for (HttpRequestSnapshot request : result.completedRequests()) {
+                System.out.println(request.initialLine());
+                System.out.println(request.headers());
+                System.out.println("content bytes=" + request.contentBytes());
+                System.out.println(request.trailers());
+            }
+            if (!result.completedRequests().isEmpty()) {
+                throw new SendResponseException(MockResponse.utf8(200, "text/plain", "received"));
+            }
+            if (result.endOfInput()) {
+                if (result.truncated()) throw new java.io.EOFException("Incomplete HTTP request");
+                return;
+            }
+        }
+    }
+}
+```
+
+`result.request()`는 마지막으로 해석 중인 요청의 snapshot이다. 마지막 요청이 완료되면 그 완료 snapshot을 유지한다. `completedRequests()`는 **이번 read에서 새로 완료한 요청**만 포함하며 다음 read/EOF 결과에는 과거 완료 목록을 누적하지 않는다. EOF에서는 `endOfInput()`이 true이고 부분 요청이면 `truncated()`도 true다. 필요하면 위 예제처럼 EOFException으로 종료한다.
+
+| 조회 | 의미 |
+| --- | --- |
+| `request.initialLineState()` | initial line 수신 단계 |
+| `request.headerState()` | header section 수신 단계 |
+| `request.contentState()` | content 수신 단계 |
+| `request.trailersState()` | trailers(trails) 수신 단계 |
+| `request.complete()` | 모든 필수 단계 완료 및 해당없음 단계 확인 |
+
+각 단계는 `NOT_REACHED`(미도달), `RECEIVING`(수신중), `COMPLETE`(수신 완료), `NOT_APPLICABLE`(해당없음)이다. 해당 단계의 첫 byte가 들어오면 RECEIVING으로 바뀐다. initial line/header/trailers의 CRLF도 단계 bytes에 포함한다.
+
+- 명시적 Content-Length 0 또는 Content-Length/Transfer-Encoding 없는 요청은 content와 trailers가 NOT_APPLICABLE이다.
+- 고정 길이 본문은 정확한 바이트 수 수신 후 COMPLETE, trailers는 NOT_APPLICABLE이다.
+- chunked는 chunk size/data/종료 CRLF를 해석한다. 0 chunk 수신 후 content COMPLETE, trailers는 마지막 빈 줄 수신 후 COMPLETE다. 빈 chunked 본문과 빈 trailers도 해당 단계가 존재하므로 COMPLETE다.
+- header/trailer 이름은 소문자이며 중복 값은 List로 보존한다. 본문은 binary byte[]이고 chunk framing을 제거한다. Content-Encoding 압축 해제나 JSON 등의 내용 해석은 하지 않는다.
+- snapshot은 불변이며 다른 스레드로 전달할 수 있다. 본문은 완료된 8 KiB 블록을 공유하고 snapshot 생성 시 마지막 부분 블록만 복사한다. `content()` 호출 시 새 배열을 만들고 `contentBytes()`는 복사 없이 길이를 조회한다. 변경되지 않은 헤더/트레일러도 불변 맵으로 공유한다. snapshot을 계속 보관하면 그 본문도 보관된다.
+
+첫 읽기에서 `readHttpProtocol(new HttpProtocolLimits(8192, 65536, 16 * 1024 * 1024))`로 상한을 지정할 수 있다. 기본값은 line 8 KiB(CRLF 포함), headers와 trailers 각각 64 KiB, decoded content 16 MiB다. 요청별 chunk framing은 header 한도의 16배로 제한한다. line/header 한도는 양수, content 한도는 0 이상이다. 한 연결에서 한도를 변경할 수 없으며 이후에는 인자 없는 read를 호출해도 최초 한도를 유지한다.
+
+HTTP/1.0·HTTP/1.1 요청과 엄격한 CRLF를 지원한다. HTTP/1.1은 단일 nonempty Host가 필요하다. 동일한 Content-Length 반복/목록은 허용하며, 다른 길이·TE와 CL 동시 지정·chunked 이외 transfer coding·잘못된 framing·한도 초과는 IOException으로 처리한다. parser 실패 후 다시 읽기는 소켓 접근 전에 거부한다. 오류 응답을 자동 생성하지 않으므로 필요하면 사용자 scenario가 예외를 처리한다.
+
+기본 WAIT_FOR_CLIENT_DISCONNECT/SLOW_READ는 원래의 raw read를 유지한다. 읽기 모드는 `AtomicReference<ReadMode>`의 compareAndExchange로 최초 선택 시 원자적으로 확정한다. 같은 모드의 반복 읽기는 허용하고 다른 모드로 변경하려는 호출은 기존 모드를 유지한 채 IllegalStateException으로 거부한다. 같은 연결에서 `readChunk()`와 `readHttpProtocol()`을 혼용할 수 없다. context I/O의 worker 전용 접근 계약은 유지한다. `REQUEST_RECEIVED`는 raw bytes 읽기 직후의 이벤트이며 HTTP 해석/완료 이벤트가 아니다. 단계 상태는 read의 반환 결과에서 확인한다. 요청 목록 해석은 지원하지만 실행기의 응답 후 close 계약은 그대로다.
 
 ## listener 체인
 
@@ -208,12 +269,13 @@ blocking write의 제한 시간은 별도 scheduler가 socket close를 요청하
 - caller interrupt 시에도 취소를 요청하며 interrupt 상태를 복원한다.
 - non-daemon 스레드를 소유하므로 반드시 stop 또는 try-with-resources의 close를 호출한다.
 
-이 유틸리티는 완전한 HTTP 서버가 아니다. URL 라우팅, TLS, 요청 framing/파싱, keep-alive, HTTP/2, HEAD 등 메서드별 응답 규칙 자동 적용은 제공하지 않는다.
+URL 라우팅, TLS, keep-alive 응답 처리, HTTP/2, HEAD 등 메서드별 응답 규칙 자동 적용은 제공하지 않는다. 요청 framing/파싱은 명시적 readHttpProtocol 경로에서 제공한다.
 
 ## 구성 문서
 
 - [설계와 구현 구성](project.md)
 - [구현 계획 및 검증 기록](implementation-plan.md)
+- [메모리 누수 / NPE 재분석과 보완](resource-safety-review.md)
 
 ## 장애 처리와 이벤트 예외 조회
 

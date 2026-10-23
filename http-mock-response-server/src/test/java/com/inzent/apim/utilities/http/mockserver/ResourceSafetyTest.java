@@ -13,11 +13,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @Timeout(15)
 class ResourceSafetyTest {
+    enum Point { REPLY }
     private static final InetAddress LOOPBACK = InetAddress.getLoopbackAddress();
     enum Replies implements MockScenario {
         LARGE, WRAPPED;
-        public void execute(MockClientContext c) throws Exception {
-            c.runPoint("reply", () -> {
+        public void execute(MockClientContext clientContext) throws Exception {
+            clientContext.runPoint(Point.REPLY, () -> {
                 var action = new SendResponseException(new MockResponse(new byte[1024 * 1024]));
                 if (this == WRAPPED) {
                     IOException wrapped = new IOException("wrapped", action);

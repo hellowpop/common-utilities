@@ -1,5 +1,43 @@
 # HTTP Mock Response Server 설계
 
+## Git 반영 준비 (2026-10-23)
+
+- 사용자 push 요청에 따라 enum/AtomicReference point·readMode, context 내 기본 point 실행, HTTP 요청 단계별 해석과 메모리/NPE 보완을 관련 테스트·문서와 함께 develop에 커밋하고 origin/develop에 반영한다.
+- 대상은 이 모듈 전체 변경과 저장소 루트 project.md다. push 전 JDK 17 clean verify와 SafetyProbe를 다시 실행하고 원격 동기 상태 및 stage 범위를 확인한다. 아래 미커밋/미푸시 기록은 각 작업 완료 시점의 이력이다.
+- push 직전 재검증: 실제 JDK 17 HTTP 모듈 clean verify 58개와 SafetyProbe 14개 통과. 원격 대비 기존 develop 미푸시 커밋 bf0a1dd가 포함되므로 해당 Object Pool 65개 및 Object Recycle Container 61개도 verify하여 총 184개 테스트 실패/오류/건너뜀 0을 확인했다.
+
+## 메모리 누수 / NPE 재분석 반영 (2026-10-23)
+
+- 종료 후 외부에서 보관한 MockClientContext가 session/executor/listener/worker/read buffer/HTTP decoder·본문을 붙잡는 경로를 정상 완료·파싱 오류·stop에서 재현했다. 세 회귀 테스트가 수정 전 실패했다.
+- 마지막 이벤트/callback 후 context.release로 강한 참조를 해제한다. 완료 상태를 먼저 검사하여 종료 후 연산은 내부 NPE 대신 IllegalStateException으로 거부하며, 최종 정리·permit 반환·ThreadLocal 제거를 중첩 finally로 보장한다. 별도 보관한 request snapshot의 사용 수명은 유지한다.
+- 신규 안전성 테스트 7개 추가. 실제 JDK 17 clean verify **58개 테스트 통과**, SafetyProbe **14개 진단 통과**. 필수 null/방어 복사/terminal listener NPE 및 5개 parser 상태의 2,000개 잘못된 입력을 확인했다. 유효 경로 내부 NPE와 정상 서버의 지속적인 세션 누적은 미확인이다.
+- 별도 리뷰에서 추가 중요 지적 없음. 상세 원인·범위·한계는 [resource-safety-review.md](resource-safety-review.md) 마지막 재분석 절에 기록했다. 커밋/push는 수행하지 않았다.
+
+## MockClientContext 개선 구성 (2026-10-23)
+
+- 최종 구조 변경: 기본 동작의 switch를 `MockClientContext.runPoint(MockPoint)`로 이동하고 MockPoints 클래스를 제거했다. enum 입력으로 취소 확인/raw 읽기/지연/HTTP 읽기를 실행하며 기존 runPoint(Enum<?>, PointOperation)을 통해 이벤트·실패 진단·AtomicReference 중첩 복원을 함께 처리한다. 기본 case와 README는 context.runPoint(point)만 호출하며 사용자 정의 operation overload는 유지한다.
+- 분기 변경 검증: 통합 API 사용 테스트의 미구현 컴파일 실패 확인 후 구현했으며, 실제 JDK 17 `verify` 51개 테스트 통과(실패/오류/건너뜀 0). 변경된 README Java 예제를 생성 JAR로 컴파일하고 main/HTTP 요청·응답 예제를 실행했다.
+
+- 사용자 요청: String point 제거, enum 기반 식별자, AtomicReference로 point 변경 관리, HTTP initial line/header/content/trailers의 미도달·수신중·완료·해당없음 상태와 해석 결과 제공.
+- 후속 개선: readMode도 `AtomicReference<ReadMode>`로 관리한다. compareAndExchange(null, mode)로 최초 모드를 선택하며 동일 모드는 유지하고 다른 모드는 기존 값을 변경하지 않고 거부한다. worker 소유 규칙은 유지한다.
+- `MockPoint`는 기본 point enum이다. `runPoint(Enum<?>, PointOperation)`은 사용자 enum도 받는다. 현재 point는 AtomicReference의 getAndSet으로 진입/복원하고 ClientSession 실패 진단과 ServiceEvent.point도 Enum<?>를 보관한다. 기존 String 시그니처는 제거하며 호출자 재컴파일이 필요하다.
+- `HttpReceiveState`: NOT_REACHED/RECEIVING/COMPLETE/NOT_APPLICABLE. `HttpRequestSnapshot`: initialLine/headers/content/trailers와 단계별 상태, complete 및 contentBytes. 필드 이름은 소문자이고 중복 값과 binary content를 보존한다.
+- `HttpRequestDecoder`는 연결별 incremental parser다. 고정 길이/chunked·extensions·trailers·같은 read 내 복수 요청·분할 요청을 해석하며 소켓은 소유하지 않는다. snapshot은 완료된 content 블록과 불변 header/trailer 맵을 공유한다. `HttpContentBuffer`는 8 KiB 블록을 동결하고 tail만 복사하며 content() 조회 시 배열로 합친다.
+- `HttpProtocolResult`는 마지막 요청 snapshot, 이번 read의 완료 요청 목록, EOF와 truncated를 제공한다. 완료 목록을 연결 전체 이력으로 누적하지 않는다. `HttpProtocolLimits`는 line/header/content의 크기 한도이며 기본값은 8 KiB/64 KiB/16 MiB다. header 한도는 trailers에 별도 적용하고 chunk framing은 그 16배다.
+- `MockClientContext.readHttpProtocol()` 및 limits overload는 한 번 읽은 모든 bytes를 해석하고 결과를 반환한다. `httpProtocol()`은 추가 I/O 없이 조회한다. context는 worker 전용이며 반환 snapshot은 스레드 간 전달할 수 있다. `context.runPoint(MockPoint.READ_HTTP_PROTOCOL)`로 실행한 결과도 context.httpProtocol()로 조회한다.
+- Content-Length 0/없는 요청은 content·trailers 해당없음, 양수 고정 길이는 trailers 해당없음이다. chunked는 0 chunk 후 content 완료, 최종 빈 줄 후 trailers 완료다. EOF의 미완료 상태는 그대로 반환한다. raw와 HTTP 읽기는 연결 내 혼용을 거부한다.
+- TE+CL/상충 CL/unsupported transfer coding/잘못된 framing/크기 초과는 IOException이며 이후 parser read는 I/O 전에 거부한다. 이벤트에 request snapshot이나 본문을 추가하지 않는다. 기본 raw case, 연결당 응답 후 close, 기존 취소/회수 계약은 유지한다.
+- 세부 설계·작업 및 검증 기록: [context-improvement-plan.md](context-improvement-plan.md). 사용법과 migration: [README.md](README.md). HTTP framing 기준: [RFC 9112 §6.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3), [§7.1](https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1).
+- 최종 Windows JDK 17.0.10 / Maven 3.9.11 clean verify 51개 테스트 통과(실패/오류/건너뜀 0), SafetyProbe 14개 통과, README Java 예제의 JAR 단독 컴파일 및 main/HTTP 요청·응답 실행을 확인했다. 본문·헤더 반복 복사와 실패 후 재읽기를 회귀 테스트로 재현·보완했고 최종 별도 리뷰에서 추가 중요 지적 없음. 커밋/push는 수행하지 않았다.
+
+아래 최초 설계/이력의 String point 및 HTTP parser 미제공 설명은 개선 전 기준이다. 현재 구성은 이 절과 README를 따른다.
+
+## 기능 추가 사전 분석 (2026-10-23)
+
+- 현재 구현의 구조, 공개 확장 API, 기능별 변경 지점과 자원·종료·이벤트 계약을 [기능 확장 분석서](feature-extension-analysis.md)에 정리했다.
+- 실제 JDK 17.0.10 / Maven 3.9.11 `clean verify`: 테스트 32개, 실패/오류/건너뜀 0, BUILD SUCCESS.
+- 이번 작업은 분석 문서 갱신이며 운영 코드·공개 API 변경, 커밋 및 push는 수행하지 않았다. 구체 추가 기능은 아직 확정하지 않았다.
+
 - 작성일: 2026-10-22
 - 상태: 2026-10-22 사용자 개발 승인 후 구현. 최종 검증 기록은 아래 13절을 따른다.
 - 모듈: `http-mock-response-server` — 독립 Maven utility JAR
@@ -32,7 +70,7 @@ HTTP 클라이언트의 연결 대기, 느린 업로드, 강제 연결 종료 �
 | `MockServerExecutor implements Closeable` | 등록, 전체 수명, bind rollback, accept/worker/deadline executor 소유 |
 | `MockScenario` | enum이 구현하는 `execute(MockClientContext) throws Exception` 계약 |
 | `MockCase implements MockScenario` | 기본 case별 실행 point와 순서를 enum 상수 본문에 선언 |
-| `MockPoints` | 읽기, 지연, 종료 대기 등의 재사용 가능한 point method |
+| `MockPoint` / `MockClientContext.runPoint(MockPoint)` | 기본 동작의 enum 식별자 및 읽기·지연·취소 확인 실행 |
 | `MockClientContext` | 연결 ID, 설정, 현재 point, 누적 읽기 수, 취소 상태 및 제한된 I/O 기능 |
 | `MockOptions` | 등록별 소켓 옵션, 읽기 크기/간격, 전송 제한 시간 |
 | `ServerOptions` | 전체 최대 연결 수와 종료 대기 시간 |
@@ -99,7 +137,7 @@ enum의 execute가 전체 순서를 기술한다. `context.runPoint(point, opera
 | `delayBeforeNextRead(context)` | 성공한 read 이후 설정된 readInterval 동안 취소 가능한 대기 |
 | `onPeerEof(context)` | 입력 EOF 처리 point; 별도 action이 없으면 연결 종료 |
 
-`MockPoints`가 기본 point를 제공하고 enum은 필요한 point를 선택·조합한다. 새 enum은 자신의 private point method도 runPoint로 감쌀 수 있다. 추가 point 이름을 위해 point 식별자는 고정 enum 대신 비어 있지 않은 문자열로 한다. listener callback은 mock point가 아니므로 후속 예외 제어 경로로 사용하지 않는다.
+`MockClientContext.runPoint(MockPoint)`가 기본 동작과 이벤트 경계를 함께 제공하고 enum scenario는 필요한 point를 선택·조합한다. 사용자 정의 enum 식별자와 동작은 runPoint(Enum<?>, PointOperation)으로 감쌀 수 있다. listener callback은 mock point가 아니므로 후속 예외 제어 경로로 사용하지 않는다.
 
 ### WAIT_FOR_CLIENT_DISCONNECT
 

@@ -13,38 +13,39 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @Timeout(15)
 class ServerIntegrationTest {
+    enum Point { BROKEN, CLOSE, REPLY, UNKNOWN }
     static final InetAddress LOOPBACK = InetAddress.getLoopbackAddress();
     enum Cases implements MockScenario {
         RESPONSE {
-            public void execute(MockClientContext c) throws Exception {
-                c.runPoint("reply", () -> { throw new SendResponseException(MockResponse.utf8(200, "text/plain; charset=UTF-8", "가")); });
+            public void execute(MockClientContext clientContext) throws Exception {
+                clientContext.runPoint(Point.REPLY, () -> { throw new SendResponseException(MockResponse.utf8(200, "text/plain; charset=UTF-8", "가")); });
                 throw new AssertionError("action must not return");
             }
         },
         DELAY_CLOSE {
-            public void execute(MockClientContext c) throws Exception {
-                c.runPoint("close", () -> { throw new CloseClientException(Duration.ofMillis(250)); });
+            public void execute(MockClientContext clientContext) throws Exception {
+                clientContext.runPoint(Point.CLOSE, () -> { throw new CloseClientException(Duration.ofMillis(250)); });
             }
         },
         LONG_CLOSE {
-            public void execute(MockClientContext c) throws Exception {
-                c.runPoint("close", () -> { throw new CloseClientException(Duration.ofSeconds(30)); });
+            public void execute(MockClientContext clientContext) throws Exception {
+                clientContext.runPoint(Point.CLOSE, () -> { throw new CloseClientException(Duration.ofSeconds(30)); });
             }
         },
         FAILURE {
-            public void execute(MockClientContext c) throws Exception {
-                c.runPoint("broken", () -> { throw new IOException("injected point failure"); });
+            public void execute(MockClientContext clientContext) throws Exception {
+                clientContext.runPoint(Point.BROKEN, () -> { throw new IOException("injected point failure"); });
                 throw new AssertionError("must not run");
             }
         },
         HUGE_RESPONSE {
-            public void execute(MockClientContext c) throws Exception {
-                c.runPoint("reply", () -> { throw new SendResponseException(new MockResponse(new byte[16 * 1024 * 1024])); });
+            public void execute(MockClientContext clientContext) throws Exception {
+                clientContext.runPoint(Point.REPLY, () -> { throw new SendResponseException(new MockResponse(new byte[16 * 1024 * 1024])); });
             }
         },
         UNKNOWN_ACTION {
-            public void execute(MockClientContext c) throws Exception {
-                c.runPoint("unknown", () -> { throw new NextActionException("unknown") {}; });
+            public void execute(MockClientContext clientContext) throws Exception {
+                clientContext.runPoint(Point.UNKNOWN, () -> { throw new NextActionException("unknown") {}; });
             }
         }
     }
@@ -144,7 +145,9 @@ class ServerIntegrationTest {
             int port = events.port();
             for (int i = 0; i < 2; i++) {
                 try (var socket = connect(port)) { assertEquals(-1, socket.getInputStream().read()); }
-                assertEquals(TerminationReason.ERROR, events.await(ServiceEventType.CLIENT_DISCONNECTED).reason());
+                var ended = events.await(ServiceEventType.CLIENT_DISCONNECTED);
+                assertEquals(TerminationReason.ERROR, ended.reason());
+                assertSame(Point.BROKEN, ended.point());
             }
             assertEquals(2, events.count(ServiceEventType.EXCEPTION_RECEIVED));
             assertEquals(0, events.count(ServiceEventType.RESPONSE_SEND));

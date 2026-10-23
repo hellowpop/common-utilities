@@ -8,7 +8,7 @@ import java.util.Objects;
 /** Immutable metadata snapshot; exception references are diagnostic and must not be mutated. */
 public record ServiceEvent(Instant timestamp, long registrationId, String mockCase,
         Long clientId, ServiceEventType type, InetSocketAddress localAddress,
-        InetSocketAddress remoteAddress, String point, int bytes, long totalBytes,
+        InetSocketAddress remoteAddress, Enum<?> point, int bytes, long totalBytes,
         TerminationReason reason, Throwable exception, boolean action,
         ResponseMetadata response, Map<String, Object> socketOptions) {
     public ServiceEvent {

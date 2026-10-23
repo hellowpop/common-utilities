@@ -10,18 +10,19 @@ import java.util.concurrent.atomic.*;
 import java.util.function.BooleanSupplier;
 
 /**
- * Standalone diagnostic probe for commit a6bf160.
+ * Standalone diagnostic probe for the current resource ownership contracts.
  * Faults are injected only into this probe's server instances via reflection.
  * Checks verify corrected ownership, shutdown and event diagnostics.
  */
 public final class SafetyProbe {
+    enum Point { RESPOND }
     private static final InetAddress LOOPBACK = InetAddress.getLoopbackAddress();
     private static int checks;
 
     enum Reply implements MockScenario {
         SMALL, LARGE;
         public void execute(MockClientContext context) throws Exception {
-            context.runPoint("respond", () -> {
+            context.runPoint(Point.RESPOND, () -> {
                 byte[] bytes = new byte[this == LARGE ? 1024 * 1024 : 3];
                 throw new SendResponseException(new MockResponse(bytes));
             });
@@ -37,7 +38,7 @@ public final class SafetyProbe {
             if (e.type() == ServiceEventType.SERVER_SOCKET_OPEN) port.set(e.localAddress().getPort());
             if (e.type() == ServiceEventType.CLIENT_DISCONNECTED) disconnected.incrementAndGet();
             if (e.type() == ServiceEventType.SERVER_SOCKET_CLOSED) bindingFailed.countDown();
-            if (e.type() == ServiceEventType.POINT_ENTER && "readChunk".equals(e.point())) reading.countDown();
+            if (e.type() == ServiceEventType.POINT_ENTER && e.point() == MockPoint.READ_CHUNK) reading.countDown();
         }
     }
 

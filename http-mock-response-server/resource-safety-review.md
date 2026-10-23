@@ -4,7 +4,7 @@
 - 대상: 커밋 a6bf160의 http-mock-response-server
 - 환경: Windows, JDK 17.0.10, Maven 3.9.11
 - 범위: 소켓, 스레드/executor, deadline 예약, 세션/연결 한도, 참조 보존, null 경계
-- 최초 분석·재현 기록이다. 이후 구현에 반영했으며 최신 상태는 문서 마지막의 자원 안전성 수정 적용 절을 참조한다.
+- 최초 분석·재현 기록이다. 이후 구현에 반영했으며 최신 상태는 문서 마지막의 **HTTP parser/context 추가 재분석 (2026-10-23)** 절을 참조한다.
 
 ## 1. 결론
 
@@ -212,3 +212,77 @@ fault injection은 probe 소유 서버 인스턴스의 executor에 한정된다.
 - 기존 필수 null 거부와 listener/logger 예외 격리 계약은 유지한다. 이벤트의 nullable 필드는 사용자가 확인해야 한다.
 - 회귀 테스트 5개 추가. 전체 32개 테스트와 독립 SafetyProbe 14개 검사항목 통과. 프로브는 정상 100응답 회수, worker/closer 생성 실패, 이벤트 참조 제거, null 경계를 확인한다.
 - 독립 코드 리뷰에서 중요한 추가 결함 없음. Windows JDK 17 환경 검증이며 실제 OS 자원 고갈·장기 부하는 검증하지 않았다. 커밋/push는 수행하지 않았다.
+
+## HTTP parser/context 추가 재분석 (2026-10-23)
+
+### 대상과 결론
+
+현재 미커밋 구현의 enum/AtomicReference point·readMode, context 내 기본 동작 분기, HTTP incremental decoder, content 블록·필드 맵 공유, snapshot, 세션/실행기 종료를 다시 분석했다. 기존 변경을 유지한 상태에서 아래 R4를 재현·수정했다.
+
+| 항목 | 관측 및 조치 |
+| --- | --- |
+| R4 — 종료 context 외부 보관 | context를 보관하면 종료 세션·실행기·listener·worker Thread·읽기 버퍼·decoder 본문을 간접 보유. 정상 완료/파싱 오류/stop 세 경로에서 재현하고 종료 시 참조 해제로 수정 |
+| 정상 서버 내부의 세션 누적 | 이번 검증에서는 미확인. sessions 제거, permit 반환, deadline 취소·queue 제거 및 executor 종료 확인 |
+| 유효 호출의 내부 NPE | 이번 검증에서는 미확인. 신규 모델의 null 경계, 잘못된 입력, 종료 후 접근, listener NPE 격리 확인 |
+| caller가 저장한 request snapshot | 보관한 snapshot의 본문은 의도된 보존. context 종료 후에도 snapshot은 사용 가능 |
+
+R4는 외부에서 connection-scoped context를 보관할 때 발생하는 수명 종료 후 참조 보존이다. 외부 보관 없이 정상 서버만으로 세션이 무한 누적된다는 의미는 아니다. 우선순위는 중간이며, 반환된 context가 불필요하게 전체 실행기와 대용량 본문을 붙잡지 않도록 수명을 명시했다.
+
+### R4 재현과 원인
+
+수정 전 `MockClientContext.session`, `owner`, `buffer`는 final 강한 참조였고, decoder는 마지막 요청의 본문과 결과를 보유했다. `ClientSession`은 자신의 context 필드만 null로 만들었으므로 외부에서 context를 저장하면 다음 경로가 남았다.
+
+```text
+caller -> 저장한 MockClientContext -> ClientSession -> executor -> bindings/listeners
+                                -> worker Thread
+                                -> read buffer
+                                -> HttpRequestDecoder -> content blocks / result snapshots
+```
+
+`HttpProtocolSafetyTest`에서 실제 소켓으로 1 MiB 요청 정상 완료, chunked 본문 뒤 잘못된 size에 의한 파싱 오류, 부분 본문 수신 중 stop을 실행했다. 종료 후 저장한 context의 참조를 검사하는 세 테스트가 모두 `ended context retains session`으로 실패했다. GC 성공 여부를 기다리는 방식 대신 참조 그래프의 직접 연결을 검사했다.
+
+### 적용한 수명 관리
+
+- context에 완료 상태와 package-private `release()`를 추가했다. 최종 disconnect 이벤트와 동기 listener 호출이 끝난 뒤 owning worker가 호출한다.
+- session/owner/buffer/decoder/limits와 AtomicReference point/readMode를 해제한다. 별도로 반환한 HttpRequestSnapshot/HttpProtocolResult는 수정하지 않는다.
+- `ClientSession`의 중첩 finally에서 release를 수행한다. 최종 callback 실패 시에도 runner/context 제거, session 등록 해제, permit 반환과 ThreadLocal guard 제거가 이어진다.
+- 모든 public context 연산은 완료/owner 검사를 거쳐 정리된 참조를 사용하지 않게 한다. 종료된 context는 IllegalStateException으로 거부한다. callback/시나리오가 아직 실행 중이면 먼저 해제하지 않는다.
+- 마지막 disconnect callback 안에서는 context와 마지막 결과를 조회할 수 있음을 실제 테스트로 확인했다. 완료 후 저장한 1 MiB snapshot의 본문·길이도 그대로 확인했다.
+
+구현 위치: `MockClientContext.release/requireOwner`, `ClientSession.runClaimed`의 finally. 회귀 검증: [HttpProtocolSafetyTest.java](src/test/java/com/inzent/apim/utilities/http/mockserver/HttpProtocolSafetyTest.java).
+
+### NPE 검토
+
+- enum point의 null 입력, operation null, HTTP limits null 및 기존 설정의 필수 null은 입력 경계에서 거부하는 계약이다. 이를 정상 입력의 내부 NPE와 구분한다.
+- 신규 decoder의 null feed는 상태를 변경하지 않고 거부하며 이후 정상 요청을 해석한다. snapshot/result의 필수 객체·목록·요소 및 각 단계 null을 거부한다.
+- 공개 snapshot 생성자의 필드 Map/List와 body byte[]를 생성 이후 변경해도 snapshot은 바뀌지 않는다. content() 반환 배열도 독립적이다.
+- initial line/header/fixed content/chunked framing/trailers의 다섯 시작 상태에서 고정 seed로 생성한 2,000개 입력을 1 byte씩 해석했다. IOException에 의한 입력 거부 또는 부분 결과 반환을 확인했고 내부 NPE는 발생하지 않았다. 이는 모든 입력에 대한 증명이 아니다.
+- disconnect listener에서 NPE를 주입해 후속 listener 실행과 context 해제가 계속되는 것을 확인했다. snapshot을 포함한 이벤트의 nullable 필드는 여전히 caller가 확인해야 한다.
+- 종료 후 public context 메서드는 IllegalStateException을 발생시킨다. 정리된 session/buffer를 역참조하는 NPE로 바꾸지 않는다.
+
+### 누수와 구분한 보관
+
+| 보관 대상 | 의미와 종료 조건 |
+| --- | --- |
+| 실행 중 요청 body·마지막 protocol 결과 | parser 기능상 필요. 기본 content 한도 16 MiB는 요청별 한도이며 전체 서버 메모리 한도가 아님 |
+| caller가 모은 snapshot·완료 목록 | caller의 명시적 보관. 필요 이상으로 저장하면 본문이 누적되므로 보관 정책 필요 |
+| 실행기가 가진 바인딩·listener | 등록 설정의 수명. 실행기 객체 자체를 보관하면 설정도 남음 |
+| 끝나지 않은 scenario/listener | stop timeout 이후에도 작업이 실행 중일 수 있음. 작업 종료 전 강제로 context를 비우지 않음 |
+| 비동기 socket close task | 실행 완료까지 세션 보관 가능. 완료된 session history를 수집하는 구조는 아님 |
+| 신규 parser의 snapshot 생성 | 이전 본문 전체를 매번 복사하지 않고 동결 블록 공유. 변하지 않은 필드 맵도 재사용. 작은 단위의 header 수신 중에는 필드 추가 시 불변 맵을 다시 만들 수 있어 할당량은 입력 분할에 영향받음 |
+
+### 검증 결과
+
+Windows JDK 17.0.10 / Maven 3.9.11:
+
+```powershell
+$env:JAVA_HOME = 'D:\01.app\java\jdk-17.0.10'
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+mvn -f http-mock-response-server/pom.xml clean verify
+```
+
+- **58개 테스트, 실패/오류/건너뜀 0, BUILD SUCCESS**. 기존 51개와 신규 안전성 테스트 7개다. 신규 7개 중 수명 회귀 3개는 수정 전 실패, 수정 후 통과했다.
+- 기존 SafetyProbe를 JDK 17로 별도 컴파일·실행: **14개 진단 항목 통과**. 정상 100응답 후 sessions/deadline queue 0, permit 64/64 및 stop 후 executor 종료를 재확인했다.
+- 기존 할당량 회귀 테스트와 body 블록 순서/이전 snapshot 불변성 테스트도 전체 suite에 포함되어 통과했다.
+- 별도 코드 리뷰에서 종료 순서·NPE 방어·callback 실패 후 정리와 관련한 추가 중요 지적 없음.
+- Windows loopback 및 제한된 장애 주입 기준이다. heap dump/장기 GC 추이, 다른 OS, 실제 OS 자원 고갈, 무한 대기 callback의 강제 중단은 검증하지 않았다. 커밋/push는 수행하지 않았다.

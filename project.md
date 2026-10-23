@@ -15,6 +15,22 @@
 
 ## 구조 변경내역
 
+- 2026-10-23 사용자 push 요청: HTTP mock response server의 enum/AtomicReference 관리·context 기본 point 실행·HTTP incremental parser·종료 context 참조 해제와 테스트·분석/사용 문서를 develop에 커밋하여 origin/develop에 반영한다. push 전 기술문서 갱신, 실제 JDK 17 재검증 및 원격/stage 범위 확인을 수행한다.
+- push 전 검증 완료: HTTP mock response server clean verify 58개 및 SafetyProbe 14개 통과. 기존 develop 미푸시 커밋 bf0a1dd도 포함되므로 Object Pool 65개와 Object Recycle Container 61개를 추가 확인했다. 합계 184개 테스트 실패/오류/건너뜀 0. 이번 새 커밋 대상은 HTTP 모듈과 본 문서다.
+
+- 2026-10-23: HTTP mock response server 메모리/NPE 재분석 반영. 외부 보관한 종료 context의 session·worker·buffer·HTTP 본문 참조 보존을 3개 경로에서 재현하고 마지막 callback 뒤 release를 적용했다. 종료 후 context 연산은 IllegalStateException으로 거부한다. 신규 안전성 7개 포함 JDK 17 clean verify 58개와 기존 SafetyProbe 14개 통과. 상세는 모듈 resource-safety-review.md. 운영 경로 내부 NPE는 미확인, 커밋/push 미수행.
+
+- 2026-10-23: 기본 point 실행 분기를 MockClientContext.runPoint(MockPoint)로 이동하고 MockPoints 클래스를 제거했다. 단일 context 호출로 기본 동작·point 이벤트·중첩 복원을 수행하며 사용자 operation overload는 유지한다. 기본 case·회귀 검증·README와 구성 문서를 갱신했다.
+
+- 2026-10-23: MockPoints의 동작별 메서드를 execute(MockPoint, MockClientContext)로 통합했다. enum switch로 동작을 선택하고 기본 case·HTTP 읽기 검증·README 예제를 변경했다. point 이벤트 경계는 context.runPoint, HTTP 결과 조회는 context.httpProtocol을 사용한다.
+
+- 2026-10-23: MockClientContext.readMode를 AtomicReference로 변경했다. compareAndExchange로 최초 읽기 모드를 원자적으로 확정하고 raw/HTTP 혼용 시 기존 모드를 보존한다. 모듈 README와 구성 문서를 갱신했다.
+
+- 2026-10-23: HTTP mock response server의 MockClientContext 개선. point 식별자를 enum으로 통일하고 AtomicReference로 중첩 진입/복원을 관리한다. HTTP/1.0·1.1 요청의 initial line/header/content/trailers incremental 해석과 단계별 상태, 고정 길이·chunked·복수 요청·EOF·크기 제한을 추가했다. 불변 snapshot은 본문 블록과 필드 맵을 공유하며 raw read 및 기존 자원 회수 계약을 유지한다. 사용법·호환성 변경과 구성은 모듈 README/project 문서에 정리한다. 커밋/push는 수행하지 않는다.
+- 위 개선 검증: 실제 JDK 17 clean verify 51개, SafetyProbe 14개 통과. README 예제 컴파일·main/HTTP 예제 실행 확인. 별도 리뷰의 본문/헤더 반복 복사와 실패 후 재읽기를 회귀 검증·수정했으며 최종 리뷰 추가 중요 지적 없음.
+
+- 2026-10-23: `http-mock-response-server` 기능 추가 사전 분석. 현재 구현 구조, enum/context 확장점, 기능 유형별 변경 파일, 자원 회수·이벤트·호환성 제약을 `http-mock-response-server/feature-extension-analysis.md`에 정리했다. 실제 JDK 17.0.10 clean verify 32개 통과. 운영 소스 수정·커밋·push는 수행하지 않았다.
+
 - 2026-10-22 후속 push 요청: 자원 안전성 수정 R1/R2/R3와 관련 문서를 develop에 커밋하여 origin/develop에 반영한다. 테스트 32개와 안전성 프로브 14개를 확인했으며 다른 모듈의 미커밋 변경은 제외한다.
 
 
