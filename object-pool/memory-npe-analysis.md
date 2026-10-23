@@ -245,7 +245,7 @@ mvn -f object-pool/pom.xml dependency:build-classpath -Dmdep.outputFile=target/p
 $probeDependencies = (Get-Content object-pool/target/probe-classpath.txt -Raw).Trim()
 New-Item -ItemType Directory -Force object-pool/target/analysis-classes | Out-Null
 javac -encoding UTF-8 --release 17 -cp "object-pool/target/classes;$probeDependencies" -d object-pool/target/analysis-classes object-pool/analysis/PoolMemoryProbe.java
-java --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED -cp "object-pool/target/classes;object-pool/target/analysis-classes" com.inzent.apim.utilities.pool.analysis.PoolMemoryProbe --check-compaction
+java -cp "object-pool/target/classes;object-pool/target/analysis-classes" com.inzent.apim.utilities.pool.analysis.PoolMemoryProbe --check-compaction
 ```
 
 --check-compaction은 수정 후 회수 보장 검증용이다. 수정 전 클래스를 별도로 준비해 당시 값을 계측할 때는 이 인수를 생략한다. 실제 작업에서는 JDK 17.0.10 bin의 java/javac를 명시했다.
@@ -259,3 +259,15 @@ java --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang
 - 기존 별도 사용자 변경은 수정하지 않았으며 커밋·push는 수행하지 않았다.
 
 이 분석에서도 실제 메모리 고갈·장기 부하·heap dump·외부 소켓/파일 계측은 수행하지 않았다. 이미 유지 중인 정상 캐시와 미반납 객체, 사용자가 보관한 raw target 또는 훅의 무한 실행을 자동 해소하는 변경은 아니다.
+
+## 11. 계측의 InaccessibleObjectException 수정 (2026-10-20)
+
+HashMap.table·ArrayDeque.elements·Thread.threadLocals의 reflection 접근은 Java 17 기본 모듈 경계에서 차단된다. 기존 Surefire argLine은 fork 없는 실행과 IDE 부모 JVM에 적용되지 않는다. 운영 풀 소스가 아닌 테스트 및 계측 프로그램의 접근에서 발생했다.
+
+수정 전 `mvn -f object-pool/pom.xml -Dtest=PoolMemorySafetyTest -DforkCount=0 test`에서 7개 중 5개 오류를 확인했고, 모듈 옵션 없는 독립 probe에서도 HashMap.table 예외를 재현했다.
+
+현재 5개 내부 계측 테스트와 PoolMemoryProbe는 모듈 개방 여부를 확인하고 필요한 경우 java.util/java.lang에만 add-opens를 지정한 별도 JVM에서 동일 검사를 수행한다. 부모 JVM 옵션 없이 동작하고, 검사 오류와 시간 초과를 실패로 전달한다. 열린 JVM에서는 직접 검사하며 검사를 건너뛰지 않는다. 전역 Surefire argLine은 제거했다.
+
+Java 17.0.10 clean verify 전체 65개, fork 없는 메모리 검사 7개가 실패/오류/건너뜀 없이 통과했다. 10절의 모듈 옵션 없는 독립 probe 명령도 --check-compaction으로 정상 종료했고 반환 후 배열 32/64/16/17/32/17, 종료 후 0/8/0/1/0/1, 빈 ThreadLocal 키 없음을 확인했다. 독립 리뷰 중요 지적 없음. IDE 자체 실행은 수행하지 않았다.
+
+이전 버전 코드를 유지해야 할 때의 VM options는 README를 따른다. 이 조치는 계측 실행 환경 보완이며 운영 풀의 공개 API·메모리 회수 동작은 변경하지 않는다.

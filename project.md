@@ -31,6 +31,8 @@
 
 - 2026-10-22: `http-mock-response-server/project.md`에 Java 17 HTTP mock response server 설계 검토안을 작성했다. enum별 point 절차, disconnect 대기·지연 읽기, NextActionException, 소켓 옵션, listener, 실행기 수명과 종료·실패 계약을 정리했다. 설계 확정 전이며 구현은 시작하지 않았다.
 
+- 2026-10-20: Object Pool 메모리 계측의 JDK 모듈 접근 예외를 재현하고 검사 전용 자식 JVM 자동 실행으로 수정했다. 부모 VM 옵션 없이 Java 17 clean verify 65개와 fork 없는 메모리 검사 7개, 독립 계측 프로그램을 확인했다. 운영 구현 변경 없이 README·분석서·모듈 구성 문서를 갱신했다. 커밋·push는 수행하지 않았다.
+
 - 2026-10-20: 사용자 push 요청에 따라 Object Pool의 Jackson 설정 로딩, 독립 Sub 컨테이너·초기 배정, Main idle 초과 폐기 정책, 메모리 저장소 회수 보완과 관련 테스트·문서를 develop에 커밋하여 origin/develop에 반영하도록 준비했다. push 전 기술문서를 갱신하고 JDK 17 clean verify 65개 테스트 통과 및 원격 동기 상태를 확인했다. 별도 ContainerSafetyTest.java 사용자 변경은 제외한다.
 
 - 2026-10-20: Object Pool 메모리·NPE 재분석 후 버스트 최고 용량 Map/Deque와 빈 ThreadLocal 항목 보관을 보완했다. 4,096개 반납 후 내부 배열의 과다 유지를 재현하고 점진 축소·종료 시 빈 저장소 교체를 적용했다. 메모리·NPE 회귀 7개 추가, 수정 전 5개 실패 후 JDK 17 clean verify 65개 통과. 기존 안전성 20개 및 새 memory probe 계측 검증 성공, 독립 리뷰 중요 지적 없음. 정상 target 참조 누수나 새로운 일반 경로 내부 NPE는 확인하지 못했다. 상세는 object-pool/memory-npe-analysis.md 10절. 커밋·push는 수행하지 않았다.

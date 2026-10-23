@@ -402,3 +402,10 @@ Maven 설정, 공개 타입, 내부 상태 관리, 수명 처리, 경쟁·실패
 - 사용자 push 요청으로 18–21절의 Jackson 설정·Sub 독립 컨테이너·초과 생성/idle 폐기·메모리 회수 보완을 테스트·분석 프로그램·README와 함께 develop에 커밋하여 origin/develop로 push한다. 각 단계의 미커밋 기록은 당시 이력이다.
 - push 전 실제 JDK 17.0.10 / Maven 3.9.11 clean verify를 재실행했다. 테스트 65개, 실패/오류/건너뜀 0. fetch 후 로컬/원격 develop의 앞섬/뒤처짐은 0/0이었다.
 - 별도 object-recycle-container 테스트 사용자 변경과 target/IDE 파일은 포함하지 않는다.
+
+## 23. 메모리 검사 모듈 접근 예외 수정 (2026-10-20)
+
+- HashMap.table 등의 JDK 내부 reflection은 Java 17의 모듈 캡슐화로 기본 차단된다. Surefire argLine은 fork 없는 Maven 또는 IDE 실행의 부모 JVM에 적용되지 않아 예외가 발생했다.
+- 5개 내부 계측 테스트와 독립 PoolMemoryProbe는 필요한 모듈이 닫혀 있으면 java.util/java.lang을 연 자식 JVM에서 동일 검사를 실행한다. 실패·시간 초과를 전달하며 검사를 생략하지 않는다. 전역 Surefire argLine을 제거하고 운영 코드는 유지했다.
+- 수정 전 fork 없는 메모리 검사 7개 중 5개 오류와 독립 probe의 동일 예외를 재현했다. 수정 후 JDK 17 clean verify 65개 및 fork 없는 메모리 검사 7개가 실패/오류/건너뜀 없이 통과했다. 부모 VM 옵션 없는 probe --check-compaction도 성공했다. 독립 리뷰 중요 지적 없음.
+- README의 기존 버전 VM options 대응과 분석서 실행 방법을 갱신했다. IDE 자체 실행은 별도로 수행하지 않았다. 커밋·push는 수행하지 않았다.

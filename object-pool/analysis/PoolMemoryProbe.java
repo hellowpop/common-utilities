@@ -3,10 +3,37 @@ package com.inzent.apim.utilities.pool.analysis;
 import com.inzent.apim.utilities.pool.*;
 import java.lang.ref.Reference;
 import java.lang.reflect.Field;
+import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
-/** Deterministic backing-storage measurement. Requires java.util/java.lang to be opened. */
+/** Deterministic backing-storage measurement in an automatically isolated inspection JVM. */
 public final class PoolMemoryProbe {
+    private static boolean runInInspectionJvm(String[] args) throws Exception {
+        Module base = Object.class.getModule();
+        Module caller = PoolMemoryProbe.class.getModule();
+        if (base.isOpen("java.util", caller) && base.isOpen("java.lang", caller)) return false;
+        String executable = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
+        var command = new ArrayList<String>(List.of(
+                Path.of(System.getProperty("java.home"), "bin", executable).toString(),
+                "--add-opens", "java.base/java.util=ALL-UNNAMED",
+                "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+                "-cp", System.getProperty("java.class.path"), PoolMemoryProbe.class.getName()));
+        command.addAll(Arrays.asList(args));
+        Process child = new ProcessBuilder(command).inheritIO().start();
+        try {
+            if (!child.waitFor(60, TimeUnit.SECONDS))
+                throw new IllegalStateException("Memory inspection JVM timed out");
+            if (child.exitValue() != 0)
+                throw new IllegalStateException("Memory inspection JVM failed: exit " + child.exitValue());
+            return true;
+        } finally {
+            if (child.isAlive()) {
+                child.destroyForcibly();
+                child.waitFor(5, TimeUnit.SECONDS);
+            }
+        }
+    }
     private static final class Pool extends MainPool<Object> {
         Pool(PoolConfig config) { super(config); }
         @Override protected Object generateTargetObject() { return new Object(); }
@@ -36,6 +63,7 @@ public final class PoolMemoryProbe {
                 + Arrays.toString(sizes));
     }
     public static void main(String[] args) throws Exception {
+        if (runInInspectionJvm(args)) return;
         boolean verify = args.length == 1 && "--check-compaction".equals(args[0]);
         try (var pool = new Pool(new PoolConfig(0, 2, 1, 0, 0))) {
             pool.start(); var sub = pool.borrowSubPool();

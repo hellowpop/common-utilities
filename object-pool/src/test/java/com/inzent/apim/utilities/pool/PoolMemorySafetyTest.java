@@ -4,12 +4,59 @@ import org.junit.jupiter.api.Test;
 import java.lang.ref.Reference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.InvocationTargetException;
+import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.io.File;
 import java.util.*;
 import java.util.concurrent.*;
 import static com.inzent.apim.utilities.pool.PoolLifecycleTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PoolMemorySafetyTest {
+    // IDE and in-process Maven runs need not open JDK modules in their parent JVM.
+    private static boolean runInInspectionJvm(String method) throws Exception {
+        Module base = Object.class.getModule(); Module caller = PoolMemorySafetyTest.class.getModule();
+        if (base.isOpen("java.util", caller) && base.isOpen("java.lang", caller)) return false;
+        String classPath = System.getProperty("surefire.test.class.path");
+        if (classPath == null && PoolMemorySafetyTest.class.getClassLoader() instanceof URLClassLoader loader) {
+            var paths = new ArrayList<String>();
+            for (var url : loader.getURLs()) if ("file".equals(url.getProtocol())) paths.add(Path.of(url.toURI()).toString());
+            classPath = String.join(File.pathSeparator, paths);
+        }
+        if (classPath == null || classPath.isEmpty()) classPath = System.getProperty("java.class.path");
+        String executable = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
+        Path output = Files.createTempFile("object-pool-inspection-", ".log");
+        Process child = null;
+        try {
+            child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", executable).toString(),
+                    "--add-opens", "java.base/java.util=ALL-UNNAMED",
+                    "--add-opens", "java.base/java.lang=ALL-UNNAMED", "-cp", classPath,
+                    PoolMemorySafetyTest.class.getName(), method)
+                    .redirectErrorStream(true).redirectOutput(output.toFile()).start();
+            assertTrue(child.waitFor(30, TimeUnit.SECONDS), "inspection JVM timed out");
+            assertEquals(0, child.exitValue(), Files.readString(output, StandardCharsets.UTF_8));
+            return true;
+        } finally {
+            if (child != null && child.isAlive()) { child.destroyForcibly(); child.waitFor(5, TimeUnit.SECONDS); }
+            Files.deleteIfExists(output);
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length != 1) throw new IllegalArgumentException("Expected a test method");
+        var method = PoolMemorySafetyTest.class.getDeclaredMethod(args[0]);
+        if (!method.isAnnotationPresent(Test.class)) throw new IllegalArgumentException("Not a test method");
+        try { method.invoke(new PoolMemorySafetyTest()); }
+        catch (InvocationTargetException failure) {
+            if (failure.getCause() instanceof Exception exception) throw exception;
+            if (failure.getCause() instanceof Error error) throw error;
+            throw new AssertionError(failure.getCause());
+        }
+    }
+
     // Inspect allocated backing arrays, rather than making assertions about GC timing.
     private static Object read(Object object, Class<?> owner, String name) throws Exception {
         Field field = owner.getDeclaredField(name); field.setAccessible(true); return field.get(object);
@@ -30,6 +77,7 @@ class PoolMemorySafetyTest {
     }
 
     @Test void returnedBurstReleasesPeakSizedGlobalAndSubMaps() throws Exception {
+        if (runInInspectionJvm("returnedBurstReleasesPeakSizedGlobalAndSubMaps")) return;
         try (var pool = new Pool(new PoolConfig(0, 2, 1, 0, 0))) {
             pool.start(); var sub = pool.borrowSubPool();
             var holders = new ArrayList<ObjectHolder<Resource>>();
@@ -45,6 +93,7 @@ class PoolMemorySafetyTest {
     }
 
     @Test void closedMainAndSubReleaseEmptyBackingArrays() throws Exception {
+        if (runInInspectionJvm("closedMainAndSubReleaseEmptyBackingArrays")) return;
         var pool = new Pool(new PoolConfig(1024, 1024, 1, 1024, 1024));
         pool.start(); var sub = pool.borrowSubPool();
         assertTrue(dequeCapacity(containerField(sub, "idle")) >= 1024);
@@ -59,6 +108,7 @@ class PoolMemorySafetyTest {
     }
 
     @Test void lateReturnsReleaseClosedSubRegistryHighWaterStorage() throws Exception {
+        if (runInInspectionJvm("lateReturnsReleaseClosedSubRegistryHighWaterStorage")) return;
         try (var pool = new Pool(new PoolConfig(0, 2, 1, 0, 0));
              var logging = new PoolDiagnosticsTest.Logging(record -> {})) {
             pool.start(); var holders = new ArrayList<ObjectHolder<Resource>>();
@@ -77,6 +127,7 @@ class PoolMemorySafetyTest {
     }
 
     @Test void emptySubIdleStorageShrinksWhenMostEntriesAreBorrowed() throws Exception {
+        if (runInInspectionJvm("emptySubIdleStorageShrinksWhenMostEntriesAreBorrowed")) return;
         try (var pool = new Pool(new PoolConfig(0, 1, 1, 1024, 1024))) {
             pool.start(); var sub = pool.borrowSubPool();
             assertTrue(dequeCapacity(containerField(sub, "idle")) >= 1024);
@@ -89,6 +140,7 @@ class PoolMemorySafetyTest {
     }
 
     @Test void ordinaryEntryCallsDoNotLeaveEmptyThreadLocalEntries() throws Exception {
+        if (runInInspectionJvm("ordinaryEntryCallsDoNotLeaveEmptyThreadLocalEntries")) return;
         try (var pool = new Pool(new PoolConfig(0, 1, 1, 0, 0))) {
             pool.start(); var sub = pool.borrowSubPool(); sub.close();
             Object key = mainField(pool, "inHook");

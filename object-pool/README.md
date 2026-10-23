@@ -417,7 +417,14 @@ Main의 `idleObjectCount <= maxSize`를 유지한다. createdObjectCount와 rese
 
 실제 JDK 17.0.10에서 수명·상태·실패·동시성·로깅 오류 32개, Jackson 설정 로딩 14개, 독립 Sub 컨테이너 5개, 초과 생성·idle 폐기 7개, 메모리·NPE 회귀 7개를 합한 **65개** 테스트를 확인했다. 기존 분석 probe는 **20개 검사항목**을 제공하며 현재 구현에서는 로깅 NPE 후에도 최종 `CLOSED/created=0/destroying=0`을 확인한다. 이 기록은 장시간 heap/실트래픽 검증을 의미하지 않는다.
 
-Map/Deque 내부 배열 및 ThreadLocal 잔존을 검사하기 위해 테스트 JVM에만 java.util/java.lang의 `--add-opens`를 설정한다. 운영 라이브러리 실행에는 이 옵션이 필요하지 않다. 별도 [PoolMemoryProbe.java](analysis/PoolMemoryProbe.java)는 실제 내부 배열 길이를 계측하며 실행 방법은 분석 문서 10절에 있다.
+Map/Deque 내부 배열 및 ThreadLocal 잔존 검사는 java.util/java.lang이 닫혀 있으면 필요한 `--add-opens`를 지정한 자식 JVM에서 자동 실행한다. Maven의 fork 없는 실행과 IDE의 부모 JVM에는 추가 옵션이 필요하지 않으며, 자식 검사의 실패·시간 초과는 테스트 실패로 전달한다. 운영 라이브러리 실행에도 이 옵션은 필요하지 않다. 별도 [PoolMemoryProbe.java](analysis/PoolMemoryProbe.java)도 동일하게 자동 실행하며 실행 방법은 분석 문서 10–11절에 있다.
+
+이전 버전의 계측 코드를 직접 실행하다 `HashMap.table`의 `InaccessibleObjectException`이 발생하면 실행 설정의 **VM options**에 다음을 지정한다. 프로그램 인수가 아닌 JVM 인수다. 첫 옵션은 Map/Deque, 두 번째는 ThreadLocal 내부 검사에 사용한다.
+
+```text
+--add-opens java.base/java.util=ALL-UNNAMED
+--add-opens java.base/java.lang=ALL-UNNAMED
+```
 
 README의 전체 예제와 명시적 recycle·Sub 종료 후 늦은 반납 예제도 JDK 17에서 컴파일·실행했다. 늦은 반납 예제의 outstanding Holder 경고는 의도된 진단이며, 반납 후 activeSub/borrowed는 0이 된다.
 
