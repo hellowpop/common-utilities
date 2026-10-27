@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+# Generated absolute paths for cron. Regenerate after moving Java or this installation.
+INSTALL_DIR=@INSTALL_DIR@
+DEFAULT_JAVA=@JAVA_EXEC@
+CONFIG_LOCATION=@CONFIG_LOCATION@
+cd "$INSTALL_DIR"
+if [ -n "${JAVA_HOME:-}" ]; then
+  case "$JAVA_HOME" in
+    /*|[A-Za-z]:/*|[A-Za-z]:\\*) JAVA_CMD="$JAVA_HOME/bin/java" ;;
+    *) printf '%s\n' 'JAVA_HOME must be an absolute path.' >&2; exit 2 ;;
+  esac
+else
+  JAVA_CMD="$DEFAULT_JAVA"
+fi
+APP_SEPARATOR=:
+case "${OS:-}" in Windows_NT) APP_SEPARATOR=';' ;; esac
+case "$JAVA_CMD" in [A-Za-z]:/*|[A-Za-z]:\\*) APP_SEPARATOR=';' ;; esac
+APP_CLASSPATH="$INSTALL_DIR/runtime/classes${APP_SEPARATOR}$INSTALL_DIR/runtime/lib/*"
+exec "$JAVA_CMD" -cp "$APP_CLASSPATH" com.inzent.apim.utilities.hazelcastmonitoring.MonitorApplication "--spring.config.location=$CONFIG_LOCATION" "--@MODE@" "$@"

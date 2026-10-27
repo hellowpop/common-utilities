@@ -1,0 +1,39 @@
+# Edit this file, then launch collect.bat (Windows) or ./collect.sh (Linux).
+# report / init / install also have separate .bat and .sh launchers.
+# Paths are relative to the directory containing these scripts.
+spring:
+  main:
+    web-application-type: none
+    banner-mode: "off"
+  datasource:
+    url: jdbc:h2:file:./data/hazelcast-monitor
+    username: sa
+    password: ""
+    # PostgreSQL example (create the database and schema before use):
+    # url: jdbc:postgresql://127.0.0.1:5432/hzmon?currentSchema=monitoring
+    # username: hzmon
+    # password: ${HZMON_DB_PASSWORD}
+
+monitor:
+  # Use a different cluster-id for different clusters sharing the same database.
+  cluster-id: dev
+  cluster-name: dev
+  members: 127.0.0.1:5701
+  # For advanced authentication/TLS, remove cluster-name and members above:
+  # client-config: ./hazelcast-client.yml
+  snapshot-dir: ./output/snapshots
+  connect-timeout: 30s
+  operation-timeout: 10s
+  collection-timeout: 120s
+  node-name-attribute: monitor.node-name
+  report-zone: Asia/Seoul
+  max-report-runs: 10000
+  max-report-objects: 1000000
+  # Report-only overrides can also be supplied on the command line:
+  # report-file: ./output/reports/report.html
+  # start-time: "2026-10-27 00:00:00"
+  # end-time: "2026-10-28 00:00:00"
+
+logging:
+  level:
+    root: WARN

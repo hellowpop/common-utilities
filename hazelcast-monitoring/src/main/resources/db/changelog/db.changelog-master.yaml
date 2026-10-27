@@ -1,0 +1,204 @@
+databaseChangeLog:
+  - changeSet:
+      id: hzmon-001
+      author: utilities
+      changes:
+        - createTable:
+            tableName: hzmon_monitor_summary
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: cluster_id
+                  type: varchar(200)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: cluster_name
+                  type: varchar(200)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: executed_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: completed_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: active_node_count
+                  type: integer
+                  constraints:
+                    nullable: true
+              - column:
+                  name: collection_status
+                  type: varchar(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: cluster_state
+                  type: varchar(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: topology_changed
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: object_inventory_observed_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: true
+              - column:
+                  name: object_inventory_complete
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: error_code
+                  type: varchar(64)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: error_message
+                  type: varchar(2000)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: yaml_export_status
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: yaml_path
+                  type: varchar(2000)
+                  constraints:
+                    nullable: true
+        - createTable:
+            tableName: hzmon_node_info
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: summary_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    referencedTableName: hzmon_monitor_summary
+                    referencedColumnNames: id
+                    foreignKeyName: fk_hzmon_node_info_summary
+              - column:
+                  name: member_uuid
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: node_name
+                  type: varchar(512)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: node_address
+                  type: varchar(512)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: node_status
+                  type: varchar(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lite_member
+                  type: boolean
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: hzmon_object_info
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: summary_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    referencedTableName: hzmon_monitor_summary
+                    referencedColumnNames: id
+                    foreignKeyName: fk_hzmon_object_info_summary
+              - column:
+                  name: object_type
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: service_name
+                  type: varchar(512)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: object_name
+                  type: varchar(512)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: object_count
+                  type: bigint
+                  constraints:
+                    nullable: true
+              - column:
+                  name: count_status
+                  type: varchar(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: observed_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: true
+              - column:
+                  name: error_code
+                  type: varchar(64)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: error_message
+                  type: varchar(2000)
+                  constraints:
+                    nullable: true
+        - addUniqueConstraint:
+            tableName: hzmon_node_info
+            columnNames: summary_id, member_uuid
+            constraintName: uq_hzmon_node
+        - addUniqueConstraint:
+            tableName: hzmon_object_info
+            columnNames: summary_id, service_name, object_name
+            constraintName: uq_hzmon_object
+        - createIndex:
+            tableName: hzmon_monitor_summary
+            indexName: ix_hzmon_cluster_time
+            columns:
+              - column: {name: cluster_id}
+              - column: {name: executed_at}
+              - column: {name: id}
+        - sql:
+            sql: >-
+              ALTER TABLE hzmon_monitor_summary ADD CONSTRAINT ck_hzmon_nodes CHECK (active_node_count IS NULL OR active_node_count >= 0)
+        - sql:
+            sql: >-
+              ALTER TABLE hzmon_object_info ADD CONSTRAINT ck_hzmon_count CHECK (CASE WHEN count_status = 'SUCCESS' THEN object_count IS NOT NULL AND object_count >= 0 WHEN count_status = 'UNSUPPORTED' THEN object_count IS NULL WHEN count_status = 'ERROR' THEN object_count IS NULL WHEN count_status = 'NOT_COLLECTED' THEN object_count IS NULL ELSE FALSE END)

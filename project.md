@@ -15,6 +15,28 @@
 
 ## 구조 변경내역
 
+- 2026-10-27: Hazelcast monitoring 배포 전 Java 17 `clean verify`를 재실행해 51개 테스트 통과(실패/오류/건너뜀 0)를 확인했다. 모듈 소스·테스트·README·설계문서를 develop에 함께 반영한다. 빌드 산출물과 실행 데이터는 Git에서 제외한다.
+
+- 2026-10-27: Hazelcast monitoring YAML/HTML 날짜를 `yyyy-MM-dd HH:mm:ss`로 통일했다. YAML은 Asia/Seoul 및 schemaVersion 2를 명시하고 파일명은 Windows 호환 날짜와 UUID를 사용한다. 기존 YAML 복구와 ISO 기간 입력을 지원하며 DB UTC timestamp/microsecond 정밀도는 유지한다. README 및 설계문서 갱신.
+
+- 2026-10-27: Hazelcast monitoring Linux shell을 cron용 절대 경로 실행으로 변경했다. 설치/JVM Java/classpath/설정 URI를 절대 경로로 기록하고 외부 startup 명령과 PATH 의존을 제거했다. Windows batch는 유지한다. Java 17 clean verify 46개 통과, Git Bash 빈 환경에서 4개 shell 및 실제 init/collect/report/install 실행·설정 보존 확인. crontab과 재생성 문서 갱신, 커밋/push 미수행.
+
+- 2026-10-27: Hazelcast monitoring install에서 실행 디렉터리의 로컬 Hazelcast 본체 JAR을 내장 SDK 대신 runtime에 구성하도록 변경했다. API 식별·복수/손상/분리 패키지 거부·addon 유지·checksum 검증·동일 override 재설치를 지원한다. 5.3.6 SDK 검사에서 발견한 초기 membership 준비 순서 차이도 보완했다. Java 17 최종 verify 45개 통과, 문서 갱신. 커밋/push 미수행.
+
+- 2026-10-27: Hazelcast monitoring install을 일반 Java classpath 환경으로 변경했다. 배포 JAR을 runtime/classes와 runtime/lib로 풀고 8개 mode script를 java -cp MainClass 실행으로 전환했다. manifest SHA-256 검증과 원본 JAR 없는 runtime 재설치/복사를 구현했다. Java 17 clean verify 37개 통과, 실제 dependency 62개 추출 및 원본 제거 후 Windows/Git Bash 실행·재설치·설정 보존 검증. 문서 갱신, 커밋/push 미수행.
+
+- 2026-10-27: Hazelcast monitoring의 일반 Topic/ReliableTopic을 신규 수집에서 제외했다. ITopic을 DTO 생성 전에 필터링하여 새 DB/YAML 항목을 생성하지 않으며 같은 이름의 Map과 다른 객체, 기존 이력은 유지한다. 실제 2노드 cluster 포함 Java 17 clean verify 33개 통과, JAR 재생성. 커밋/push 미수행.
+
+- 2026-10-27: Hazelcast monitoring의 CLI를 기존 mode=value 형식에서 --collect/--report/--init/--install 단독 flag로 변경했다. 복수/중복·값 첨부·이전 CLI 형식은 입력 오류로 거부하고, CLI flag가 외부 mode 설정보다 우선하도록 install 분기를 통일했다. 8개 launcher·도움말·README·구성 문서 갱신, Java 17 clean verify 32개 통과. 커밋/push 미수행.
+
+- 2026-10-27: Hazelcast monitoring install의 실행 script를 collect/report/init/install 각각의 .bat/.sh 총 8개로 분리했다. 고정 모드를 지정하고 수집용 `--mode=collect` alias를 추가했다. 기존 설정/script와 legacy run 파일은 보존한다. 실제 Java 17 clean verify 29개 통과, Windows/Git Bash 8개 launch probe 및 실제 JAR install/init/report/실패 수집/재설치 검증. README·구성 문서 갱신, 커밋/push 미수행.
+
+- 2026-10-27: Hazelcast monitoring에 `--mode=install`을 추가했다. 현재 실행 디렉터리에 JAR과 편집용 application.yml, Windows run.bat/Linux run.sh를 생성하며 스크립트가 자체 디렉터리의 외부 설정을 읽는다. 기존 설정/script 보존과 다른 JAR 충돌 거부, 인수·종료 코드 전달을 구현했다. Java 17 기본 verify 28개 통과, 실제 JAR 설치/설정 편집/Windows init·report 및 Git Bash report/재설치 보존 검증. 독립 리뷰 재검토 완료, 커밋/push 미수행.
+
+- 2026-10-27: 사용자 단발 CLI 확정 후 `hazelcast-monitoring` 독립 Maven 모듈을 구현했다. Java 17 / Spring Boot 4.1.2 executable JAR, Hazelcast client 단발 수집, JPA + Liquibase, YAML export 복구, 기간별 offline SVG/HTML 보고서 및 init을 제공한다. 실제 JDK 17 H2/PostgreSQL clean verify 24개 통과, 별도 JAR 실행으로 노드 2→2→1 / Map 2→3→3 추이와 YAML 3개·HTML 생성 확인. README와 모듈 구성 문서 갱신, 독립 리뷰 지적 수정/재검토 완료. 커밋/push 미수행.
+
+- 2026-10-27: `hazelcast-monitoring/project.md`에 Java 17 / Spring Boot executable JAR 기반 Hazelcast monitoring 설계 검토안을 작성했다. client 단발 수집, JPA 이력 및 Liquibase, 실행시간별 YAML, 기간별 offline HTML 보고서, init 범위와 실패/복구 계약을 정리했다. 설계 확정 전이며 소스 구현·DB 변경·커밋·push는 수행하지 않았다.
+
 - 2026-10-23 사용자 push 요청: HTTP mock response server의 enum/AtomicReference 관리·context 기본 point 실행·HTTP incremental parser·종료 context 참조 해제와 테스트·분석/사용 문서를 develop에 커밋하여 origin/develop에 반영한다. push 전 기술문서 갱신, 실제 JDK 17 재검증 및 원격/stage 범위 확인을 수행한다.
 - push 전 검증 완료: HTTP mock response server clean verify 58개 및 SafetyProbe 14개 통과. 기존 develop 미푸시 커밋 bf0a1dd도 포함되므로 Object Pool 65개와 Object Recycle Container 61개를 추가 확인했다. 합계 184개 테스트 실패/오류/건너뜀 0. 이번 새 커밋 대상은 HTTP 모듈과 본 문서다.
 
