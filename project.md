@@ -15,6 +15,18 @@
 
 ## 구조 변경내역
 
+- 2026-11-03: Java JAR Control의 백그라운드 실행/정지/프로세스 상세 조회/log tail, 고정 configure 및 APP_NAME/JAR_FILE 필수 설정을 develop에 커밋하여 origin/develop에 반영한다. push 전 Bash 문법 검사 및 실제 JAR 기반 전체 통합 테스트 17개 통과. 관련 모듈과 기술문서만 포함하고 POJO/메일 분석 문서는 제외한다.
+
+- 2026-10-29: `java-jar-control`에 `a.ctl log`를 추가했다. stdout/stderr 로그 마지막 100줄과 새 출력을 GNU tail -F로 조회하며, 프로세스 제어 잠금을 보유하지 않아 조회 중에도 정지·상태 확인이 가능하다. README와 모듈 구성 문서, 로그 조회 통합 테스트를 추가했다. 커밋/push는 수행하지 않았다.
+
+- 2026-10-29: `java-jar-control`의 APP_NAME/JAR_FILE shell 기본값을 제거하고 configure에 반드시 지정하도록 변경했다. 환경 변수 대체와 누락·빈 값·공백 값을 거부하며 문서·예제를 갱신했다. Bash 문법 검사 및 실제 JAR 기반 전체 통합 테스트 15개를 검증했다. 커밋/push는 수행하지 않았다.
+
+- 2026-10-29: `java-jar-control` 설정 파일명을 `configure`로 고정했다. a.ctl·configure·JAR를 같은 디렉터리에 배포하는 구성을 문서화하고 CTL_CONFIG 설정 선택을 제거했다. Bash 문법 검사 및 실제 JAR 기반 전체 통합 테스트 14개를 검증했다. 커밋/push는 수행하지 않았다.
+
+- 2026-10-29: `java-jar-control`의 status/staus에 PID·PPID·사용자·프로세스 상태·시작 일시·경과 시간·CPU/메모리 사용률·RSS·전체 Java 실행 명령 출력을 추가했다. procps ps 의존성과 사용법을 문서화하고 실제 JAR 기반 전체 통합 테스트 12개를 검증했다. 커밋/push는 수행하지 않았다.
+
+- 2026-10-29: `java-jar-control`에 Linux executable JAR용 `a.ctl start|stop|status`(`staus` 별칭 포함)를 추가했다. Java home 지정/환경/PATH 탐지, 메모리·GC·JVM·agent·애플리케이션 옵션 배열, nohup 로그, PID 시작 tick/boot ID 확인, flock 중복 실행 방지, 정상/선택적 강제 종료를 제공한다. 모듈 project.md와 README.md에 구성·사용법을 정리하고 WSL Ubuntu 24.04에서 실제 Java JAR 기반 통합 테스트 11개를 검증했다. 커밋/push는 수행하지 않았다.
+
 - 2026-10-27: Hazelcast monitoring 배포 전 Java 17 `clean verify`를 재실행해 51개 테스트 통과(실패/오류/건너뜀 0)를 확인했다. 모듈 소스·테스트·README·설계문서를 develop에 함께 반영한다. 빌드 산출물과 실행 데이터는 Git에서 제외한다.
 
 - 2026-10-27: Hazelcast monitoring YAML/HTML 날짜를 `yyyy-MM-dd HH:mm:ss`로 통일했다. YAML은 Asia/Seoul 및 schemaVersion 2를 명시하고 파일명은 Windows 호환 날짜와 UUID를 사용한다. 기존 YAML 복구와 ISO 기간 입력을 지원하며 DB UTC timestamp/microsecond 정밀도는 유지한다. README 및 설계문서 갱신.

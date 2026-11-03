@@ -1,0 +1,3 @@
+a.ctl text eol=lf
+configure text eol=lf
+*.py text eol=lf

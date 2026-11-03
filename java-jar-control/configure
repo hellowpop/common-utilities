@@ -1,0 +1,48 @@
+# Fixed-name Bash configuration, deployed beside a.ctl and the executable JAR.
+# Relative JAR and option paths use this directory, regardless of caller cwd.
+# Required: both must be explicitly set here; no shell defaults/environment fallback.
+APP_NAME=a
+JAR_FILE="app.jar"
+
+# 1. Assign here; 2. inherit environment JAVA_HOME; 3. detect java from PATH.
+# An explicitly assigned invalid JAVA_HOME is an error (no silent fallback).
+# JAVA_HOME="/opt/java/jdk-17"
+
+# Memory options (adjust to your application's requirements).
+MEMORY_OPTS=(
+    "-Xms256m"
+    "-Xmx512m"
+    # "-XX:MaxMetaspaceSize=256m"
+    # "-XX:MaxDirectMemorySize=128m"
+)
+
+# Garbage collector options. Enable only options supported by your JDK.
+GC_OPTS=(
+    "-XX:+UseG1GC"
+    # Java 9+ example; create the logs directory before enabling this option.
+    # "-Xlog:gc*:file=logs/gc.log:time,uptime,level,tags:filecount=5,filesize=10M"
+)
+
+# Other JVM/system properties (before -jar).
+JAVA_OPTS=(
+    # "-Dfile.encoding=UTF-8"
+    # "-Dspring.profiles.active=production"
+)
+
+# Agents and agent-specific properties (one complete argument per array item).
+AGENT_OPTS=(
+    # "-javaagent:/opt/agents/agent.jar=config=/opt/agents/agent.conf"
+    # "-agentpath:/opt/agents/libagent.so"
+    # "-Dagent.service.name=my-service"
+)
+
+# Application arguments (after the JAR path).
+APP_ARGS=(
+    # "--server.port=8080"
+    # "--spring.config.additional-location=file:./config/"
+)
+
+START_WAIT=2
+STOP_TIMEOUT=30
+# false: retain a slow process/PID and fail; true: SIGKILL after timeout.
+FORCE_STOP=false
