@@ -13,6 +13,8 @@ java -jar target/netty-http-mock-server.jar
 
 기본 주소는 `127.0.0.1:8080`이다. 종료는 Ctrl+C로 수행한다. 테스트 중에는 서버와 별도 JVM을 기동하므로 로컬 loopback 연결이 가능해야 한다. 산출물 `target/netty-http-mock-server.jar`에는 Netty와 YAML parser가 포함되며 Lombok은 실행 시 필요하지 않다.
 
+`mvn package`부터 모듈 소스 JAR도 자동 생성·attach한다. `target/netty-http-mock-server-sources.jar`는 기본 artifact용, `target/netty-http-mock-server-library-sources.jar`는 `library` classifier용 소스다. `mvn install` 시 함께 로컬 Maven 저장소에 설치되고, `deploy` 수행 시에도 함께 배포된다. 두 소스 JAR는 이 모듈의 Java 소스와 리소스를 포함하며 의존성 라이브러리의 소스는 포함하지 않는다.
+
 ```shell
 java -jar target/netty-http-mock-server.jar --server.port=9090
 java -jar target/netty-http-mock-server.jar --config=./application.yml --SERVER_PORT=9090
@@ -103,7 +105,7 @@ registry 예시의 `MyDefaultProcessor`/`MyCopyProcessor`는 호스트가 작성
 
 ### 4. 완전한 실행 예제
 
-[EmbeddedExample.java](examples/EmbeddedExample.java)는 서버 생성 → 시작 → HTTP 요청 → 응답 확인 → close → 호스트 코드 계속 실행을 한 번에 보여준다. try-with-resources 블록을 벗어나면 서버가 닫히므로 장기 실행 호스트에서는 앞 절처럼 시작/종료 callback 사이에 인스턴스를 유지한다.
+[EmbeddedExample.java](examples/EmbeddedExample.java)는 서버 생성 → 시작 → `x-response-action: ok` 요청 → 응답 확인 → close → 호스트 코드 계속 실행을 한 번에 보여준다. try-with-resources 블록을 벗어나면 서버가 닫히므로 장기 실행 호스트에서는 앞 절처럼 시작/종료 callback 사이에 인스턴스를 유지한다.
 
 Maven 호스트에서는 예제 소스를 호스트의 소스 경로에 넣고 실행하면 된다. 이 모듈 안에서 직접 컴파일해 확인하려면 Windows PowerShell 기준으로 다음을 실행한다.
 
@@ -119,24 +121,38 @@ Linux/macOS에서는 classpath의 `;`를 `:`로 바꾼다. 정상 출력은 `Emb
 
 | `x-response-action` 값 | 동작 |
 | --- | --- |
-| 생략 또는 `ok` | 200, UTF-8 `OK` |
+| 생략 또는 `default` | 200 OK, UTF-8 서버 안내와 action/추가 헤더 사용법 |
+| `ok` | 200, UTF-8 `OK` |
 | `copy-and-send` | 200, 요청 본문을 바이너리 그대로 복사. Content-Type 한 값만 복사 |
 | `error-500` | 500, UTF-8 `MOCK_ERROR`와 줄바꿈 |
+| `status` | `x-status` 헤더의 상태 코드로 빈 본문 응답 |
 | `close` | 최종 HTTP 응답 없이 연결 종료 |
 | `fake-close` | 200 `OK`, `Connection: keep-alive`를 보내고 전송 완료 후 채널 종료 |
 | `delay-close` | `x-delay-amount` 밀리초 후 최종 HTTP 응답 없이 채널 종료 |
 
 헤더 이름은 대소문자를 구분하지 않고 action 값은 구분한다. action 값은 양 끝 공백을 제거한 후 검사하며, 동일 action 헤더를 여러 번 보내면 400이다. 알 수 없는 action은 400 `UNKNOWN_ACTION`이다.
 
+기본 설정에서는 `x-response-action`을 보내지 않으면 `default` action이 실행된다. 응답은 `text/plain; charset=UTF-8`의 안내문과 `200 OK`이며, action 헤더의 기본 이름·기본 제공 action 목록·`x-status`/`x-delay-amount` 사용법을 포함한다. HEAD는 같은 안내문의 byte 길이만 헤더에 표시하고 본문은 전송하지 않는다. 빈 값의 헤더는 누락으로 취급하지 않고 400으로 거부한다.
+
+기존 `mock.default-action` override는 계속 적용한다. 외부 YAML에 `default-action: ok`를 명시했다면 안내문을 받으려면 `default-action: default`로 변경한다. 짧은 OK 응답은 `x-response-action: ok`로 요청할 수 있다.
+
 ```shell
 curl --http1.1 -i http://127.0.0.1:8080/
+curl --http1.1 -i -H "x-response-action: ok" http://127.0.0.1:8080/
 curl --http1.1 -i -X POST -H "x-response-action: copy-and-send" -H "Content-Type: text/plain" --data-binary "hello" http://127.0.0.1:8080/
 curl --http1.1 -i -H "x-response-action: error-500" http://127.0.0.1:8080/
+curl --http1.1 -i -H "x-response-action: status" -H "x-status: 404" http://127.0.0.1:8080/
 curl --http1.1 -v -H "x-response-action: fake-close" http://127.0.0.1:8080/
 curl --http1.1 -v -H "x-response-action: delay-close" -H "x-delay-amount: 1500" http://127.0.0.1:8080/
 ```
 
 Windows PowerShell에서 curl 별칭이 적용되는 환경은 `curl.exe`를 사용한다. `close`와 `delay-close`는 HTTP 응답을 보내지 않으므로 curl이 빈 응답 오류를 표시하는 것이 의도된 동작이다.
+
+### Status
+
+`x-response-action: status`와 `x-status: 404`를 보내면 HTTP 404와 빈 본문을 응답한다. `x-status`는 정확히 하나가 필수이며, 양 끝 공백을 제거한 ASCII 세 자리 숫자 `200~599`를 허용한다. 1xx는 최종 응답이 아니므로 지원하지 않는다. 미등록 코드도 이 범위이면 숫자를 그대로 사용한다.
+
+헤더 누락·빈 값·중복·범위 초과·잘못된 형식은 400 `INVALID_STATUS` 후 연결을 닫는다. 다른 action에서는 `x-status`를 무시한다. HEAD와 204/304는 본문 없이 응답하고, 205는 길이 0으로 전송한다. 일반 keep-alive/`Connection: close` 규칙을 적용한다.
 
 ### Fake close
 
@@ -161,7 +177,7 @@ server:
   request-timeout-ms: 30000
 mock:
   header-name: x-response-action
-  default-action: ok
+  default-action: default
   scan-packages:
     - com.inzent.apim.utilities.netty.http.mockserver.processor
 ```
@@ -186,7 +202,7 @@ mock:
 | `server.max-pending-responses` | `8` | 연결별 미완료 응답 write 수 상한 |
 | `server.shutdown-timeout-ms` | `10000` | 이벤트 루프 종료 한도 ms |
 | `mock.header-name` | `x-response-action` | action 선택 헤더 |
-| `mock.default-action` | `ok` | 헤더 생략 시 실행할 등록 action |
+| `mock.default-action` | `default` | 헤더 생략 시 실행할 등록 action. 기본은 200 안내문 |
 | `mock.scan-packages` | 위 예시 목록 | `@HttpResponseType` processor 클래스 탐색 범위 |
 
 잘못된 요청/action은 400, 과대 본문은 413, 미지원 HTTP 버전은 505, processor 예외/null 결과는 500 후 닫는다. 수신 timeout은 응답 없이 닫는다. 애플리케이션 오류는 `text/plain; charset=UTF-8`의 `오류코드\n` 본문을 사용하고 Netty codec/aggregator 자체 응답은 기본 형식을 따른다.
@@ -235,4 +251,4 @@ mvn clean verify
 
 `test`는 설정·등록·실제 socket·가상 시간/버퍼 소유권을 검증하고, `verify`는 패키징한 실행 JAR의 별도 JVM 검증까지 수행한다. 실제 JDK 17 검증 결과와 설계 변경은 [project.md](project.md), 구현 순서는 [implementation-plan.md](implementation-plan.md)에 기록한다.
 
-2026-11-02 JDK 17.0.10에서 `mvn clean verify`로 총 40개 테스트 통과(실패·오류·건너뜀 0)를 확인했다. stereotype 없는 processor API와 직접 binding, 임베디드 인터페이스의 생명주기와 library JAR 소비자의 별도 JVM 실행/정상 종료 검증을 포함한다.
+2026-11-06 JDK 17.0.10에서 `mvn clean verify`로 총 48개 테스트 통과(실패·오류·건너뜀 0)를 확인했다. 헤더 생략 시 안내 응답·HEAD·설정 override, x-status와 잘못된 입력, processor 직접 binding, 임베디드 생명주기와 library 소비자의 별도 JVM 실행/정상 종료 검증을 포함한다.

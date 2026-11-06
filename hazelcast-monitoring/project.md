@@ -1,5 +1,26 @@
 # Hazelcast Monitoring Application 설계 및 구현
 
+- 2026-11-04 제공된 APIM 서버 sample: `hazelcast-host-udp.yml`의 cluster-name `apim-cluster-lookup`, loopback 인터페이스, 시작 TCP 포트 `16709`를 반영한 `hazelcast-client-apim-cluster-lookup.yml`을 install 생성 목록에 추가했다. 명시적 multicast=false/auto-detection=true와 port auto-increment를 구분해 같은 호스트·실제 포트 확인·cluster-id 지정 방법을 안내한다. 제공된 서버 파일은 입력 자료로만 읽고 수정하지 않았다.
+- APIM sample 검증: 생성 전 파일 부재 실패를 확인한 뒤 고유 client YAML 파싱/cluster 이름·주소·자동 검색 비활성/Discovery SPI 미사용/재설치 보존을 검사했다. Java 17 verify 75개 통과(실패/오류/건너뜀 0), 실행 JAR 재생성. 로그 `target/hzmon-apim-profile-verify.log`. 제공된 실제 서버에 대한 네트워크 접속 검사는 수행하지 않았다. 커밋/push 미수행.
+
+- 2026-11-04 multicast sample 정정: 기존 multicast 파일이 TCP seed와 동일했던 명명 혼동을 수정했다. `hazelcast-client-multicast.yml`은 seed 없는 실제 UDP Discovery SPI 설정이며, 일반 member multicast 서버용 TCP 예제는 `hazelcast-client-member-seed.yml`로 분리했다. generic discovery-strategies 파일은 SPI 확장 템플릿으로 기본 multicast 예제를 포함한다. 기존 생성 파일은 보존하므로 백업/재생성 또는 경로 전환을 안내한다.
+- sample 정정 검증: 수정 전 TCP seed 잔존 실패 확인, 설치 sample 자체로 UDP 검색·수집 및 두 profile 설치 검사 3개 통과, Java 17 verify 74개 통과(실패/오류/건너뜀 0). 실행 JAR/README/설치 안내서 갱신. 커밋/push 미수행.
+
+- 2026-11-04 설치 연결 profile: TCP, 일반 member multicast(TCP seed), Discovery SPI용 고유 YAML 3개 및 CLIENT-CONFIG-README.md를 함께 생성한다. 새 application.yml은 TCP profile을 기본 선택하며 CLI 경로로 덮어쓸 수 있다. 호환용 hazelcast-client.yml과 기존 사용자 파일은 유지한다. 상세는 `install-client-profiles-plan.md`와 README 참고.
+- 설치 profile 검증: Java 17 verify 74개 통과(실패/오류/건너뜀 0), 실제 배포 JAR install에서 3개 profile/호환 파일/안내서/8개 script와 기본 선택·완료 안내를 확인했다. 고유 YAML 파싱 및 재설치 보존/누락 복구 검증, 실행 JAR 재생성. 커밋/push 미수행.
+
+- 2026-11-04 일반 multicast 서버 대응: 서버 `join.multicast` 구성을 유지하고 고유 client `cluster-members` seed로 접속해 전체 멤버를 관측한다. 설치 시 `hazelcast-client-multicast.yml` 예제를 생성/보존한다. native Java client는 일반 member multicast join의 주소 없는 자동 검색을 지원하지 않으므로 Discovery SPI와 구분한다. 상세는 `multicast-cluster-plan.md`와 README 참고.
+- 일반 multicast 검증: 실제 member 2개 multicast cluster에 seed 하나로 client 접속해 node=2, orders count=2 수집 및 비멤버 상태/종료 확인. 설치·보존 검사와 실연결 2개 통과, Java 17 verify 73개 통과(실패/오류/건너뜀 0), JAR 재생성. 커밋/push 미수행.
+
+- 2026-11-04 자원/NPE 보강: 실행별 ClientConfig 복사, 종료 실패 시 관측 결과 보존 및 terminate, worker 유한 종료 대기/interrupt 복원, worker Error 전파, JPA 초기화 실패 정리 및 rollback 예외 보존, Snapshot 자식 필수값 검증을 적용했다. 상세 분석·재현 및 한계는 `resource-null-analysis.md`에 기록한다.
+- 자원/NPE 검증: Java 17 verify 72개 통과(실패/오류/건너뜀 0), 별도 TCP 반복 수집·UDP 실연결 2개 통과. 같은 설정으로 3회 수집 후 소유 client registry 복원/observer thread 종료/원본 listener 비누적을 확인했다. 독립 재검토 중요 지적 없음, README 갱신, 커밋/push 미수행.
+
+- 2026-11-04 최종 연결 설정: `monitor.client-config`(기본 `./hazelcast-client.yml`) 경로의 Hazelcast 고유 YAML/XML만 사용한다. 기존 cluster-name/members/lookup-mode/udp-* 모니터 옵션은 제거했다. 수집 전 한 번 파싱한 ClientConfig를 사용하고 고유 retry/invocation 설정을 유지한다. report/init/install은 client 파일을 읽지 않는다. 설치 시 client YAML을 생성·보존한다. 사용법은 README, 상세 결정은 `native-client-config-plan.md` 참고. 아래 UDP 전용 옵션 변경 기록은 이 방식으로 대체되었다.
+- 고유 client 설정 검증: Java 17 verify 57개 통과, YAML 기반 실제 UDP 수집 성공, 별도 Java 프로세스에서 배포 JAR로 노드 `[2,2,1]`/Map `[2,3,3]` 수집 및 DB·YAML 3개·HTML 출력을 확인했다. 커밋/push 미수행.
+
+- 2026-11-04 UDP lookup: `monitor.lookup-mode=tcp|udp`, `udp-group`, `udp-port`를 추가했다. TCP가 기본이며 UDP는 주소 목록을 무시하고 내장 MulticastDiscoveryStrategy로 검색한다. 서버도 같은 Discovery SPI/group/port가 필요하다. 외부 client-config와 연결 옵션 혼용 및 잘못된 IPv4 multicast/포트는 연결 전에 거부한다. 실제 수집은 계속 TCP client이며 기존 deadline을 유지한다. 상세 설계·검증은 `udp-lookup-plan.md`, 서버/client YAML은 README에 기록한다.
+- UDP 변경 검증: Java 17 `clean verify` 56개 통과, 별도 UDP 실연결 검사에서 고정 TCP 주소 없이 노드 1개/Map count 1 수집 성공. 실행 JAR 재생성, 커밋/push 미수행.
+
 - 날짜 형식 변경 검증: Java 17 `clean verify` 51개 통과(실패/오류/건너뜀 0). YAML/HTML 초 단위 형식, 이전 YAML 호환, 기간 입력 및 H2 UTC microsecond round-trip을 확인했다. 상세: `date-format-plan.md`.
 
 - 작성일: 2026-10-27
@@ -60,10 +81,8 @@ Boot BOM이 관리하는 JPA, Liquibase, JDBC, serializer 버전을 우선 사�
 
 | 옵션 | 기본 / 의미 |
 | --- | --- |
-| `--monitor.cluster-id` | 기본 cluster-name. DB 안에서 환경별 클러스터를 구분하는 안정적인 논리 ID; 같은 이름의 별도 클러스터는 반드시 다른 ID 사용 |
-| `--monitor.cluster-name` | `dev`, Hazelcast 인증용 cluster-name |
-| `--monitor.members` | `127.0.0.1:5701`, 초기 접속 주소 목록 |
-| `--monitor.client-config` | 선택적 외부 Hazelcast client YAML 경로. 지정 시 접속/인증/TLS는 이 파일을 기준으로 하고 CLI 접속 설정과 혼합하지 않음 |
+| `--monitor.cluster-id` | 수집 기본: 고유 cluster-name; report/init 기본: dev. DB 안에서 환경별 클러스터를 구분하는 안정적인 논리 ID; 같은 이름의 별도 클러스터는 반드시 다른 ID 사용 |
+| `--monitor.client-config` | 기본 ./hazelcast-client.yml. 고유 YAML/XML 연결 설정 파일, 수집 전 한 번 파싱; report/init/install은 읽지 않음 |
 | `--monitor.snapshot-dir` | `./output/snapshots`, YAML 출력 폴더 |
 | `--monitor.report-file` | `./output/reports/report-<yyyy-MM-dd_HH-mm-ss>-<UUID>.html`, report 출력 파일 |
 | `--monitor.start-time` | 선택, `yyyy-MM-dd HH:mm:ss` (Asia/Seoul), 기존 ISO-8601 offset도 지원 |
@@ -77,7 +96,7 @@ Boot BOM이 관리하는 JPA, Liquibase, JDBC, serializer 버전을 우선 사�
 예정 실행 형태 (구현 후 README에서 확정):
 
 ```shell
-./collect.sh --monitor.cluster-id=prod-a --monitor.cluster-name=prod --monitor.members=10.0.0.11:5701,10.0.0.12:5701
+./collect.sh --monitor.cluster-id=prod-a --monitor.client-config=./hazelcast-client.yml
 ./report.sh --monitor.cluster-id=prod-a "--monitor.start-time=2026-10-27 00:00:00" "--monitor.end-time=2026-10-28 00:00:00"
 ./init.sh
 ```
@@ -405,3 +424,7 @@ DB와 filesystem은 분산 transaction이 아니므로 완전한 원자성은 �
 - Installer의 단일-pass template 치환과 shell literal quoting으로 경로의 따옴표/달러 등을 보호하고, 설정 URI의 공백/퍼센트/쉼표/세미콜론을 인코딩한다. 경로가 바뀌면 기존 shell을 백업하고 재생성한다.
 - 수정 전 cron 유사 빈 환경과 절대 설정 URI 검증 실패를 확인했다. 네이티브 Linux/crond는 이번 Windows 환경에서 실행하지 않으며 Git Bash에서 4개 shell을 PATH/JAVA_HOME/OS/BASH_ENV 제거 상태로 실제 Java 실행하여 검증한다.
 - 실제 Java 17 `clean verify`: **46개 테스트 통과, 실패/오류/건너뜀 0**, 독립 리뷰 중요 지적 없음. 실제 배포본에서 절대 경로 script를 다른 cwd/빈 환경으로 호출하여 init·실패 수집 저장·report·누락 shell 재생성과 설정 hash 보존까지 확인했다. 공백/작은따옴표/쉼표/퍼센트 경로의 외부 application.yml이 올바르게 로딩되었다.
+
+## 패키징 및 최종 점검 (2026-11-06)
+
+기본 package에서 소스 JAR을 생성·첨부하고 모듈 루트 Markdown을 `META-INF/docs/<artifactId>/`에 포함한다. 저장소 전체 검증 명령·결과와 외부 환경 미검증 범위는 루트 `project.md`의 전체 변경 푸시 전 검증 항목을 참고한다.

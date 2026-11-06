@@ -2,7 +2,6 @@ package com.inzent.apim.utilities.hazelcastmonitoring.collection;
 
 import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.config.ClientConfig;
-import com.hazelcast.client.config.YamlClientConfigBuilder;
 import com.hazelcast.cluster.Member;
 import com.hazelcast.collection.*;
 import com.hazelcast.core.*;
@@ -21,10 +20,14 @@ import java.util.concurrent.*;
 
 /** A read-only client observer, never a member and never an entry scanner. */
 public final class ClusterCollector {
+    private final java.util.function.Function<ClientConfig,HazelcastInstance> clientFactory;
+    public ClusterCollector() { this(HazelcastClient::newHazelcastClient); }
+    ClusterCollector(java.util.function.Function<ClientConfig,HazelcastInstance> clientFactory) { this.clientFactory=Objects.requireNonNull(clientFactory); }
     public Snapshot collect(Options options) {
         Instant started=now(); UUID id=UUID.randomUUID();
         long deadline=System.nanoTime()+options.collectionTimeout().toNanos();
         HazelcastInstance client=null;
+        Snapshot result=null; Throwable primary=null;
         try {
             ClientConfig c=clientConfig(options);
             var readiness=new ClientReadiness();
@@ -32,20 +35,26 @@ public final class ClusterCollector {
             c.addListenerConfig(new com.hazelcast.config.ListenerConfig(readiness.lifecycleListener()));
             c.addListenerConfig(new com.hazelcast.config.ListenerConfig(readiness.membershipListener()));
             long connectionDeadline=Math.min(deadline,System.nanoTime()+options.connectTimeout().toNanos());
-            client=HazelcastClient.newHazelcastClient(c);
+            client=clientFactory.apply(c);
             readiness.await(connectionDeadline);
-            return collect(client,options,id,started,c.getClusterName(),deadline);
-        } catch (InterruptedException e) { Thread.currentThread().interrupt(); return failed(id,started,options,e); }
-        catch (Exception e) { return failed(id,started,options,e); }
-        finally { if(client!=null) client.shutdown(); }
+            result=collect(client,options,id,started,c.getClusterName(),deadline);
+        } catch (InterruptedException e) { primary=e; Thread.currentThread().interrupt(); result=failed(id,started,options,e); }
+        catch (Exception e) { primary=e; result=failed(id,started,options,e); }
+        catch (Error e) { primary=e; throw e; }
+        finally {
+            Throwable cleanup=client==null?null:shutdown(client);
+            if(cleanup instanceof Error fatal) {
+                if(primary instanceof Error) { if(primary!=fatal)primary.addSuppressed(fatal); }
+                else { if(primary!=null&&primary!=fatal)fatal.addSuppressed(primary); throw fatal; }
+            } else if(cleanup!=null) {
+                if(primary!=null&&primary!=cleanup)primary.addSuppressed(cleanup);
+                if(result!=null)result=cleanupFailed(result);
+            }
+        }
+        return result;
     }
-    private ClientConfig clientConfig(Options o) throws IOException {
-        ClientConfig c;
-        if(o.clientConfig()!=null) c=new YamlClientConfigBuilder(o.clientConfig().toFile()).build();
-        else { c=new ClientConfig().setClusterName(o.clusterName()); c.getNetworkConfig().setAddresses(o.members()); }
-        c.getConnectionStrategyConfig().setAsyncStart(false);
-        c.getConnectionStrategyConfig().getConnectionRetryConfig().setClusterConnectTimeoutMillis(o.connectTimeout().toMillis());
-        c.setProperty("hazelcast.client.invocation.timeout.seconds",Long.toString(Math.max(1,(o.operationTimeout().toMillis()+999)/1000)));
+    ClientConfig clientConfig(Options o) throws IOException {
+        ClientConfig c=new ClientConfig(Objects.requireNonNull(o.clientSettings(),"Client settings are only loaded in collection mode"));
         c.setProperty("hazelcast.client.statistics.enabled","false");
         c.setProperty("hazelcast.logging.type","slf4j");
         // A monitoring client must not redirect itself to a different logical cluster.
@@ -93,7 +102,35 @@ public final class ClusterCollector {
             return new Snapshot(id,o.clusterId(),clusterName,started,now(),members.size(),
                 partial||topologyChanged?Snapshot.Status.PARTIAL:Snapshot.Status.SUCCESS,"UNKNOWN",topologyChanged,inventoryTime,true,null,null,nodes,counts);
         } catch(Exception ex) { return failed(id,started,o,ex); }
-        finally { worker.shutdownNow(); }
+        finally { stopWorker(worker); }
+    }
+    private static Throwable shutdown(HazelcastInstance client) {
+        try { client.shutdown(); return null; }
+        catch(RuntimeException|Error failure) {
+            try { client.getLifecycleService().terminate(); }
+            catch(RuntimeException|Error cleanup) {
+                if(cleanup!=failure) {
+                    if(cleanup instanceof Error&&!(failure instanceof Error)) { cleanup.addSuppressed(failure); return cleanup; }
+                    failure.addSuppressed(cleanup);
+                }
+            }
+            return failure;
+        }
+    }
+    private static Snapshot cleanupFailed(Snapshot s) {
+        return new Snapshot(s.id(),s.clusterId(),s.clusterName(),s.executedAt(),s.completedAt(),s.activeNodeCount(),
+            s.collectionStatus()==Snapshot.Status.FAILED?Snapshot.Status.FAILED:Snapshot.Status.PARTIAL,s.clusterState(),s.topologyChanged(),
+            s.objectInventoryObservedAt(),s.objectInventoryComplete(),s.errorCode()==null?"CLIENT_SHUTDOWN_FAILED":s.errorCode(),
+            (s.errorMessage()==null?"":s.errorMessage()+"; ")+"Client shutdown failed; forced termination attempted",s.nodes(),s.objects());
+    }
+    private static void stopWorker(ExecutorService worker) {
+        boolean interrupted=Thread.interrupted();
+        try {
+            worker.shutdownNow();
+            try {
+                if(!worker.awaitTermination(250,TimeUnit.MILLISECONDS))System.err.println("Monitoring worker did not terminate after cancellation; operation/client may still be active");
+            } catch(InterruptedException ex) { interrupted=true; }
+        } finally { if(interrupted)Thread.currentThread().interrupt(); }
     }
     private static <T> T call(ExecutorService worker,long deadline,Options o,Callable<T> task) throws Exception {
         long remaining=Math.min(deadline-System.nanoTime(),o.operationTimeout().toNanos());
@@ -102,7 +139,11 @@ public final class ClusterCollector {
         try { return f.get(remaining,TimeUnit.NANOSECONDS); }
         catch(InterruptedException e) { f.cancel(true); Thread.currentThread().interrupt(); throw e; }
         catch(TimeoutException e) { f.cancel(true); throw e; }
-        catch(ExecutionException e) { if(e.getCause() instanceof Exception cause)throw cause; throw e; }
+        catch(ExecutionException e) {
+            if(e.getCause() instanceof Error fatal)throw fatal;
+            if(e.getCause() instanceof Exception cause)throw cause;
+            throw e;
+        }
     }
     private static Set<UUID> ids(List<Member> members) { Set<UUID> ids=new HashSet<>(); members.forEach(m -> ids.add(m.getUuid())); return ids; }
     private static long size(DistributedObject o) {

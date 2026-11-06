@@ -13,7 +13,7 @@ public final class EmbeddedExample {
             int port=server.start();
             HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
             HttpRequest request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/"))
-                    .timeout(Duration.ofSeconds(3)).GET().build();
+                    .timeout(Duration.ofSeconds(3)).header("x-response-action","ok").GET().build();
             HttpResponse<String> response=client.send(request,HttpResponse.BodyHandlers.ofString());
             if (response.statusCode()!=200 || !response.body().equals("OK"))
                 throw new IllegalStateException("Unexpected mock response");

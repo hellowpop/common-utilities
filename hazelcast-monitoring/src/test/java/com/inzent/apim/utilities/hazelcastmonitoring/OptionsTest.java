@@ -16,14 +16,14 @@ class OptionsTest {
         assertThatThrownBy(()->Options.installRequested(new String[]{"--install","--report"})).isInstanceOf(IllegalArgumentException.class);
     }
     @Test void everyExplicitFlagOverridesConfiguredInstall() {
-        for(var mode:Options.Mode.values())assertThat(Options.parse(new String[]{"--"+mode.name().toLowerCase(java.util.Locale.ROOT)},new MockEnvironment().withProperty("mode","install")).mode()).isEqualTo(mode);
+        for(var mode:Options.Mode.values())assertThat(Options.parse(new String[]{"--"+mode.name().toLowerCase(java.util.Locale.ROOT)},Fixtures.environment().withProperty("mode","install")).mode()).isEqualTo(mode);
     }
     @Test void explicitCollectModeOverridesConfiguredMode() {
-        assertThat(Options.parse(new String[]{"--collect"},new MockEnvironment().withProperty("mode","report")).mode()).isEqualTo(Options.Mode.COLLECT);
+        assertThat(Options.parse(new String[]{"--collect"},Fixtures.environment().withProperty("mode","report")).mode()).isEqualTo(Options.Mode.COLLECT);
     }
-    private Options parse(String... args) { return Options.parse(args, new MockEnvironment()); }
+    private Options parse(String... args) { return Options.parse(args, Fixtures.environment()); }
     @Test void defaultIsSingleCollectionAndEnvironmentIsApplied() {
-        var o = Options.parse(new String[0], new MockEnvironment().withProperty("monitor.cluster-name", "production"));
+        var o = Options.parse(new String[0], Fixtures.environment().withProperty("monitor.client-config", Fixtures.clientConfig("production","127.0.0.1:1").toString()));
         assertThat(o.mode()).isEqualTo(Options.Mode.COLLECT);
         assertThat(o.clusterId()).isEqualTo("production");
     }

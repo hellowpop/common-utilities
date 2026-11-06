@@ -5,6 +5,16 @@ import java.time.Instant;
 import java.util.*;
 
 final class Fixtures {
+    static java.nio.file.Path clientConfig(String cluster,String address) {
+        try {
+            var path=java.nio.file.Files.createTempFile("hzmon-client-",".yml"); path.toFile().deleteOnExit();
+            java.nio.file.Files.writeString(path,"hazelcast-client:\n  cluster-name: "+cluster+"\n  network:\n    cluster-members:\n      - "+address+"\n");
+            return path;
+        } catch(java.io.IOException ex) { throw new java.io.UncheckedIOException(ex); }
+    }
+    static org.springframework.mock.env.MockEnvironment environment() {
+        return new org.springframework.mock.env.MockEnvironment().withProperty("monitor.client-config",clientConfig("dev","127.0.0.1:1").toString());
+    }
     static Snapshot snapshot(String time, String cluster, String service, String name, Long count) {
         Instant t = Instant.parse(time);
         return new Snapshot(UUID.randomUUID(), cluster, "dev", t, t.plusMillis(20), 1, Snapshot.Status.SUCCESS,

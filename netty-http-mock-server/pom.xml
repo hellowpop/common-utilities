@@ -21,6 +21,15 @@
     <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.13.4</version><scope>test</scope></dependency>
   </dependencies>
   <build>
+    <resources>
+      <resource><directory>src/main/resources</directory></resource>
+      <resource>
+        <directory>${project.basedir}</directory>
+        <targetPath>META-INF/docs/${project.artifactId}</targetPath>
+        <includes><include>*.md</include></includes>
+        <filtering>false</filtering>
+      </resource>
+    </resources>
     <finalName>netty-http-mock-server</finalName>
     <plugins>
       <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.14.1</version>

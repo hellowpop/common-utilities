@@ -1,0 +1,11 @@
+# TCP connection profile. Edit cluster-name and reachable client TCP endpoints.
+# Select in application.yml: monitor.client-config: ./hazelcast-client-tcp.yml
+hazelcast-client:
+  cluster-name: dev
+  network:
+    auto-detection:
+      enabled: false
+    cluster-members:
+      - 127.0.0.1:5701
+      # - server-2.example.com:5701
+# Add authentication/TLS here if required by the server.

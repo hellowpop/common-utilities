@@ -1,0 +1,15 @@
+# Client profile for the supplied hazelcast-host-udp.yml server configuration.
+# Server: cluster-name=apim-cluster-lookup, interfaces=127.0.0.1, starting TCP port=16709.
+# Run this client on the SAME HOST as the server (the server binds to loopback only).
+# Server auto-increment is true: check its startup log and adjust the TCP port if needed.
+# The source explicitly sets join.multicast.enabled=false and auto-detection.enabled=true.
+# Client TCP seed connection is independent of the server's member discovery mechanism.
+# In application.yml select this file and set monitor.cluster-id: apim-cluster-lookup.
+hazelcast-client:
+  cluster-name: apim-cluster-lookup
+  network:
+    auto-detection:
+      enabled: false
+    cluster-members:
+      - 127.0.0.1:16709
+      # Add other actually bound member ports if required (for example 127.0.0.1:16710).

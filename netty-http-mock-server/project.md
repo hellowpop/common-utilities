@@ -1,7 +1,7 @@
 # Netty HTTP Mock Server 구성 설계
 
 - 작성일: 2026-11-02
-- 상태: stereotype 없는 processor 직접 binding 및 임베디드 실행 구현 완료, Java 17 `clean verify` 통과(40개 테스트). 최종 결과는 문서 하단 실행 기록 참조.
+- 상태: 기본 안내 action, x-status 응답, processor 직접 binding 및 임베디드 실행 구현 완료, Java 17 `clean verify` 통과(48개 테스트). 최종 결과는 문서 하단 실행 기록 참조.
 - 요구사항 참고: [command.md](command.md). 구성 설계 후 사용자의 fake-close/delay-close 추가 및 개발 시작 요청을 반영했다.
 - 기본 패키지: `com.inzent.apim.utilities.netty.http.mockserver`
 
@@ -122,9 +122,11 @@ public abstract class AnnotationProcessor {
 
 | 헤더 값 | Processor | 동작 |
 | --- | --- | --- |
+| 생략 또는 `default` | `ResponseDefaultActionProcessor` | 기본 설정에서 200 OK와 UTF-8 안내문 |
 | `ok` | `ResponseOkActionProcessor` | 200, UTF-8 `OK` |
 | `copy-and-send` | `ResponseCopyAndSendActionProcessor` | 200, 요청 본문을 byte 단위로 복사 |
 | `error-500` | `ResponseErrorActionProcessor` | 고정 상태 500과 오류 본문 |
+| `status` | `ResponseStatusActionProcessor` | `x-status`의 200~599 상태, 빈 본문 |
 | `close` | `ResponseCloseActionProcessor` | 응답 없이 연결 종료 |
 | `fake-close` | `ResponseFakeCloseActionProcessor` | 200, UTF-8 `OK`, `Connection: keep-alive` 응답 전송 완료 후 채널 종료 |
 | `delay-close` | `ResponseDelayCloseActionProcessor` | `x-delay-amount` 밀리초 대기 후 HTTP 응답 없이 채널 종료 |
@@ -241,7 +243,7 @@ server:
   shutdown-timeout-ms: 10000
 mock:
   header-name: x-response-action
-  default-action: ok
+  default-action: default
   scan-packages:
     - com.inzent.apim.utilities.netty.http.mockserver.processor
 ```
@@ -367,3 +369,35 @@ Netty leak detection을 활성화한 테스트와 buffer refCnt 검사를 함께
 - push 전 JDK 17 clean verify를 다시 수행한다. 빌드 산출물 target은 제외하고, 다른 모듈과 저장소 루트의 기존 미커밋 변경 및 별도 스테이징 파일은 이번 커밋에 포함하지 않는다.
 - push 직전 재검증: JDK 17.0.10 `mvn clean verify` BUILD SUCCESS, 총 40개 테스트 실패/오류/건너뜀 0. 모듈 whitespace 검사도 통과했다.
 - 앞 절의 commit/push 미수행 표기는 각 구현 단계 당시의 기록이다. 실제 원격 반영 결과는 Git 커밋과 원격 브랜치 동기 상태로 확인한다.
+
+## 18. x-status 응답 케이스 추가 (2026-11-03)
+
+- `@HttpResponseType("status")` processor를 추가하고 `x-status`의 최종 응답 코드(200~599)로 빈 본문 응답을 생성한다. 다른 action의 응답 상태는 변경하지 않는다.
+- 헤더 하나가 필수이며 양 끝 공백 제거 후 ASCII 세 자리 숫자로 검증한다. 누락/빈 값/중복/1xx/범위 초과/잘못된 형식은 400 `INVALID_STATUS` 후 종료한다.
+- [x] 실제 socket의 상태 선택·204/205/304·HEAD·keep-alive/잘못된 입력 테스트 실패 확인. 실행 JAR 탐색 검증에 status 케이스 추가.
+- [x] stereotype 없는 processor 구현 및 사용법 갱신.
+- [x] Java 17 clean verify: 총 44개, 실패/오류/건너뜀 0. 실행 JAR에서 status processor 자동 등록과 418 응답을 확인했다.
+- 기존 writer의 framing과 HEAD 규칙을 재사용하며 상태 processor는 빈 본문만 생성한다. 다른 action의 x-status 무시와 invalid header 종료 계약도 실제 socket으로 검증했다.
+- 구현 전 테스트는 status action 미등록(400/UNKNOWN_ACTION)으로 실패했고 구현 후 통과했다. commit/push는 수행하지 않았다.
+- focused 코드 리뷰에서 processor 검증·기존 framing 재사용·테스트와 문서에 추가 지적 없음.
+
+## 19. 헤더 생략 시 기본 안내 응답 (2026-11-06)
+
+- 기본 설정의 `mock.default-action`을 `default`로 바꾸고 `ResponseDefaultActionProcessor`를 추가한다. 요청에 action 헤더가 없으면 200 OK와 UTF-8 안내 메시지를 반환한다.
+- 안내에는 action 헤더 기본 이름과 기본 제공 action, status/delay-close의 추가 헤더 사용법을 적는다. 명시적인 ok는 기존의 짧은 OK 응답을 제공한다. 기본 action을 명시적으로 설정하는 기존 옵션은 계속 적용한다.
+- [x] 기존 OK 본문과 default-action=ok 때문에 안내/설정 테스트가 실패하는 것을 확인했다. HEAD framing 검증도 추가했다.
+- [x] 기본 processor·YAML/코드 기본값과 임베디드 예제 갱신, README 사용법 반영. 예제는 명시적인 ok로 짧은 OK 응답을 검증한다.
+- [x] Java 17 clean verify: 총 48개, 실패/오류/건너뜀 0. 코드 리뷰에서 추가 지적 없음.
+- 실제 socket에서 200 안내문과 UTF-8 Content-Length/HEAD/keep-alive, 명시적 ok, custom action 헤더와 default-action override를 검증했다. 실행 JAR와 임베디드 interface에서도 헤더 누락 응답을 확인했다.
+- 기존 다른 모듈 작업과 이전 미커밋 status 기능을 유지했다. commit/push는 수행하지 않았다.
+
+## 20. Maven 소스 artifact attach (2026-11-06)
+
+- Maven Source Plugin 3.4.0의 `jar-no-fork` goal을 package에 연결하고 attach=true로 설정한다. [공식 goal 문서](https://maven.apache.org/plugins/maven-source-plugin/jar-no-fork-mojo.html)의 lifecycle attach 방식을 적용한다.
+- 기본 artifact에는 sources, 임베디드 library artifact에는 library-sources classifier를 첨부한다. 파일은 각각 `target/netty-http-mock-server-sources.jar`, `target/netty-http-mock-server-library-sources.jar`다.
+- install/deploy 단계에서 소스 artifact가 함께 처리된다. 기존 실행 JAR와 library binary artifact 구성은 유지한다. 이 모듈의 main 소스/리소스만 포함하며 추가 실행 의존성은 없다.
+- JDK 17.0.10 `mvn install -DskipTests` BUILD SUCCESS. 두 소스 JAR에 현재 Java 소스 25개와 YAML 리소스가 포함되고 소스 내용이 실제 파일과 일치하는지 확인했다. class 파일/Netty 의존 소스가 없는 것과 로컬 Maven 저장소의 설치 파일 hash 일치도 검증했다. 이번 빌드 설정 검증에서는 기능 테스트를 재실행하지 않았다.
+
+## 패키징 및 최종 점검 (2026-11-06)
+
+기본 package에서 소스 JAR을 생성·첨부하고 모듈 루트 Markdown을 `META-INF/docs/<artifactId>/`에 포함한다. 저장소 전체 검증 명령·결과와 외부 환경 미검증 범위는 루트 `project.md`의 전체 변경 푸시 전 검증 항목을 참고한다.

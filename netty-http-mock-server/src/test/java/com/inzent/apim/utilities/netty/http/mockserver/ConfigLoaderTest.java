@@ -16,6 +16,7 @@ class ConfigLoaderTest {
         var config = ConfigLoader.load(new String[]{"--server.port=9090"});
         assertEquals(9090, config.port()); assertEquals("127.0.0.1", config.host());
         assertEquals(100, config.maxConnections());
+        assertEquals("default", config.defaultAction());
     }
     @Test void cliThenSystemThenEnvironmentAndDirectOverride() throws Exception {
         String yaml = file("server:\n  port: '${PORT:8080}'\n");

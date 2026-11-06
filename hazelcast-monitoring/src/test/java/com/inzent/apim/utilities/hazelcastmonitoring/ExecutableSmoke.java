@@ -23,8 +23,8 @@ public final class ExecutableSmoke {
             a.getMap("orders").putAll(Map.of(1,"a",2,"b")); a.getTopic("events");
             execute(jar,output,0,"help","--help");
             execute(jar,output,0,"init","--init","--spring.datasource.url="+url);
-            String[] collect={"--spring.datasource.url="+url,"--monitor.cluster-id=smoke","--monitor.cluster-name="+cluster,
-                "--monitor.members=127.0.0.1:"+port,"--monitor.snapshot-dir="+output.resolve("snapshots")};
+            String[] collect={"--spring.datasource.url="+url,"--monitor.cluster-id=smoke","--monitor.client-config="+Fixtures.clientConfig(cluster,"127.0.0.1:"+port),
+                "--monitor.snapshot-dir="+output.resolve("snapshots")};
             execute(jar,output,0,"collect-1",collect);
             a.getMap("orders").put(3,"c"); execute(jar,output,0,"collect-2",collect);
             b.shutdown(); b=null; execute(jar,output,0,"collect-3",collect);

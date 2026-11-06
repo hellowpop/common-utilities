@@ -1,0 +1,15 @@
+# For servers using ordinary network.join.multicast.enabled=true.
+# Keep the SERVER multicast configuration unchanged.
+# Set at least one reachable SERVER TCP seed address below; more seeds improve availability.
+# Native Java clients do NOT use the server's member multicast join protocol.
+# In application.yml select: monitor.client-config: ./hazelcast-client-member-seed.yml
+hazelcast-client:
+  cluster-name: dev # Must match the server cluster-name.
+  network:
+    auto-detection:
+      enabled: false
+    cluster-members:
+      - 127.0.0.1:5701 # Replace with a reachable member TCP address.
+      # - server-2.example.com:5701
+# Add required authentication/TLS here using Hazelcast native client configuration.
+# After connecting, the client learns the member list from the server without becoming a member.

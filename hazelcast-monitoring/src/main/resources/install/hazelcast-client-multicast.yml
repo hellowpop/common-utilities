@@ -1,0 +1,19 @@
+# UDP multicast lookup profile (Hazelcast Discovery SPI), without TCP seed addresses.
+# BOTH servers and clients must configure the same MulticastDiscoveryStrategy/group/port.
+# This does not discover servers using only ordinary network.join.multicast.
+# Select in application.yml: monitor.client-config: ./hazelcast-client-multicast.yml
+hazelcast-client:
+  cluster-name: dev
+  properties:
+    hazelcast.discovery.enabled: true
+  network:
+    auto-detection:
+      enabled: false
+    discovery-strategies:
+      discovery-strategies:
+        - class: com.hazelcast.spi.discovery.multicast.MulticastDiscoveryStrategy
+          enabled: true
+          properties:
+            group: 224.2.2.3
+            port: 54327
+# Add authentication/TLS here if required by the server.

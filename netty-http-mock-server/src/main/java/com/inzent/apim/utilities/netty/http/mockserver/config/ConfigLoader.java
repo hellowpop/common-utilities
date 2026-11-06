@@ -93,7 +93,7 @@ public final class ConfigLoader {
         v.put("server.request-timeout-ms",30000); v.put("server.write-buffer-low-water-mark",32768);
         v.put("server.write-buffer-high-water-mark",65536); v.put("server.max-pending-responses",8);
         v.put("server.shutdown-timeout-ms",10000); v.put("mock.header-name","x-response-action");
-        v.put("mock.default-action","ok");
+        v.put("mock.default-action","default");
         v.put("mock.scan-packages",List.of("com.inzent.apim.utilities.netty.http.mockserver.processor"));
         return v;
     }

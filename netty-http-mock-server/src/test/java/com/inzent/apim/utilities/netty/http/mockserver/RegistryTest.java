@@ -31,8 +31,8 @@ public class RegistryTest {
     }
     @Test void discoversAllBuiltinProcessorTypesFromDirectory() {
         var registry=ActionRegistry.discover(List.of(PROCESSORS));
-        assertEquals(6,registry.names().size());
-        assertTrue(registry.names().containsAll(List.of("ok","copy-and-send","error-500","close","fake-close","delay-close")));
+        assertEquals(8,registry.names().size());
+        assertTrue(registry.names().containsAll(List.of("default","ok","copy-and-send","error-500","close","fake-close","delay-close","status")));
         assertFalse(registry.names().contains("copy"));
         assertThrows(IllegalArgumentException.class,() -> ActionRegistry.discover(List.of("")));
     }

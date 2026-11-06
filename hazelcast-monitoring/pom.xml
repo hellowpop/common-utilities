@@ -14,7 +14,17 @@
     <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
   </dependencies>
-  <build><finalName>hazelcast-monitoring</finalName><plugins>
+  <build>
+    <resources>
+      <resource><directory>src/main/resources</directory></resource>
+      <resource>
+        <directory>${project.basedir}</directory>
+        <targetPath>META-INF/docs/${project.artifactId}</targetPath>
+        <includes><include>*.md</include></includes>
+        <filtering>false</filtering>
+      </resource>
+    </resources>
+    <finalName>hazelcast-monitoring</finalName><plugins>
     <plugin>
       <groupId>org.apache.maven.plugins</groupId><artifactId>maven-source-plugin</artifactId><version>3.4.0</version>
       <executions><execution><id>attach-sources</id><phase>package</phase><goals><goal>jar-no-fork</goal></goals></execution></executions>

@@ -14,6 +14,11 @@ class ApplicationTest {
         assertThat(run("--help","--spring.datasource.url=jdbc:invalid:bad")).isZero();
         assertThat(run("--mode=unknown","--spring.datasource.url=jdbc:invalid:bad")).isEqualTo(2);
     }
+    @Test void missingNativeClientConfigFailsBeforeDatabaseCreation() {
+        var database=temp.resolve("untouched");
+        assertThat(run("--monitor.client-config="+temp.resolve("missing.yml"),"--spring.datasource.url=jdbc:h2:file:"+database)).isEqualTo(2);
+        assertThat(Path.of(database+".mv.db")).doesNotExist();
+    }
     @Test void installBypassesBrokenDatabaseAndClientSettingsBeforeBoot() {
         var bytes=new ByteArrayOutputStream();
         int code=MonitorApplication.run(new String[]{"--install","--spring.datasource.url=jdbc:invalid:bad","--monitor.client-config=missing.yml"},new PrintStream(bytes));
@@ -35,7 +40,7 @@ class ApplicationTest {
         String datasource="--spring.datasource.url="+url;
         assertThat(run("--init",datasource)).isZero();
         assertThat(run("--report",datasource,"--monitor.report-file="+temp.resolve("empty.html"))).isZero();
-        assertThat(run(datasource,"--monitor.members=127.0.0.1:1","--monitor.connect-timeout=1s","--monitor.snapshot-dir="+temp.resolve("yaml"))).isEqualTo(3);
+        assertThat(run(datasource,"--monitor.client-config="+Fixtures.clientConfig("dev","127.0.0.1:1"),"--monitor.connect-timeout=1s","--monitor.snapshot-dir="+temp.resolve("yaml"))).isEqualTo(3);
         try(var c=DriverManager.getConnection(url,"sa","");var s=c.createStatement();var r=s.executeQuery("select active_node_count,collection_status,yaml_export_status from hzmon_monitor_summary")) {
             assertThat(r.next()).isTrue(); assertThat(r.getObject(1)).isNull();
             assertThat(r.getString(2)).isEqualTo("FAILED"); assertThat(r.getString(3)).isEqualTo("EXPORTED");

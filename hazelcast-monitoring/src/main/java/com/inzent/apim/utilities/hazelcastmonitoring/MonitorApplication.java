@@ -80,7 +80,10 @@ public class MonitorApplication {
         try {
             Path directory=Path.of("").toAbsolutePath().normalize();
             new Installer().install(directory,Installer.runningSource()).forEach((file,status)->output.println(status+" "+directory.resolve(file)));
-            output.println("Edit application.yml, then run collect.bat or ./collect.sh. Separate report, init and install scripts are also available. Java 17+ is required.");
+            output.println("Client profiles: TCP=hazelcast-client-tcp.yml; UDP multicast=hazelcast-client-multicast.yml; Discovery SPI extension=hazelcast-client-discovery-strategies.yml; ordinary member multicast (TCP seeds)=hazelcast-client-member-seed.yml.");
+            output.println("Supplied APIM host: hazelcast-client-apim-cluster-lookup.yml (same host, 127.0.0.1:16709; check the server's actual bound port).");
+            output.println("Set monitor.client-config in application.yml, or pass --monitor.client-config=PATH. See CLIENT-CONFIG-README.md.");
+            output.println("Edit the selected native client file, then run collect.bat or ./collect.sh. Separate report, init and install scripts are also available. Java 17+ is required.");
             return 0;
         } catch(IOException e) { output.println("Installation failed: "+e.getMessage()); return 5; }
     }
@@ -94,10 +97,9 @@ public class MonitorApplication {
               --collect (default)     collect once, persist using JPA, export YAML, exit
               --report                export a standalone offline HTML report; no Hazelcast connection
               --init                  DELETE monitoring history and recreate owned schema objects
-              --install               create runtime/classes, runtime/lib, application.yml and mode-specific scripts
-              --monitor.cluster-id=ID logical identity (defaults to cluster-name)
-              --monitor.cluster-name=dev --monitor.members=127.0.0.1:5701
-              --monitor.client-config=client.yml (exclusive with members/cluster-name)
+              --install               create runtime, application.yml, client profiles/guide and mode-specific scripts
+              --monitor.cluster-id=ID logical identity (collect: native cluster-name; report/init: dev)
+              --monitor.client-config=./hazelcast-client.yml (native Hazelcast YAML/XML; required for collection)
               --monitor.snapshot-dir=./output/snapshots
               --monitor.report-file=report.html
               "--monitor.start-time=2026-10-27 00:00:00"

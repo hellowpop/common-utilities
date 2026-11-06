@@ -17,6 +17,56 @@ import static org.assertj.core.api.Assertions.*;
 
 class InstallTest {
     @TempDir Path temp;
+    @Test void installProvidesProfileMatchingSuppliedApimHostConfiguration() throws Exception {
+        Path directory=temp.resolve("apim-host"); var installer=new Installer(); Path source=probeJar();
+        installer.install(directory,source);
+        Path file=directory.resolve("hazelcast-client-apim-cluster-lookup.yml");
+        assertThat(file).isRegularFile();
+        var o=Options.parse(new String[]{"--monitor.client-config="+file},new MockEnvironment());
+        assertThat(o.clusterName()).isEqualTo("apim-cluster-lookup"); assertThat(o.clusterId()).isEqualTo("apim-cluster-lookup");
+        assertThat(o.clientSettings().getNetworkConfig().getAddresses()).containsExactly("127.0.0.1:16709");
+        assertThat(o.clientSettings().getNetworkConfig().getAutoDetectionConfig().isEnabled()).isFalse();
+        assertThat(o.clientSettings().getNetworkConfig().getDiscoveryConfig().getDiscoveryStrategyConfigs()).isEmpty();
+        Files.writeString(file,"custom apim client\n"); installer.install(directory,source);
+        assertThat(Files.readString(file)).isEqualTo("custom apim client\n");
+    }
+    @Test void installCreatesSelectableNativeProfilesAndPreservesThemOnReinstall() throws Exception {
+        Path directory=temp.resolve("profiles"); var installer=new Installer(); Path source=probeJar();
+        var result=installer.install(directory,source);
+        var names=List.of("hazelcast-client-tcp.yml","hazelcast-client-multicast.yml","hazelcast-client-discovery-strategies.yml","hazelcast-client-member-seed.yml");
+        for(String name:names) {
+            assertThat(result.get(name)).isEqualTo("CREATED");
+            var c=new com.hazelcast.client.config.YamlClientConfigBuilder(directory.resolve(name).toFile()).build();
+            assertThat(c.getClusterName()).isEqualTo("dev");
+            var strategies=c.getNetworkConfig().getDiscoveryConfig().getDiscoveryStrategyConfigs();
+            if(name.contains("discovery-strategies")||name.equals("hazelcast-client-multicast.yml")) {
+                assertThat(c.getNetworkConfig().getAddresses()).isEmpty();
+                assertThat(c.getProperty("hazelcast.discovery.enabled")).isEqualTo("true"); assertThat(strategies).hasSize(1);
+                assertThat(strategies.iterator().next().getClassName()).isEqualTo("com.hazelcast.spi.discovery.multicast.MulticastDiscoveryStrategy");
+                assertThat(strategies.iterator().next().getProperties()).containsEntry("group","224.2.2.3").containsEntry("port","54327");
+            } else { assertThat(c.getNetworkConfig().getAddresses()).containsExactly("127.0.0.1:5701"); assertThat(strategies).isEmpty(); }
+            Files.writeString(directory.resolve(name),"custom "+name+"\n");
+        }
+        assertThat(Files.readString(directory.resolve("CLIENT-CONFIG-README.md"))).contains("monitor.client-config",names.get(0),names.get(1),names.get(2));
+        var again=installer.install(directory,source);
+        for(String name:names) {
+            assertThat(again.get(name)).isEqualTo("PRESERVED"); assertThat(Files.readString(directory.resolve(name))).isEqualTo("custom "+name+"\n");
+        }
+        Files.delete(directory.resolve(names.get(2)));
+        assertThat(installer.install(directory,source).get(names.get(2))).isEqualTo("CREATED");
+        assertThat(new com.hazelcast.client.config.YamlClientConfigBuilder(directory.resolve(names.get(2)).toFile()).build().getNetworkConfig().getDiscoveryConfig().getDiscoveryStrategyConfigs()).hasSize(1);
+    }
+    @Test void installProvidesNativeClientProfileForRegularMulticastMembersAndPreservesEdits() throws Exception {
+        Path directory=temp.resolve("member-multicast"); var installer=new Installer(); Path source=probeJar();
+        installer.install(directory,source);
+        Path profile=directory.resolve("hazelcast-client-member-seed.yml");
+        assertThat(profile).isRegularFile();
+        var c=new com.hazelcast.client.config.YamlClientConfigBuilder(profile.toFile()).build();
+        assertThat(c.getNetworkConfig().getAddresses()).containsExactly("127.0.0.1:5701");
+        assertThat(c.getNetworkConfig().getDiscoveryConfig().getDiscoveryStrategyConfigs()).isEmpty();
+        Files.writeString(profile,"custom native client config\n"); installer.install(directory,source);
+        assertThat(Files.readString(profile)).isEqualTo("custom native client config\n");
+    }
     @Test void installCreatesRunnableDirectoryWithEditableSettings() throws Exception {
         Path source=probeJar(); Path directory=temp.resolve("install space & bang!");
         new Installer().install(directory,source);
@@ -27,6 +77,8 @@ class InstallTest {
         assertThat(Files.readString(directory.resolve("runtime/classes/variant.txt"))).isEqualTo("A");
         Map<?,?> settings=new Yaml().load(Files.readString(directory.resolve("application.yml")));
         assertThat(settings.containsKey("spring")).isTrue(); assertThat(settings.containsKey("monitor")).isTrue();
+        assertThat(((Map<?,?>)settings.get("monitor")).get("client-config")).isEqualTo("./hazelcast-client-tcp.yml");
+        assertThat(new com.hazelcast.client.config.YamlClientConfigBuilder(directory.resolve("hazelcast-client.yml").toFile()).build().getClusterName()).isEqualTo("dev");
         for(String mode:List.of("collect","report","init","install")) {
             assertThat(Files.readString(directory.resolve(mode+".bat"))).contains("\r\n");
             assertThat(Files.readString(directory.resolve(mode+".sh"))).startsWith("#!/bin/sh\n").doesNotContain("\r");
@@ -40,10 +92,12 @@ class InstallTest {
         installer.install(directory,source);
         Files.writeString(directory.resolve("application.yml"),"custom: settings\n");
         Files.writeString(directory.resolve("report.sh"),"custom script\n");
+        Files.writeString(directory.resolve("hazelcast-client.yml"),"custom client settings\n");
         Files.writeString(directory.resolve("run.bat"),"legacy script\n");
         installer.install(directory,source);
         assertThat(Files.readString(directory.resolve("application.yml"))).isEqualTo("custom: settings\n");
         assertThat(Files.readString(directory.resolve("report.sh"))).isEqualTo("custom script\n");
+        assertThat(Files.readString(directory.resolve("hazelcast-client.yml"))).isEqualTo("custom client settings\n");
         assertThat(Files.readString(directory.resolve("run.bat"))).isEqualTo("legacy script\n");
         Files.writeString(directory.resolve("runtime/classes/variant.txt"),"altered runtime");
         assertThatThrownBy(()->installer.install(directory,source)).isInstanceOf(IOException.class);

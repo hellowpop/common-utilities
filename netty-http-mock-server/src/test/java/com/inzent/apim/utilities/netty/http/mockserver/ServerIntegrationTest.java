@@ -42,16 +42,111 @@ class ServerIntegrationTest {
     @Test void defaultResponseAndKeepAliveReuse() throws Exception {
         try (Socket socket=connect()) {
             send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
-            assertEquals("OK",new String(response(socket,false).body(),StandardCharsets.UTF_8));
+            Reply reply=response(socket,false);
+            assertEquals("200",reply.status().split(" ")[1]);
+            assertEquals("text/plain; charset=UTF-8",reply.headers().get("content-type"));
+            String guidance=new String(reply.body(),StandardCharsets.UTF_8);
+            assertTrue(guidance.contains("x-response-action"));
+            assertTrue(guidance.contains("copy-and-send"));
+            assertTrue(guidance.contains("x-status"));
             send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
             assertTrue(response(socket,false).status().contains("200")); assertEquals(-1,socket.getInputStream().read());
+        }
+    }
+    @Test void explicitOkStillReturnsSimpleResponse() throws Exception {
+        try (Socket socket=connect()) {
+            send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\nx-response-action: ok\r\n\r\n");
+            Reply reply=response(socket,false);
+            assertEquals("200",reply.status().split(" ")[1]);
+            assertEquals("OK",new String(reply.body(),StandardCharsets.UTF_8));
+        }
+    }
+    @Test void defaultHeadUsesGuidanceLengthWithoutSendingBody() throws Exception {
+        try (Socket socket=connect()) {
+            send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+            Reply guidance=response(socket,false);
+            send(socket,"HEAD / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+            Reply head=response(socket,true);
+            assertEquals("200",head.status().split(" ")[1]);
+            assertEquals(Integer.toString(guidance.body().length),head.headers().get("content-length"));
+            assertEquals(-1,socket.getInputStream().read());
+        }
+    }
+    @Test void customActionHeaderUsesGuidanceByDefaultAndSelectsExplicitOk() throws Exception {
+        server.close();
+        var config=ConfigLoader.load(new String[]{"--server.port="+port,"--server.worker-threads=1","--mock.header-name=x-mock-action"});
+        server=new NettyHttpMockServer(config); server.start();
+        try (Socket socket=connect()) {
+            send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+            Reply reply=response(socket,false);
+            assertEquals("200",reply.status().split(" ")[1]);
+            assertTrue(new String(reply.body(),StandardCharsets.UTF_8).contains("copy-and-send"));
+            send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\nx-mock-action: ok\r\n\r\n");
+            assertEquals("OK",new String(response(socket,false).body(),StandardCharsets.UTF_8));
+        }
+    }
+    @Test void explicitlyConfiguredDefaultActionOverridesGuidanceFallback() throws Exception {
+        server.close();
+        var config=ConfigLoader.load(new String[]{"--server.port="+port,"--server.worker-threads=1","--mock.default-action=ok"});
+        server=new NettyHttpMockServer(config); server.start();
+        try (Socket socket=connect()) {
+            send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+            Reply reply=response(socket,false);
+            assertEquals("200",reply.status().split(" ")[1]);
+            assertEquals("OK",new String(reply.body(),StandardCharsets.UTF_8));
+        }
+    }
+    @Test void statusHeaderSelectsResponseCodeAndPreservesMessageBoundaries() throws Exception {
+        try (Socket socket=connect()) {
+            for (int code:new int[]{200,201,204,205,304,404,429,500,599}) {
+                send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\nx-response-action: status\r\nX-StAtUs: "+code+"\r\n\r\n");
+                Reply reply=response(socket,false);
+                assertEquals(Integer.toString(code),reply.status().split(" ")[1]);
+                assertEquals(0,reply.body().length);
+                if (code==204 || code==304) assertFalse(reply.headers().containsKey("content-length"));
+                else assertEquals("0",reply.headers().get("content-length"));
+                assertFalse(reply.headers().containsKey("transfer-encoding"));
+            }
+            send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\nx-response-action: ok\r\n\r\n");
+            assertEquals("OK",new String(response(socket,false).body(),StandardCharsets.UTF_8));
+        }
+    }
+    @Test void statusHeadReturnsSelectedCodeThenCloses() throws Exception {
+        try (Socket socket=connect()) {
+            send(socket,"HEAD / HTTP/1.1\r\nHost: localhost\r\nx-response-action: status\r\nx-status: 451\r\nConnection: close\r\n\r\n");
+            Reply reply=response(socket,true);
+            assertEquals("451",reply.status().split(" ")[1]);
+            assertEquals("0",reply.headers().get("content-length"));
+            assertEquals(-1,socket.getInputStream().read());
+        }
+    }
+    @Test void rejectsMissingDuplicateOrInvalidStatusHeader() throws Exception {
+        for (String headers:List.of("", "x-status: \r\n", "x-status: 100\r\n", "x-status: 199\r\n",
+                "x-status: 600\r\n", "x-status: -1\r\n", "x-status: +200\r\n", "x-status: 200.0\r\n",
+                "x-status: 0200\r\n", "x-status: 200,201\r\n", "x-status: 999999999999999\r\n",
+                "x-status: 200\r\nx-status: 201\r\n")) {
+            try (Socket socket=connect()) {
+                send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\nx-response-action: status\r\n"+headers+"\r\n");
+                Reply reply=response(socket,false);
+                assertEquals("400",reply.status().split(" ")[1]);
+                assertEquals("INVALID_STATUS\n",new String(reply.body(),StandardCharsets.UTF_8));
+                assertEquals(-1,socket.getInputStream().read());
+            }
+        }
+    }
+    @Test void otherActionsIgnoreStatusHeader() throws Exception {
+        try (Socket socket=connect()) {
+            send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\nx-response-action: ok\r\nx-status: invalid\r\n\r\n");
+            Reply reply=response(socket,false);
+            assertEquals("200",reply.status().split(" ")[1]);
+            assertEquals("OK",new String(reply.body(),StandardCharsets.UTF_8));
         }
     }
     @Test void copyAndHead() throws Exception {
         try (Socket socket=connect()) {
             send(socket,"POST / HTTP/1.1\r\nHost: localhost\r\nx-response-action: copy-and-send\r\nContent-Length: 3\r\n\r\nabc");
             assertArrayEquals(new byte[]{97,98,99},response(socket,false).body());
-            send(socket,"HEAD / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+            send(socket,"HEAD / HTTP/1.1\r\nHost: localhost\r\nx-response-action: ok\r\nConnection: close\r\n\r\n");
             assertEquals("2",response(socket,true).headers().get("content-length"));
             assertEquals(-1,socket.getInputStream().read());
         }

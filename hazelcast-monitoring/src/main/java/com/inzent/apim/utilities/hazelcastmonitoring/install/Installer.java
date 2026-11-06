@@ -11,7 +11,8 @@ import org.springframework.boot.system.ApplicationHome;
 
 /** Creates a classpath runtime and launchers without opening application settings or a database. */
 public final class Installer {
-    private static final List<String> TEMPLATES=List.of("application.yml","collect.bat","collect.sh","report.bat","report.sh","init.bat","init.sh","install.bat","install.sh");
+    private static final List<String> TEMPLATES=List.of("application.yml","hazelcast-client.yml","hazelcast-client-tcp.yml","hazelcast-client-multicast.yml",
+        "hazelcast-client-member-seed.yml","hazelcast-client-discovery-strategies.yml","hazelcast-client-apim-cluster-lookup.yml","CLIENT-CONFIG-README.md","collect.bat","collect.sh","report.bat","report.sh","init.bat","init.sh","install.bat","install.sh");
     public static Path runningSource() throws IOException {
         File source=new ApplicationHome(MonitorApplication.class).getSource();
         if(source==null||(!source.isFile()&&!source.isDirectory()))
@@ -36,7 +37,7 @@ public final class Installer {
                 if(!Files.isRegularFile(file))throw new IOException("Install target is not a regular file: "+file);
                 result.put(name,"PRESERVED"); continue;
             }
-            String template=name.equals("application.yml")?name:(name.endsWith(".bat")?"launcher.bat.template":"launcher.sh.template");
+            String template=name.endsWith(".bat")?"launcher.bat.template":name.endsWith(".sh")?"launcher.sh.template":name;
             try(var resource=Installer.class.getResourceAsStream("/install/"+template)) {
                 if(resource==null)throw new IOException("Missing install template: "+name);
                 String text=new String(resource.readAllBytes(),StandardCharsets.UTF_8).replace("\r\n","\n");

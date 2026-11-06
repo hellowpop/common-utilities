@@ -1,6 +1,7 @@
 # 프로젝트 작업 규칙
 
 - Java Maven 프로젝트는 기본 빌드에서 소스 JAR을 생성하고 첨부한다. maven-source-plugin의 jar-no-fork를 package 단계에 연결한다.
+- Maven package 산출물에는 모듈 루트의 Markdown(`*.md`) 문서를 `META-INF/docs/<artifactId>/` 경로에 포함한다.
 - 사용자의 요청은 현재 프로젝트 상황에 가장 적합한 경로를 스스로 판단하여 수행하며, 진행을 위한 확인 질문은 하지 않는다.
 - 기술 문서는 Markdown(`.md`) 형식으로 통일한다.
 - get push 를 수행하기전 기술문서 업데이트를 선행한다.

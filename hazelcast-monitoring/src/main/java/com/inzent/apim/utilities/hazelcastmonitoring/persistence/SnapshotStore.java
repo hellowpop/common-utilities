@@ -18,15 +18,25 @@ public final class SnapshotStore implements AutoCloseable {
     private final LocalContainerEntityManagerFactoryBean factory;
     private final EntityManagerFactory emf;
     public SnapshotStore(DataSource source, boolean validate) {
-        factory = new LocalContainerEntityManagerFactoryBean();
+        this(source,validate,new LocalContainerEntityManagerFactoryBean());
+    }
+    SnapshotStore(DataSource source,boolean validate,LocalContainerEntityManagerFactoryBean factory) {
+        this.factory=Objects.requireNonNull(factory);
         factory.setDataSource(source);
         factory.setPackagesToScan(SnapshotStore.class.getPackageName());
         factory.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
         factory.setJpaPropertyMap(Map.of("hibernate.hbm2ddl.auto", validate ? "validate" : "none",
             "hibernate.jdbc.time_zone", "UTC", "hibernate.jdbc.batch_size", "50",
             "hibernate.connection.handling_mode", "DELAYED_ACQUISITION_AND_HOLD"));
-        factory.afterPropertiesSet();
-        emf = Objects.requireNonNull(factory.getObject());
+        try {
+            factory.afterPropertiesSet();
+            emf = factory.getObject();
+            if(emf==null)throw new IllegalStateException("EntityManagerFactory was not initialized");
+        } catch(RuntimeException|Error failure) {
+            try { factory.destroy(); }
+            catch(RuntimeException|Error cleanup) { if(cleanup!=failure)failure.addSuppressed(cleanup); }
+            throw failure;
+        }
     }
     private <T> T transaction(boolean readOnly, Function<EntityManager,T> body) {
         try (EntityManager em = emf.createEntityManager()) {
@@ -34,7 +44,11 @@ public final class SnapshotStore implements AutoCloseable {
             em.unwrap(Session.class).doWork(c -> { c.setReadOnly(readOnly); c.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ); });
             var tx = em.getTransaction();
             try { tx.begin(); T result = body.apply(em); tx.commit(); return result; }
-            catch (RuntimeException e) { if (tx.isActive()) tx.rollback(); throw e; }
+            catch (RuntimeException|Error failure) {
+                try { if(tx.isActive())tx.rollback(); }
+                catch(RuntimeException|Error cleanup) { if(cleanup!=failure)failure.addSuppressed(cleanup); }
+                throw failure;
+            }
         }
     }
     public void save(Snapshot value, Path yamlPath) {

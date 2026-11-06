@@ -37,7 +37,7 @@ class ClusterCollectorTest {
             HazelcastInstance observer=client;
             await().atMost(Duration.ofSeconds(15)).until(() -> observer.getCluster().getMembers().size()==2 &&
                 observer.getDistributedObjects().stream().filter(object->object instanceof com.hazelcast.topic.ITopic<?>).count()==2);
-            var o=Options.parse(new String[]{"--monitor.cluster-name="+cluster},new MockEnvironment());
+            var o=Options.parse(new String[]{"--monitor.client-config="+Fixtures.clientConfig(cluster,"127.0.0.1:"+port)},Fixtures.environment());
             var snapshot=new ClusterCollector().collect(client,o);
             assertThat(snapshot.activeNodeCount()).isEqualTo(2);
             assertThat(snapshot.collectionStatus()).isEqualTo(Snapshot.Status.SUCCESS);
@@ -56,7 +56,7 @@ class ClusterCollectorTest {
         var topic=mock(com.hazelcast.topic.ITopic.class); when(topic.getServiceName()).thenReturn("hz:impl:topicService"); when(topic.getName()).thenReturn("events");
         var other=mock(DistributedObject.class); when(other.getServiceName()).thenReturn("custom-service"); when(other.getName()).thenReturn("other");
         when(client.getDistributedObjects()).thenReturn(List.of(topic,other));
-        var snapshot=new ClusterCollector().collect(client,Options.parse(new String[0],new MockEnvironment()));
+        var snapshot=new ClusterCollector().collect(client,Options.parse(new String[0],Fixtures.environment()));
         assertThat(snapshot.collectionStatus()).isEqualTo(Snapshot.Status.SUCCESS);
         assertThat(snapshot.objects()).hasSize(1);
         assertThat(snapshot.objects().get(0).serviceName()).isEqualTo("custom-service");
@@ -64,7 +64,7 @@ class ClusterCollectorTest {
         assertThat(snapshot.objects().get(0).objectCount()).isNull();
     }
     @Test void unreachableClusterIsFailedWithUnknownNodeCount() {
-        var o=Options.parse(new String[]{"--monitor.members=127.0.0.1:1","--monitor.connect-timeout=1s"},new MockEnvironment());
+        var o=Options.parse(new String[]{"--monitor.client-config="+Fixtures.clientConfig("dev","127.0.0.1:1"),"--monitor.connect-timeout=1s"},Fixtures.environment());
         var snapshot=new ClusterCollector().collect(o);
         assertThat(snapshot.collectionStatus()).isEqualTo(Snapshot.Status.FAILED);
         assertThat(snapshot.activeNodeCount()).isNull();
@@ -77,7 +77,7 @@ class ClusterCollectorTest {
         when(broken.size()).thenThrow(new IllegalStateException("sensitive remote message"));
         var healthy=mock(com.hazelcast.map.IMap.class); when(healthy.getServiceName()).thenReturn("map"); when(healthy.getName()).thenReturn("b-healthy"); when(healthy.size()).thenReturn(7);
         when(client.getDistributedObjects()).thenReturn(List.of(broken,healthy));
-        var snapshot=new ClusterCollector().collect(client,Options.parse(new String[0],new MockEnvironment()));
+        var snapshot=new ClusterCollector().collect(client,Options.parse(new String[0],Fixtures.environment()));
         assertThat(snapshot.collectionStatus()).isEqualTo(Snapshot.Status.PARTIAL);
         assertThat(snapshot.objects().get(0).objectCount()).isNull();
         assertThat(snapshot.objects().get(0).errorMessage()).doesNotContain("sensitive");
@@ -90,13 +90,13 @@ class ClusterCollectorTest {
         when(slow.size()).thenAnswer(call -> { Thread.sleep(5000); return 2; });
         var next=mock(com.hazelcast.map.IMap.class); when(next.getServiceName()).thenReturn("map"); when(next.getName()).thenReturn("b-next");
         when(client.getDistributedObjects()).thenReturn(List.of(slow,next));
-        var snapshot=new ClusterCollector().collect(client,Options.parse(new String[]{"--monitor.operation-timeout=200ms"},new MockEnvironment()));
+        var snapshot=new ClusterCollector().collect(client,Options.parse(new String[]{"--monitor.operation-timeout=200ms"},Fixtures.environment()));
         assertThat(snapshot.collectionStatus()).isEqualTo(Snapshot.Status.PARTIAL);
         assertThat(snapshot.objects()).extracting(Snapshot.ObjectInfo::countStatus).containsExactly(Snapshot.CountStatus.ERROR,Snapshot.CountStatus.NOT_COLLECTED);
         assertThat(snapshot.objects().get(0).errorCode()).isEqualTo("TIMEOUT");
     }
     @Test void wholeCollectionBudgetIncludesInitialConnection() {
-        var o=Options.parse(new String[]{"--monitor.members=127.0.0.1:1","--monitor.connect-timeout=5s","--monitor.collection-timeout=200ms"},new MockEnvironment());
+        var o=Options.parse(new String[]{"--monitor.client-config="+Fixtures.clientConfig("dev","127.0.0.1:1"),"--monitor.connect-timeout=5s","--monitor.collection-timeout=200ms"},Fixtures.environment());
         long start=System.nanoTime();
         var snapshot=new ClusterCollector().collect(o);
         assertThat(snapshot.collectionStatus()).isEqualTo(Snapshot.Status.FAILED);

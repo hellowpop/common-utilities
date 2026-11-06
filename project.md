@@ -15,9 +15,13 @@
 
 ## 구조 변경내역
 
+- 2026-11-06: 미반영 변경 전체를 점검하여 Hazelcast native client 설정·설치 프로필·수명 관리 보강, Netty default/status 응답, CharSequence 비교 모듈, 메일 분석 설계와 POJO 요구사항 문서를 함께 반영한다. 10개 Maven 모듈은 기존 소스 JAR 첨부를 유지하고 모듈 루트의 `*.md`를 `META-INF/docs/<artifactId>/`에 포함한다. 빌드 산출물은 Git에서 제외한다.
+
 - 2026-11-06: `java-performance-tuning/README.md`에 수치형 옵션의 Java 17 기본값·자동 결정 기준, 값 증감에 따른 기대 효과·부작용·검증 지표 및 로그·진단 수집 조건의 기본값을 보강했다. GC별 실행 flag를 비교하고 예측 분석과 실측 결과를 구분했다.
 
 - 2026-11-06: `java-performance-tuning`에 Linux Java 성능 측정·튜닝 문서를 추가했다. Java 17 기준 GC별 선택, 옵션 값의 차이, Java 21·25 ZGC 변경점, 프로세스·스레드·메모리·I/O·cgroup 점검 명령, JFR·NMT·덤프 분석 절차를 README.md에 정리하고 project.md에 문서 구성을 기록했다.
+
+- 2026-11-05: `char-sequence-similarity` 독립 Maven 모듈에 `CharSequenceSimilarity.compare(CharSequence, CharSequence)`를 추가했다. 완전 일치 100, 대소문자 무시 99, snake/kebab 98, 앞뒤 공백·특수문자 제거 97, 중간 공백 비율 감점을 순차 적용한다. 모듈 project.md와 README.md에 구성·계산식·경계 입력 계약을 정리했다. 실제 JDK 17 clean verify에서 긴 입력 회귀 테스트 포함 35개 통과. 커밋/push는 수행하지 않았다.
 
 - 2026-11-03: Java JAR Control의 백그라운드 실행/정지/프로세스 상세 조회/log tail, 고정 configure 및 APP_NAME/JAR_FILE 필수 설정을 develop에 커밋하여 origin/develop에 반영한다. push 전 Bash 문법 검사 및 실제 JAR 기반 전체 통합 테스트 17개 통과. 관련 모듈과 기술문서만 포함하고 POJO/메일 분석 문서는 제외한다.
 
@@ -30,6 +34,8 @@
 - 2026-10-29: `java-jar-control`의 status/staus에 PID·PPID·사용자·프로세스 상태·시작 일시·경과 시간·CPU/메모리 사용률·RSS·전체 Java 실행 명령 출력을 추가했다. procps ps 의존성과 사용법을 문서화하고 실제 JAR 기반 전체 통합 테스트 12개를 검증했다. 커밋/push는 수행하지 않았다.
 
 - 2026-10-29: `java-jar-control`에 Linux executable JAR용 `a.ctl start|stop|status`(`staus` 별칭 포함)를 추가했다. Java home 지정/환경/PATH 탐지, 메모리·GC·JVM·agent·애플리케이션 옵션 배열, nohup 로그, PID 시작 tick/boot ID 확인, flock 중복 실행 방지, 정상/선택적 강제 종료를 제공한다. 모듈 project.md와 README.md에 구성·사용법을 정리하고 WSL Ubuntu 24.04에서 실제 Java JAR 기반 통합 테스트 11개를 검증했다. 커밋/push는 수행하지 않았다.
+
+- 2026-10-29: `mail-analysis-report/project.md`에 MCP provider 기반 메일 분석 리포트 절차 분석서를 추가했다. 메일 사업자별 인증·조회, provider 도구 계약, 패턴 생성·버전 관리, 근거 기반 Markdown 보고서, 증분 수집·중복 억제·복구 및 Windows/Linux/Kubernetes 주기 실행 환경을 정리했다. 기술 조사·설계 문서이며 기능 구현, 실제 메일 접근, 예약 등록, 커밋/push는 수행하지 않았다.
 
 - 2026-10-27: Hazelcast monitoring 배포 전 Java 17 `clean verify`를 재실행해 51개 테스트 통과(실패/오류/건너뜀 0)를 확인했다. 모듈 소스·테스트·README·설계문서를 develop에 함께 반영한다. 빌드 산출물과 실행 데이터는 Git에서 제외한다.
 
@@ -1349,3 +1355,20 @@ null callback=NullPointerException, borrowed=1
 - 빌드 설정 검증은 `mvn -f <모듈>/pom.xml -Dmaven.test.skip=true package`와 생성 소스 JAR의 `.java` 항목 검사로 수행한다. 이 명령은 테스트를 실행하지 않는다.
 - 검증 결과: 10개 모듈 package 성공, 각 소스 JAR의 Java 소스 포함 확인, 중복 없는 플러그인 및 attach-sources 실행 확인. HTTP payload 모듈은 install까지 실행하여 로컬 Maven 저장소에 소스 JAR이 함께 설치되는 것을 확인했다. netty-http-mock-server의 별도 library-sources 첨부 설정도 보존했다.
 - 푸시 범위: 기존 추적 모듈 9개의 설정과 소스 첨부 문서를 반영한다. 미추적 char-sequence-similarity 모듈의 설정은 모듈 소스와 함께 로컬에 보존하며, 해당 모듈의 별도 반영 시 포함한다.
+
+## Maven Markdown 패키징 (2026-11-06)
+
+- 적용 대상은 소스 첨부와 동일한 10개 Maven 모듈이다.
+- 기본 `src/main/resources` 복사를 유지하고 모듈 루트의 `*.md`를 필터링 없이 `META-INF/docs/${project.artifactId}/`로 복사한다.
+- 모듈별 경로를 사용하여 의존성을 합치는 shaded JAR에서도 다른 모듈 문서와 충돌하지 않는다. Spring Boot 실행 JAR에서는 `BOOT-INF/classes/META-INF/docs/<artifactId>/`에서 확인한다.
+- `package`에서 기본 JAR과 소스 JAR에 포함되며 Netty의 library/library-sources JAR에도 포함된다. `target/` 내부 실행 로그와 임시 문서는 포함하지 않는다.
+- 기능별 구성·사용법 및 기존 설계/분석 Markdown을 함께 제공한다. 미구현 POJO/메일 문서는 설계 상태 그대로 관리하며 실행 기능으로 취급하지 않는다.
+## 전체 변경 푸시 전 검증 (2026-11-06)
+
+- 환경: Windows 11, 실제 JDK 17.0.10, Maven 3.9.11.
+- 10개 모듈 `clean verify` 성공(`http-payload-generator`는 모듈 간 의존성 반영을 위해 `clean install`). 전체 476개 중 Hazelcast POSIX launcher 1개는 최초 실행에서 환경 미설정으로 건너뛰었다.
+- `HZMON_TEST_SH`를 Git Bash로 지정해 Hazelcast `InstallTest` 20개를 재실행하여 건너뜀 없이 통과했다. 새 `MemberMulticastIT`, `UdpDiscoveryIT`, `ResourceLifecycleIT` 3개도 통과했다. 최종 고유 테스트는 총 479개이며 실패/오류/미검증 건너뜀은 없다.
+- Hazelcast 실행 JAR을 별도 JVM으로 실행하여 init/collect/report 흐름, 노드 수 `[2,2,1]`, Map count `[2,3,3]`, YAML 3개 및 HTML 생성을 확인했다.
+- 10개 모듈의 기본·소스 JAR과 Netty library/library-sources JAR에서 문서 포함을 검사했다. 소스 JAR의 Java 소스도 확인했다.
+- Hazelcast·Netty 변경의 독립 읽기 전용 코드 리뷰에서 추가 결함은 발견되지 않았다. PostgreSQL 계약 테스트와 운영 네트워크/장기 부하는 이번 점검에서 실행하지 않았다.
+- POJO 문서는 요구사항 초안이며 메일 분석 문서는 설계 분석서다. 구현이나 예약 등록을 수행한 것으로 보지 않는다.

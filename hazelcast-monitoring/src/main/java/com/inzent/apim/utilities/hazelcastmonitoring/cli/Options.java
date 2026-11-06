@@ -7,14 +7,15 @@ import org.springframework.core.env.Environment;
 import org.springframework.boot.convert.DurationStyle;
 
 /** Validated once, before any database or client is opened. */
-public record Options(Mode mode, boolean help, String clusterId, String clusterName, List<String> members,
+public record Options(Mode mode, boolean help, String clusterId, String clusterName,
         Path clientConfig, Path snapshotDir, Path reportFile, Instant start, Instant end, ZoneId reportZone,
         Duration connectTimeout, Duration operationTimeout, Duration collectionTimeout,
-        String nodeNameAttribute, int maxRuns, int maxObjects) {
+        String nodeNameAttribute, int maxRuns, int maxObjects, com.hazelcast.client.config.ClientConfig clientSettings) {
     public enum Mode { COLLECT, REPORT, INIT, INSTALL }
     private static final Set<String> MODE_FLAGS = Set.of("collect", "report", "init", "install");
-    private static final Set<String> KEYS = Set.of("help", "monitor.cluster-id", "monitor.cluster-name",
-        "monitor.members", "monitor.client-config", "monitor.snapshot-dir", "monitor.report-file", "monitor.start-time",
+    private static final Set<String> LEGACY_CONNECTION_KEYS=Set.of("monitor.cluster-name","monitor.members","monitor.lookup-mode","monitor.udp-group","monitor.udp-port");
+    private static final Set<String> KEYS = Set.of("help", "monitor.cluster-id",
+        "monitor.client-config", "monitor.snapshot-dir", "monitor.report-file", "monitor.start-time",
         "monitor.end-time", "monitor.report-zone", "monitor.connect-timeout", "monitor.operation-timeout",
         "monitor.collection-timeout", "monitor.node-name-attribute", "monitor.max-report-runs", "monitor.max-report-objects");
 
@@ -23,6 +24,7 @@ public record Options(Mode mode, boolean help, String clusterId, String clusterN
         for (String arg : args) {
             if (!arg.startsWith("--")) throw new IllegalArgumentException("Expected --key=value: " + arg);
             String[] pair = arg.substring(2).split("=", 2);
+            if(LEGACY_CONNECTION_KEYS.contains(pair[0]))throw new IllegalArgumentException("Move "+pair[0]+" to the native monitor.client-config file");
             if(MODE_FLAGS.contains(pair[0])) {
                 if(pair.length!=1)throw new IllegalArgumentException("Mode flags take no value: --"+pair[0]);
                 if(cli.putIfAbsent("mode",pair[0])!=null)throw new IllegalArgumentException("Specify only one of --collect, --report, --init, --install");
@@ -53,25 +55,22 @@ public record Options(Mode mode, boolean help, String clusterId, String clusterN
         Instant end = time(get.apply("monitor.end-time", null));
         if ((start != null || end != null) && selected != Mode.REPORT) throw new IllegalArgumentException("Time range is report-only");
         if (start != null && end != null && !start.isBefore(end)) throw new IllegalArgumentException("start-time must precede end-time");
-        String config = get.apply("monitor.client-config", null);
-        if (config != null && (get.apply("monitor.members", null) != null || get.apply("monitor.cluster-name", null) != null))
-            throw new IllegalArgumentException("client-config cannot be mixed with members/cluster-name");
-        String name = get.apply("monitor.cluster-name", "dev");
-        if(config!=null) {
-            try { name=new com.hazelcast.client.config.YamlClientConfigBuilder(Path.of(config).toFile()).build().getClusterName(); }
-            catch(java.io.IOException|RuntimeException e) { throw new IllegalArgumentException("Cannot read or parse client-config",e); }
-        }
+        for(String key:LEGACY_CONNECTION_KEYS)
+            if(env.getProperty(key)!=null)throw new IllegalArgumentException("Move "+key+" to the native monitor.client-config file");
+        Path config=Path.of(get.apply("monitor.client-config","./hazelcast-client.yml")).toAbsolutePath().normalize();
+        com.hazelcast.client.config.ClientConfig clientSettings=selected==Mode.COLLECT?
+            com.inzent.apim.utilities.hazelcastmonitoring.client.ClientSettings.load(config):null;
+        String name=clientSettings==null?"dev":clientSettings.getClusterName();
         name = required(name, 200, "cluster-name");
         String id = required(get.apply("monitor.cluster-id", name), 200, "cluster-id");
         String report = get.apply("monitor.report-file", null);
         return new Options(selected, Boolean.parseBoolean(get.apply("help", "false")), id, name,
-            Arrays.stream(get.apply("monitor.members", "127.0.0.1:5701").split(",")).map(String::trim).map(s -> required(s,512,"member")).toList(),
-            config == null ? null : Path.of(config), Path.of(get.apply("monitor.snapshot-dir", "./output/snapshots")).toAbsolutePath().normalize(),
+            config, Path.of(get.apply("monitor.snapshot-dir", "./output/snapshots")).toAbsolutePath().normalize(),
             report == null ? null : Path.of(report).toAbsolutePath().normalize(), start, end,
             ZoneId.of(get.apply("monitor.report-zone", "Asia/Seoul")), duration(get.apply("monitor.connect-timeout", "30s")),
             duration(get.apply("monitor.operation-timeout", "10s")), duration(get.apply("monitor.collection-timeout", "120s")),
             required(get.apply("monitor.node-name-attribute", "monitor.node-name"),512,"node-name-attribute"),
-            positive(get.apply("monitor.max-report-runs", "10000")), positive(get.apply("monitor.max-report-objects", "1000000")));
+            positive(get.apply("monitor.max-report-runs", "10000")), positive(get.apply("monitor.max-report-objects", "1000000")),clientSettings);
     }
     private static Instant time(String value) {
         return com.inzent.apim.utilities.hazelcastmonitoring.time.DateTimes.parse(value);

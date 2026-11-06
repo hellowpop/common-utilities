@@ -34,7 +34,7 @@ class ExportReportTest {
     }
     @Test void recoversDbCommittedSnapshotAfterFileFailure() throws Exception {
         var db=new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";DB_CLOSE_DELAY=-1","sa","");
-        new SchemaManager(db).update(); var o=Options.parse(new String[]{"--monitor.cluster-id=a"},new MockEnvironment());
+        new SchemaManager(db).update(); var o=Options.parse(new String[]{"--monitor.cluster-id=a"},Fixtures.environment());
         var snapshot=Fixtures.snapshot("2026-10-27T00:00:00Z","a","map","orders",1L);
         Path target=temp.resolve("recover.yml");
         try(var store=new SnapshotStore(db,true)) {
@@ -49,7 +49,7 @@ class ExportReportTest {
         var gap=Fixtures.snapshot("2026-10-27T01:00:00Z","a","map",dangerous,null);
         var last=Fixtures.snapshot("2026-10-27T02:00:00Z","a","map",dangerous,3L);
         Path path=temp.resolve("report.html");
-        var o=Options.parse(new String[]{"--report","--monitor.cluster-id=a","--monitor.report-file="+path},new MockEnvironment());
+        var o=Options.parse(new String[]{"--report","--monitor.cluster-id=a","--monitor.report-file="+path},Fixtures.environment());
         new HtmlReport().write(List.of(first,gap,last),o);
         String html=Files.readString(path);
         assertThat(html).contains("<svg", "data-status=\"ERROR\"", "&lt;/script&gt;", "2026-10-27 09:00:00", "2026-10-27 11:00:00");
@@ -58,7 +58,7 @@ class ExportReportTest {
     }
     @Test void emptyReportStillContainsUsefulMessage() throws Exception {
         Path path=temp.resolve("empty.html");
-        new HtmlReport().write(List.of(),Options.parse(new String[]{"--report","--monitor.report-file="+path},new MockEnvironment()));
+        new HtmlReport().write(List.of(),Options.parse(new String[]{"--report","--monitor.report-file="+path},Fixtures.environment()));
         assertThat(Files.readString(path)).contains("조회 결과 없음");
     }
     @Test void partitionsBySeoulDateAndSeparatesRunsWithinTheSameSecond() {
@@ -89,7 +89,7 @@ class ExportReportTest {
     @Test void reportHonorsConfiguredZoneWithNewFormatAndParsesLocalPeriod() throws Exception {
         Path path=temp.resolve("utc.html");
         var o=Options.parse(new String[]{"--report","--monitor.report-zone=UTC","--monitor.report-file="+path,
-            "--monitor.start-time=2026-10-27 15:57:19","--monitor.end-time=2026-10-27 15:57:20"},new MockEnvironment());
+            "--monitor.start-time=2026-10-27 15:57:19","--monitor.end-time=2026-10-27 15:57:20"},Fixtures.environment());
         assertThat(o.start()).isEqualTo(java.time.Instant.parse("2026-10-27T06:57:19Z"));
         new HtmlReport().write(List.of(Fixtures.snapshot("2026-10-27T06:57:19.123456Z","a","map","orders",1L)),o);
         assertThat(Files.readString(path)).contains("2026-10-27 06:57:19").doesNotContain("2026-10-27T06:57:19");

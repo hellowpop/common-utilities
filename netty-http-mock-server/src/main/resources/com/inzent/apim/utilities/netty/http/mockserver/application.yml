@@ -20,6 +20,6 @@ server:
   shutdown-timeout-ms: 10000
 mock:
   header-name: x-response-action
-  default-action: ok
+  default-action: default
   scan-packages:
     - com.inzent.apim.utilities.netty.http.mockserver.processor

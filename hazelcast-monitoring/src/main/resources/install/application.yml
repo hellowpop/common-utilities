@@ -17,10 +17,13 @@ spring:
 monitor:
   # Use a different cluster-id for different clusters sharing the same database.
   cluster-id: dev
-  cluster-name: dev
-  members: 127.0.0.1:5701
-  # For advanced authentication/TLS, remove cluster-name and members above:
-  # client-config: ./hazelcast-client.yml
+  # Select one native client profile; see CLIENT-CONFIG-README.md.
+  client-config: ./hazelcast-client-tcp.yml
+  # UDP multicast lookup (server Discovery SPI required): ./hazelcast-client-multicast.yml
+  # Ordinary server multicast join (TCP seeds): ./hazelcast-client-member-seed.yml
+  # Discovery SPI (server/client strategy): ./hazelcast-client-discovery-strategies.yml
+  # Supplied APIM host (same machine): ./hazelcast-client-apim-cluster-lookup.yml
+  # For that profile also set cluster-id: apim-cluster-lookup
   snapshot-dir: ./output/snapshots
   connect-timeout: 30s
   operation-timeout: 10s

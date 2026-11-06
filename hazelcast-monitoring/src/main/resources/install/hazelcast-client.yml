@@ -1,0 +1,20 @@
+# Native Hazelcast Java client configuration. Edit addresses, cluster and security here.
+# Ordinary member multicast servers: use TCP seeds below, or hazelcast-client-member-seed.yml.
+hazelcast-client:
+  cluster-name: dev
+  network:
+    cluster-members:
+      - 127.0.0.1:5701
+    # UDP discovery: remove cluster-members and enable the properties/discovery block below.
+    # auto-detection:
+    #   enabled: false
+    # discovery-strategies:
+    #   discovery-strategies:
+    #     - class: com.hazelcast.spi.discovery.multicast.MulticastDiscoveryStrategy
+    #       enabled: true
+    #       properties:
+    #         group: 224.2.2.3
+    #         port: 54327
+  # properties:
+  #   hazelcast.discovery.enabled: true
+  # UDP requires the same Discovery SPI strategy/group/port on the cluster members.

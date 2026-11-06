@@ -30,15 +30,22 @@ class ExecutableJarIT {
                 catch (java.io.IOException ex) { Thread.sleep(25); }
             }
             assertTrue(ready,() -> { try { return Files.readString(temp.resolve("process.log")); } catch(Exception ex) { return ex.toString(); } });
-            for (String action:java.util.List.of("ok","copy-and-send","error-500","fake-close","close","delay-close")) {
+            try (Socket socket=new Socket("127.0.0.1",port)) {
+                socket.setSoTimeout(3000);
+                ServerIntegrationTest.send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+                var reply=ServerIntegrationTest.response(socket,false);
+                assertEquals("200",reply.status().split(" ")[1]);
+                assertTrue(new String(reply.body(),java.nio.charset.StandardCharsets.UTF_8).contains("x-response-action"));
+            }
+            for (String action:java.util.List.of("default","ok","copy-and-send","error-500","fake-close","close","delay-close","status")) {
                 try (Socket socket=new Socket("127.0.0.1",port)) {
                     socket.setSoTimeout(3000);
                     ServerIntegrationTest.send(socket,"POST / HTTP/1.1\r\nHost: localhost\r\nx-response-action: "+action
-                            +"\r\nx-delay-amount: 25\r\nContent-Length: 3\r\n\r\nabc");
+                            +"\r\nx-delay-amount: 25\r\nx-status: 418\r\nContent-Length: 3\r\n\r\nabc");
                     if (action.equals("close") || action.equals("delay-close")) assertEquals(-1,socket.getInputStream().read());
                     else {
                         var reply=ServerIntegrationTest.response(socket,false);
-                        assertTrue(reply.status().contains(action.equals("error-500") ? "500" : "200"));
+                        assertEquals(action.equals("status") ? "418" : action.equals("error-500") ? "500" : "200",reply.status().split(" ")[1]);
                         if (action.equals("copy-and-send")) assertArrayEquals(new byte[]{97,98,99},reply.body());
                         if (action.equals("fake-close")) {
                             assertEquals("keep-alive",reply.headers().get("connection")); assertEquals(-1,socket.getInputStream().read());

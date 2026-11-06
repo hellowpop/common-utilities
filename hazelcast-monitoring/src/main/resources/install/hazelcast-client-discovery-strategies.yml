@@ -1,0 +1,21 @@
+# Generic Discovery SPI extension template; the bundled example uses MulticastDiscoveryStrategy.
+# The initial strategy matches hazelcast-client-multicast.yml; customize class/properties for another plugin.
+# Discovery SPI profile: real UDP multicast discovery, without TCP seed addresses.
+# BOTH servers and clients must configure the same MulticastDiscoveryStrategy/group/port.
+# This does not discover servers using only ordinary network.join.multicast.
+# Select in application.yml: monitor.client-config: ./hazelcast-client-discovery-strategies.yml
+hazelcast-client:
+  cluster-name: dev
+  properties:
+    hazelcast.discovery.enabled: true
+  network:
+    auto-detection:
+      enabled: false
+    discovery-strategies:
+      discovery-strategies:
+        - class: com.hazelcast.spi.discovery.multicast.MulticastDiscoveryStrategy
+          enabled: true
+          properties:
+            group: 224.2.2.3
+            port: 54327
+# Add authentication/TLS here if required by the server.

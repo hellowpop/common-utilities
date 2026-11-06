@@ -20,7 +20,9 @@ class EmbeddedServerTest {
             try (Socket socket=new Socket("127.0.0.1",port)) {
                 socket.setSoTimeout(2000);
                 ServerIntegrationTest.send(socket,"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
-                assertEquals("OK",new String(ServerIntegrationTest.response(socket,false).body(),java.nio.charset.StandardCharsets.UTF_8));
+                var reply=ServerIntegrationTest.response(socket,false);
+                assertEquals("200",reply.status().split(" ")[1]);
+                assertTrue(new String(reply.body(),java.nio.charset.StandardCharsets.UTF_8).contains("x-response-action"));
             }
             server.close(); server.close();
             assertThrows(IllegalStateException.class,server::start);
