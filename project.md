@@ -15,6 +15,10 @@
 
 ## 구조 변경내역
 
+- 2026-11-06: `java-performance-tuning/README.md`에 수치형 옵션의 Java 17 기본값·자동 결정 기준, 값 증감에 따른 기대 효과·부작용·검증 지표 및 로그·진단 수집 조건의 기본값을 보강했다. GC별 실행 flag를 비교하고 예측 분석과 실측 결과를 구분했다.
+
+- 2026-11-06: `java-performance-tuning`에 Linux Java 성능 측정·튜닝 문서를 추가했다. Java 17 기준 GC별 선택, 옵션 값의 차이, Java 21·25 ZGC 변경점, 프로세스·스레드·메모리·I/O·cgroup 점검 명령, JFR·NMT·덤프 분석 절차를 README.md에 정리하고 project.md에 문서 구성을 기록했다.
+
 - 2026-11-03: Java JAR Control의 백그라운드 실행/정지/프로세스 상세 조회/log tail, 고정 configure 및 APP_NAME/JAR_FILE 필수 설정을 develop에 커밋하여 origin/develop에 반영한다. push 전 Bash 문법 검사 및 실제 JAR 기반 전체 통합 테스트 17개 통과. 관련 모듈과 기술문서만 포함하고 POJO/메일 분석 문서는 제외한다.
 
 - 2026-10-29: `java-jar-control`에 `a.ctl log`를 추가했다. stdout/stderr 로그 마지막 100줄과 새 출력을 GNU tail -F로 조회하며, 프로세스 제어 잠금을 보유하지 않아 조회 중에도 정지·상태 확인이 가능하다. README와 모듈 구성 문서, 로그 조회 통합 테스트를 추가했다. 커밋/push는 수행하지 않았다.
