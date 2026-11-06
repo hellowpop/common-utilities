@@ -1,5 +1,9 @@
 # HTTP Payload Generator 구성
 
+## 기본 소스 첨부 빌드 (2026-11-06)
+
+수정 지침에 따라 maven-source-plugin 3.4.0의 `attach-sources` 실행을 package 단계의 `jar-no-fork`에 연결한다. 기본 빌드에서 sources classifier JAR을 생성·첨부하며 install/deploy에도 포함한다. 모듈 전반의 적용 규칙은 루트 project.md에 기록한다.
+
 ## 목적과 계약
 
 Java 17 독립 Maven 모듈. 모든 클래스는 `com.inzent.apim.utilities.http.payload`에 둔다.

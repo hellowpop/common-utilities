@@ -9,6 +9,8 @@ mvn -f http-payload-generator/pom.xml clean verify
 mvn -f http-payload-generator/pom.xml install
 ```
 
+기본 `package` 빌드는 실행 JAR과 함께 `target/http-payload-generator-1.0.0-SNAPSHOT-sources.jar`를 생성·첨부합니다. `maven-source-plugin:3.4.0`의 `jar-no-fork`를 package 단계에 연결했으며 별도 프로필은 필요하지 않습니다. `install`·`deploy` 시에도 소스 JAR이 함께 전달됩니다.
+
 호출 프로젝트의 Maven 의존성:
 
 ```xml

@@ -1338,3 +1338,14 @@ null callback=NullPointerException, borrowed=1
 - 최종 `mvn -f object-recycle-container/pom.xml clean verify`도 **BUILD SUCCESS**:
   58개 테스트, 실패 0, 오류 0, 건너뜀 0, JAR 재생성 완료. `git diff --check` 통과.
   독립 리뷰의 재확인에서 미해결 지적 없음. 커밋·push는 수행하지 않았다.
+
+## Maven source attach 기본 지침 적용 (2026-11-06)
+
+- 모든 Java Maven 모듈에 `maven-source-plugin:3.4.0`을 명시한다.
+- 별도 프로필 없이 `attach-sources` 실행을 `package` 단계의 `jar-no-fork`에 연결한다. 기본 `attach=true`에 따라 `sources` classifier 산출물을 Maven 프로젝트에 첨부한다.
+- `mvn -f <모듈>/pom.xml package`로 `target/*-sources.jar`를 생성한다. `install` 또는 `deploy`에서는 기본 JAR과 함께 소스 JAR을 전달한다.
+- 적용 대상: http-payload-generator, partial-input, ldap-connection-pool, object-recycle-container, object-pool, curl-http-mock-executor, http-mock-response-server, netty-http-mock-server, hazelcast-monitoring, char-sequence-similarity.
+- 생성 규칙은 루트 AGENTS.md에도 기록한다. 기존 코드 변경과 독립적인 빌드 설정 변경이며, 외부 의존성의 소스 다운로드 설정과는 구분한다.
+- 빌드 설정 검증은 `mvn -f <모듈>/pom.xml -Dmaven.test.skip=true package`와 생성 소스 JAR의 `.java` 항목 검사로 수행한다. 이 명령은 테스트를 실행하지 않는다.
+- 검증 결과: 10개 모듈 package 성공, 각 소스 JAR의 Java 소스 포함 확인, 중복 없는 플러그인 및 attach-sources 실행 확인. HTTP payload 모듈은 install까지 실행하여 로컬 Maven 저장소에 소스 JAR이 함께 설치되는 것을 확인했다. netty-http-mock-server의 별도 library-sources 첨부 설정도 보존했다.
+- 푸시 범위: 기존 추적 모듈 9개의 설정과 소스 첨부 문서를 반영한다. 미추적 char-sequence-similarity 모듈의 설정은 모듈 소스와 함께 로컬에 보존하며, 해당 모듈의 별도 반영 시 포함한다.
