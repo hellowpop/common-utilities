@@ -51,7 +51,7 @@ class HttpPayloadGeneratorTest {
             });
         }
         ContentType.APPLICATION_JSON.generate(25, 7, in -> {
-            try { assertEquals("aaaaaaa", new ObjectMapper().readTree(in).get("key0").asText()); }
+            try { assertTrue(new ObjectMapper().readTree(in).get("key0").asText().matches("[A-Za-z0-9]{7}")); }
             catch (IOException e) { throw new UncheckedIOException(e); }
         });
         ContentType.APPLICATION_XML.generate(99, 7, in -> {
@@ -72,8 +72,6 @@ class HttpPayloadGeneratorTest {
     @ParameterizedTest @EnumSource(ContentEncoding.class)
     void encodingRoundTripsAndHeadersDescribeEncodedBytes(ContentEncoding encoding) {
         var generator = new DefaultHttpPayloadGenerator();
-        AtomicReference<byte[]> raw = new AtomicReference<>();
-        ContentType.APPLICATION_JSON.generate(1024, 17, in -> raw.set(read(in)));
         for (boolean chunked : new boolean[] {false, true}) {
             generator.generate(chunked, ContentType.APPLICATION_JSON, encoding, 1024, 17, (headers, in) -> {
                 byte[] encoded = read(in);
@@ -86,7 +84,13 @@ class HttpPayloadGeneratorTest {
                     assertEquals(encoded.length, Long.parseLong(headers.get(HttpHeaderNames.CONTENT_LENGTH)));
                     assertFalse(headers.contains(HttpHeaderNames.TRANSFER_ENCODING));
                 }
-                assertArrayEquals(raw.get(), decode(encoding, encoded));
+                byte[] decoded = decode(encoding, encoded);
+                assertEquals(1024, decoded.length);
+                try {
+                    var json = new ObjectMapper().readTree(decoded);
+                    assertTrue(json.get("key0").asText().matches("[A-Za-z0-9]{17}"));
+                    json.properties().forEach(e -> assertTrue(e.getValue().asText().matches("[A-Za-z0-9]{0,17}")));
+                } catch (IOException e) { throw new UncheckedIOException(e); }
             });
         }
     }
@@ -120,9 +124,9 @@ class HttpPayloadGeneratorTest {
         for (int size : new int[] {0, 1, 8191, 8192, 8193, 200000}) {
             new DefaultHttpPayloadGenerator()
                 .generate(false, ContentType.APPLICATION_OCTET_STREAM, encoding, size, Long.MAX_VALUE, (h, in) -> {
-                    byte[] expected = new byte[size];
-                    java.util.Arrays.fill(expected, (byte) 'a');
-                    assertArrayEquals(expected, decode(encoding, read(in)));
+                    byte[] decoded = decode(encoding, read(in));
+                    assertEquals(size, decoded.length);
+                    assertTrue(new String(decoded, java.nio.charset.StandardCharsets.US_ASCII).matches("[A-Za-z0-9]*"));
                 });
         }
     }
@@ -176,7 +180,7 @@ class HttpPayloadGeneratorTest {
                 case APPLICATION_XML -> "<root><key0>";
                 case TEXT_HTML -> "<html><body><div data-key=\"key0\">";
                 case APPLICATION_FORM_URLENCODED -> "key0=";
-                case APPLICATION_OCTET_STREAM -> "aaaa";
+                case APPLICATION_OCTET_STREAM -> "";
             };
             generator.generate(false, type, encoding, 256, 7, (headers, in) -> {
                 byte[] body = decode(encoding, read(in));
@@ -185,5 +189,13 @@ class HttpPayloadGeneratorTest {
                 assertTrue(new String(body, java.nio.charset.StandardCharsets.US_ASCII).startsWith(prefix));
             });
         }
+    }
+
+    @ParameterizedTest @EnumSource(value = ContentEncoding.class, names = "IDENTITY", mode = EnumSource.Mode.EXCLUDE)
+    void codecsPreserveExactInputBytes(ContentEncoding encoding) throws IOException {
+        byte[] fixture = "Az09bY18-cOdEc-FiXtUrE\n".repeat(1000).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+        NettyPayloadEncoder.encode(encoding.encoder(), new ByteArrayInputStream(fixture), encoded);
+        assertArrayEquals(fixture, decode(encoding, encoded.toByteArray()));
     }
 }

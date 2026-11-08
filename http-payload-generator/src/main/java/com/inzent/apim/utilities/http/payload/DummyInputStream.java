@@ -6,15 +6,18 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Locale;
+import java.util.concurrent.ThreadLocalRandom;
 
 /** A segment-at-a-time generator; memory use does not depend on payload or value size. */
 final class DummyInputStream extends InputStream {
+    private static final String VALUE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     private final ContentType type;
     private final long blockSize;
     private long bodyRemaining, index, repeated;
     private byte[] literal = new byte[0];
     private int position, stage;
-    private byte repeatedByte = 'a';
+    private byte repeatedByte;
+    private boolean randomValue;
     private String pendingEnd = "";
     private boolean closed;
 
@@ -40,6 +43,7 @@ final class DummyInputStream extends InputStream {
                     String end = String.format(Locale.ROOT, type.end, index);
                     long overhead = start.length() + end.length();
                     if (bodyRemaining < overhead || (overhead == 0 && type != ContentType.APPLICATION_OCTET_STREAM)) {
+                        randomValue = false;
                         repeatedByte = (byte) type.padding;
                         repeated = bodyRemaining;
                         bodyRemaining = 0;
@@ -48,7 +52,7 @@ final class DummyInputStream extends InputStream {
                         long valueLength = Math.min(blockSize, bodyRemaining - overhead);
                         bodyRemaining -= overhead + valueLength;
                         literal(start);
-                        repeatedByte = 'a';
+                        randomValue = true;
                         repeated = valueLength;
                         pendingEnd = end;
                         index++;
@@ -68,7 +72,7 @@ final class DummyInputStream extends InputStream {
         if (!next()) return -1;
         if (position < literal.length) return literal[position++] & 0xff;
         repeated--;
-        return repeatedByte & 0xff;
+        return randomValue ? randomByte() : repeatedByte & 0xff;
     }
 
     @Override public int read(byte[] bytes, int offset, int length) throws IOException {
@@ -84,7 +88,11 @@ final class DummyInputStream extends InputStream {
                 position += count;
             } else {
                 count = (int) Math.min(length - written, repeated);
-                Arrays.fill(bytes, offset + written, offset + written + count, repeatedByte);
+                if (randomValue) {
+                    for (int i = offset + written; i < offset + written + count; i++) bytes[i] = randomByte();
+                } else {
+                    Arrays.fill(bytes, offset + written, offset + written + count, repeatedByte);
+                }
                 repeated -= count;
             }
             written += count;
@@ -93,4 +101,8 @@ final class DummyInputStream extends InputStream {
     }
 
     @Override public void close() { closed = true; }
+
+    private static byte randomByte() {
+        return (byte) VALUE_ALPHABET.charAt(ThreadLocalRandom.current().nextInt(VALUE_ALPHABET.length()));
+    }
 }

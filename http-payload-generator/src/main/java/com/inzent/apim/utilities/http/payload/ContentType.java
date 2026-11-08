@@ -13,7 +13,7 @@ public enum ContentType {
     APPLICATION_XML("application/xml; charset=UTF-8", "<root>", "</root>", "", "<key%d>", "</key%d>", ' '),
     TEXT_HTML("text/html; charset=UTF-8", "<html><body>", "</body></html>", "", "<div data-key=\"key%d\">", "</div>", ' '),
     APPLICATION_FORM_URLENCODED("application/x-www-form-urlencoded; charset=UTF-8", "", "", "&", "key%d=", "", '&'),
-    APPLICATION_OCTET_STREAM("application/octet-stream", "", "", "", "", "", 'a');
+    APPLICATION_OCTET_STREAM("application/octet-stream", "", "", "", "", "", ' ');
 
     final String open, close, separator, key, end;
     final char padding;
