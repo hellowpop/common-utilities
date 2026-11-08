@@ -69,9 +69,9 @@ ContentType.APPLICATION_JSON.generate(4096, 128, input -> {
 
 `contentLength`는 압축 전 정확한 바이트 수입니다. ASCII dummy 데이터를 사용하므로 문자 수와 바이트 수가 같습니다. 음수 길이, 0 이하 blockSize, 최소 문서 길이 미만의 양수 길이는 `IllegalArgumentException`입니다. 길이 0은 모든 타입에서 빈 스트림이며 JSON/XML 문서로 파싱할 수 없습니다.
 
-`blockSize`는 key/value 형식에서 value의 최대 길이입니다. `key0`, `key1`, ... 순서로 값을 생성하고 마지막 value는 남은 공간에 맞춰 짧아질 수 있습니다. JSON/XML/HTML에서는 문법을 유지하도록 남은 공간에 공백을 채우며 form에서는 `&`로 빈 필드를 추가합니다. text/plain은 `key0=Az8`과 줄바꿈 형식이며 끝부분에 공백이 들어갈 수 있습니다. 작은 길이에서는 key/value가 하나도 없을 수 있습니다. OCTET_STREAM도 영숫자 랜덤 바이트로 채우며 blockSize가 데이터 형식을 바꾸지 않습니다. blockSize는 HTTP 청크 크기가 아닙니다.
+`blockSize`는 key/value 형식에서 value의 최대 길이입니다. `key0`, `key1`, ... 순서로 값을 생성하고 마지막 value는 남은 공간에 맞춰 짧아질 수 있습니다. JSON/XML/HTML에서는 문법을 유지하도록 남은 공간에 공백을 채우며 form에서는 `&`로 빈 필드를 추가합니다. text/plain은 `key0=012`와 줄바꿈 형식이며 끝부분에 공백이 들어갈 수 있습니다. 작은 길이에서는 key/value가 하나도 없을 수 있습니다. OCTET_STREAM도 영숫자 순번 패턴으로 채우며 blockSize가 데이터 형식을 바꾸지 않습니다. blockSize는 HTTP 청크 크기가 아닙니다.
 
-모든 타입의 dummy value는 `A-Z`, `a-z`, `0-9`의 62개 ASCII 문자 중에서 매 바이트를 랜덤 선택합니다. `key0` 같은 key, 문서 태그·구분자, 길이 조정을 위한 공백·`&`는 형식을 유지합니다. 값은 읽는 시점에 생성하므로 전체 본문이나 blockSize 크기의 배열을 미리 만들지 않습니다. 같은 인수로 다시 호출해도 같은 본문은 보장하지 않으며, 짧은 value에 대문자·소문자·숫자가 모두 들어간다는 보장도 없습니다. 랜덤화로 압축률과 압축 후 Content-Length도 호출마다 달라질 수 있습니다.
+모든 타입의 dummy value는 `0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz`의 62개 ASCII 문자를 순서대로 반복합니다. 각 스트림은 `0`부터 시작하고 다음 value에서도 순서를 이어갑니다. 예를 들어 TEXT_PLAIN에서 contentLength=27, blockSize=3이면 `key0=012\nkey1=345\nkey2=678\n`입니다. key·태그·구분자와 길이 조정용 공백·`&`는 순번을 진행시키지 않습니다. 같은 Content-Type·contentLength·blockSize에서는 매번 동일한 본문을 생성하며 단일 바이트·버퍼·혼합 읽기의 결과도 같습니다. 같은 전송·Content-Encoding 설정과 codec 실행 환경에서는 헤더와 압축 결과도 동일합니다. 값은 읽는 시점에 생성하며 전체 본문이나 blockSize 크기의 배열을 미리 만들지 않습니다.
 
 ## Netty request/response 생성
 

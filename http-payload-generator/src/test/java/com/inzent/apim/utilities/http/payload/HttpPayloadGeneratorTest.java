@@ -198,4 +198,24 @@ class HttpPayloadGeneratorTest {
         NettyPayloadEncoder.encode(encoding.encoder(), new ByteArrayInputStream(fixture), encoded);
         assertArrayEquals(fixture, decode(encoding, encoded.toByteArray()));
     }
+
+    @ParameterizedTest @EnumSource(ContentEncoding.class)
+    void sameOptionsProduceIdenticalHeadersAndEncodedPayloads(ContentEncoding encoding) {
+        HttpPayloadGenerator generator = new DefaultHttpPayloadGenerator();
+        for (ContentType type : ContentType.values()) {
+            for (boolean chunked : new boolean[] {false, true}) {
+                AtomicReference<byte[]> first = new AtomicReference<>();
+                AtomicReference<java.util.Map<String, java.util.List<String>>> headers = new AtomicReference<>();
+                generator.generate(chunked, type, encoding, 1024, 17, (h, in) -> {
+                    first.set(read(in));
+                    headers.set(h.names().stream().collect(java.util.stream.Collectors.toMap(name -> name, h::getAll)));
+                });
+                generator.generate(chunked, type, encoding, 1024, 17, (h, in) -> {
+                    assertEquals(headers.get().keySet(), h.names());
+                    headers.get().forEach((name, values) -> assertEquals(values, h.getAll(name)));
+                    assertArrayEquals(first.get(), read(in));
+                });
+            }
+        }
+    }
 }

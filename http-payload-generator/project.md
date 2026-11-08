@@ -1,6 +1,14 @@
 # HTTP Payload Generator 구성
 
-## Dummy value 랜덤화 (2026-11-08)
+## Dummy value 순번 반복 및 재현성 (2026-11-08, 현재 동작)
+
+랜덤 생성을 제거하고 `0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz`를 반복한다. 스트림마다 순번을 0부터 시작하고 value 경계를 넘어 이어간다. literal과 padding은 순번에 포함하지 않는다. 순번은 0~61의 int로 유지하여 long 크기에서 누적 오버플로 없이 상수 메모리로 생성한다.
+
+같은 ContentType/contentLength/blockSize의 원문은 호출과 읽기 방식에 관계없이 동일하다. 같은 전송·ContentEncoding 및 codec 실행 환경의 헤더와 인코딩된 본문도 동일하다. 단일·버퍼·혼합 읽기, 0/최소/일반/여러 버퍼 길이, blockSize 1/7/Long.MAX_VALUE 및 모든 타입·encoding·chunked 조합을 검증한다. 아래 랜덤화 항목은 이전 동작의 이력이다.
+
+최종 검증: PARANOID 설정의 clean verify에서 73개 테스트와 JAR/소스 JAR 빌드 성공. 테스트를 생략한 install 후 curl-http-mock-executor의 45개 테스트도 통과했다. 독립 코드 검토에서 추가 정확성 문제는 발견되지 않았다.
+
+## Dummy value 랜덤화 이력 (2026-11-08, 순번 반복으로 대체됨)
 
 고정 a 반복을 A-Z/a-z/0-9의 62개 문자 중 매 바이트 랜덤 선택으로 변경했다. ThreadLocalRandom을 사용하며 단일/버퍼 읽기와 OCTET_STREAM에 동일하게 적용한다. 문서 literal과 padding, 정확한 원문 길이, value의 blockSize 상한, 상수 메모리 스트림과 자원 수명 계약은 유지한다. 별도 호출의 결과는 동일하다고 가정하지 않는다.
 
@@ -25,7 +33,7 @@ Netty `HttpHeaders`와 payload `InputStream`을 동기 콜백에 전달한다.
 ## 구성
 
 - `ContentType`: TEXT_PLAIN, APPLICATION_JSON, APPLICATION_XML, TEXT_HTML, APPLICATION_FORM_URLENCODED, APPLICATION_OCTET_STREAM. 각 enum이 형식별 생성 전략을 가진다.
-- `DummyInputStream`: long 크기의 원문을 고정 메모리로 지연 생성. value는 ThreadLocalRandom으로 A-Z/a-z/0-9에서 매 바이트 선택한다. ASCII만 사용하여 문자/바이트 길이가 같다. 문법용 literal과 padding은 랜덤화하지 않는다.
+- `DummyInputStream`: long 크기의 원문을 고정 메모리로 지연 생성. value는 0-9/A-Z/a-z 순서로 반복하며 스트림별 순번을 유지한다. ASCII만 사용하여 문자/바이트 길이가 같다. 문법용 literal과 padding은 고정한다.
 - `ContentEncoding`: IDENTITY, GZIP, DEFLATE(zlib wrapper), BR, ZSTD, SNAPPY(Netty framed format). Netty가 지원하는 코딩 전체를 대상으로 한다. IANA 레지스트리 전체나 사전 기반 코딩은 범위에 포함하지 않는다.
 - `DefaultHttpPayloadGenerator`: Netty 압축 encoder를 사용하고 결과를 임시 파일에 보관한다. callback 완료/예외 시 파일과 스트림을 해제한다.
 - `NettyPayloadEncoder`: codec과 채널을 소유하고 초기화 실패·쓰기 실패를 전달한다. 입력 ByteBuf는 writeAndFlush에 소유권을 넘기며 출력/대기 버퍼를 정리한다. 채널 정리 오류는 원래 실패의 suppressed 예외로 보존한다.
