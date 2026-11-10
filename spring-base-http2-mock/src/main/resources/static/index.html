@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protocol Lab · HTTP Mock Console</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/test-console.css">
+  <script src="/test-console.js" defer></script>
+</head>
+<body>
+<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">↔</span> INZENT <span class="brand-divider">/</span> <span>Developer tools</span></div><span class="build-label">SPRING BOOT MOCK</span></header>
+<main>
+  <div class="intro"><div><p class="eyebrow">NETWORK PLAYGROUND</p><h1>Protocol Lab<span>.</span></h1><p class="subtitle">요청을 보내고, 연결을 열고, 서버의 응답을 확인하세요.</p></div><span id="origin-badge" class="origin-badge">연결 확인 중</span></div>
+  <section class="connection-bar" aria-label="접속 정보">
+    <div><span class="label-small">CURRENT ORIGIN</span><strong id="current-origin"></strong></div>
+    <nav aria-label="전송 방식"><a id="http-link" target="_blank" rel="noopener">HTTP 콘솔 열기 ↗</a><a id="https-link" target="_blank" rel="noopener">HTTPS 콘솔 열기 ↗</a></nav>
+  </section>
+  <p id="connection-note" class="connection-note" role="status">포트 정보를 불러오는 중입니다.</p>
+  <section class="services-panel" aria-labelledby="services-title">
+    <div class="card-heading"><h2 id="services-title">Mock 서비스 제어</h2><button id="services-refresh" class="secondary" type="button">새로 고침</button></div>
+    <p class="description">엔진별 시작·중지를 제어합니다. response 바인딩은 함께 제어하며, 테스트 콘솔과 기존 HTTP/HTTPS 서버는 계속 실행됩니다. 중지하면 해당 엔진의 연결과 예약 작업도 종료됩니다.</p>
+    <div id="services-list" class="services-list" role="status">서비스 정보를 불러오는 중입니다.</div>
+    <p id="services-message" class="hint" role="status" aria-live="polite">포트 정보를 확인한 뒤 서비스를 제어하세요.</p>
+  </section>
+  <div class="grid">
+    <section class="card" aria-labelledby="rest-title">
+      <div class="card-heading"><div><span class="number">01</span><h2 id="rest-title">HTTP / HTTPS REST</h2></div><span id="rest-status" class="status" role="status">대기</span></div>
+      <p class="description">요청 메타데이터와 수신 헤더를 JSON으로 돌려받습니다.</p>
+      <form id="rest-form">
+        <div class="request-line"><label class="method-label">메서드<select id="rest-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select></label><div class="endpoint"><span id="rest-origin"></span><strong>/api/echo</strong></div></div>
+        <label for="rest-query">쿼리 문자열</label><input id="rest-query" value="source=browser" placeholder="name=test&amp;value=hello">
+        <div class="input-grid"><div><label for="rest-headers">요청 헤더 <span>JSON 객체</span></label><textarea id="rest-headers" rows="3" spellcheck="false">{"X-Test": "browser"}</textarea></div><div><label for="rest-body">요청 본문 <span>POST / PUT / DELETE</span></label><textarea id="rest-body" rows="3" spellcheck="false" disabled>{"message": "hello"}</textarea></div></div>
+        <p class="hint">브라우저는 HTTP 버전을 강제할 수 없습니다. HTTPS에서 HTTP/2로 협상되면 이 API는 505를 반환합니다. HTTP/1.1 REST는 HTTP 콘솔에서 확인하세요. 본문은 응답에 포함되지 않습니다.</p>
+        <div class="actions"><button id="rest-send" type="submit">요청 보내기 <span aria-hidden="true">→</span></button><button id="rest-clear" class="secondary" type="button">결과 지우기</button></div>
+      </form>
+      <div class="result-header"><span>RESPONSE</span><span id="rest-meta">아직 요청하지 않았습니다</span></div><pre id="rest-result" class="output" tabindex="0">응답 상태, 헤더와 본문이 여기에 표시됩니다.</pre>
+    </section>
+    <section class="card" aria-labelledby="h2-title">
+      <div class="card-heading"><div><span class="number purple">02</span><h2 id="h2-title">HTTP/2 Ping</h2></div><span id="h2-status" class="status" role="status">대기</span></div>
+      <p class="description">TLS ALPN으로 협상된 HTTP/2 연결의 ACK를 확인합니다.</p>
+      <div class="route"><span class="verb">GET</span><code>/http2/ping</code><span class="tag">HTTPS ONLY</span></div>
+      <div class="info-panel"><strong>서버와 브라우저, 두 곳에서 확인</strong><p>응답의 <code>protocol</code>은 서버가 처리한 HTTP 버전입니다. 브라우저가 제공하는 전송 프로토콜도 결과에 함께 표시합니다.</p></div>
+      <p id="h2-note" class="hint">HTTPS 콘솔에서 호출할 수 있습니다. 처음 접속할 때 self-signed 인증서 경고를 수락하세요.</p>
+      <div class="actions"><button id="h2-send" type="button" disabled>Ping 전송 <span aria-hidden="true">→</span></button><button id="h2-clear" class="secondary" type="button">결과 지우기</button></div>
+      <div class="result-header"><span>ACK RESPONSE</span><span id="h2-meta">TLS + h2</span></div><pre id="h2-result" class="output" tabindex="0">HTTP/2 연결의 ACK 응답을 기다립니다.</pre>
+    </section>
+    <section class="card" aria-labelledby="sse-title">
+      <div class="card-heading"><div><span class="number">03</span><h2 id="sse-title">Server-Sent Events</h2></div><span id="sse-status" class="status" role="status">대기</span></div>
+      <p class="description">1초마다 서버 시각을 수신합니다. 10회 수신 후 연결을 닫습니다.</p>
+      <div class="route"><span class="verb">GET</span><code>/sse/call</code><span class="tag">EVENT STREAM</span></div>
+      <div class="stream-progress"><progress id="sse-progress" max="10" value="0" aria-label="SSE 수신 진행"></progress><span id="sse-count">0 / 10</span></div>
+      <div class="actions"><button id="sse-start" type="button">스트림 시작 <span aria-hidden="true">→</span></button><button id="sse-stop" class="secondary" type="button" disabled>중지</button></div>
+      <div class="result-header"><span>EVENT LOG</span><span>time · UTC</span></div><pre id="sse-result" class="output stream-output" role="log" aria-live="polite" tabindex="0">수신 이벤트가 여기에 표시됩니다.</pre>
+    </section>
+    <section class="card" aria-labelledby="ws-title">
+      <div class="card-heading"><div><span class="number purple">04</span><h2 id="ws-title">WebSocket</h2></div><span id="ws-status" class="status" role="status">대기</span></div>
+      <p class="description">WS / WSS로 서버 시각 10개를 수신하고 정상 종료를 확인합니다.</p>
+      <div class="route"><span id="ws-scheme" class="verb">WS</span><code>/ws/call</code><span class="tag">DUPLEX CONNECTION</span></div>
+      <div class="stream-progress"><progress id="ws-progress" max="10" value="0" aria-label="WebSocket 수신 진행"></progress><span id="ws-count">0 / 10</span></div>
+      <div class="actions"><button id="ws-start" type="button">연결하기 <span aria-hidden="true">→</span></button><button id="ws-stop" class="secondary" type="button" disabled>연결 종료</button></div>
+      <div class="result-header"><span>MESSAGE LOG</span><span id="ws-meta">종료 코드 확인 가능</span></div><pre id="ws-result" class="output stream-output" role="log" aria-live="polite" tabindex="0">연결 상태와 수신 메시지가 여기에 표시됩니다.</pre>
+    </section>
+  </div>
+  <footer><span class="live-dot"></span> spring-base-http2-mock <span>로컬 프로토콜 테스트 · 각 요청은 현재 페이지와 같은 출처로 전송됩니다.</span></footer>
+</main>
+</body>
+</html>

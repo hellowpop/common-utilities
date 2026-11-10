@@ -43,6 +43,14 @@ public final class MockServerExecutor implements Closeable {
     public <E extends Enum<E> & MockScenario> void addMock(E mock, InetAddress address, int port,
                                                          MockOptions options, ServiceStatusListener listener) {
         Objects.requireNonNull(mock, "mock");
+        addMock(mock.name(), mock, address, port, options, listener);
+    }
+
+    /** Register a host-configured scenario. The scenario may capture immutable configuration and is shared by clients. */
+    public void addMock(String name, MockScenario scenario, InetAddress address, int port,
+                        MockOptions options, ServiceStatusListener listener) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("name must not be blank");
+        Objects.requireNonNull(scenario, "scenario");
         Objects.requireNonNull(address, "address");
         Objects.requireNonNull(options, "options");
         Objects.requireNonNull(listener, "listener");
@@ -54,7 +62,7 @@ public final class MockServerExecutor implements Closeable {
                 var endpoint = new InetSocketAddress(address, port);
                 if (port != 0 && bindings.stream().anyMatch(b -> b.address.equals(endpoint)))
                     throw new IllegalArgumentException("Duplicate bind address: " + endpoint);
-                bindings.add(new MockBinding(bindings.size() + 1L, mock, mock.name(), endpoint, options, listener));
+                bindings.add(new MockBinding(bindings.size() + 1L, scenario, name, endpoint, options, listener));
             }
         } finally { leaveOperation(); }
     }

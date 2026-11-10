@@ -1,0 +1,23 @@
+server:
+  host: "${NETTY_MOCK_HOST:127.0.0.1}"
+  port: "${NETTY_MOCK_PORT:28080}"
+  boss-threads: 1
+  worker-threads: 2
+  backlog: 128
+  reuse-address: true
+  tcp-no-delay: true
+  keep-alive: true
+  max-connections: 100
+  max-initial-line-length: 4096
+  max-header-size: 8192
+  max-content-length: 1048576
+  request-timeout-ms: 30000
+  write-buffer-low-water-mark: 32768
+  write-buffer-high-water-mark: 65536
+  max-pending-responses: 8
+  shutdown-timeout-ms: 10000
+mock:
+  header-name: x-response-action
+  default-action: default
+  scan-packages:
+    - com.inzent.apim.utilities.netty.http.mockserver.processor

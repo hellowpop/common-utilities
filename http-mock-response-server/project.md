@@ -349,3 +349,10 @@ try (MockServerExecutor server = new MockServerExecutor()) {
 - 독립 코드 리뷰에서 중요한 추가 결함 없음. Windows JDK 17 환경 검증이며 실제 OS 자원 고갈·장기 부하는 검증하지 않았다. 커밋/push는 수행하지 않았다.
 
 - 2026-10-22 후속 push 요청: 자원 안전성 수정 R1/R2/R3와 관련 문서를 develop에 커밋하여 origin/develop에 반영한다. 테스트 32개와 안전성 프로브 14개를 확인했으며 다른 모듈의 미커밋 변경은 제외한다.
+
+## 설정 기반 시나리오 등록 확장 (2026-11-10)
+
+Spring Boot 통합에서 바인딩별 불변 설정을 캡처할 수 있도록 `addMock(String name, MockScenario scenario, InetAddress, int, MockOptions, ServiceStatusListener)`를 추가했다.
+기존 enum overload는 이름과 시나리오를 새 overload에 위임하며 기존 bind 검증·중복 주소 제한·NEW 수명주기 및 정리 계약을 유지한다.
+`NamedScenarioTest`로 구성된 본문·상태 응답, 이벤트 이름 및 종료 후 포트 해제를 검증한다.
+기존 전체 테스트 포함 59개 통과. Spring 통합 테스트에서도 여러 설정 시나리오의 동시 서비스와 종료·실패 시 정리를 확인했다.

@@ -92,6 +92,18 @@ public final class MockServerExample {
 
 ## 기본 case
 
+설정 파일에서 읽은 고정 응답 등은 enum 없이 이름과 `MockScenario`를 등록할 수도 있다. 기존 enum overload는 그대로 사용할 수 있다.
+
+```java
+server.addMock("configured-reply", context -> {
+    throw new SendResponseException(MockResponse.utf8(200, "text/plain", "configured"));
+}, address, port, MockOptions.defaults(), listener);
+```
+
+scenario는 여러 클라이언트가 공유한다. 캡처하는 설정은 불변으로 유지하고 연결별 상태는 호출 내부에 둔다. 이름은 비어 있을 수 없으며 이벤트의 `mockCase()`로 전달된다.
+
+Spring Boot HTTP/HTTPS·Netty 서버와 함께 실행하려면 [spring-base-http2-mock](../spring-base-http2-mock/README.md)의 통합 설정을 사용한다.
+
 | enum | 동작 |
 | --- | --- |
 | `WAIT_FOR_CLIENT_DISCONNECT` | 수신 데이터를 버리며 입력 EOF까지 대기하고 종료. 응답 없음 |

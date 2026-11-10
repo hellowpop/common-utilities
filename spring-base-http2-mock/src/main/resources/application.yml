@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: spring-base-http2-mock
+server:
+  port: ${PORT:8443}
+  ssl:
+    enabled: true
+    key-store: ${SSL_KEY_STORE:classpath:tls/localhost.p12}
+    key-store-type: PKCS12
+    key-store-password: ${SSL_KEY_STORE_PASSWORD:local-mock-changeit}
+    key-alias: ${SSL_KEY_ALIAS:localhost}
+    enabled-protocols: TLSv1.2,TLSv1.3
+  http2:
+    enabled: true
+mock:
+  services:
+    netty:
+      enabled: ${NETTY_MOCK_ENABLED:true}
+      config: classpath:netty-mock.yml
+      arguments: []
+    response:
+      enabled: ${RESPONSE_MOCK_ENABLED:true}
+      max-clients: 64
+      shutdown-timeout: 5s
+      bindings:
+        - name: reply
+          scenario: REPLY
+          host: "${RESPONSE_MOCK_HOST:127.0.0.1}"
+          port: ${RESPONSE_MOCK_PORT:28081}
+          options:
+            read-timeout-millis: 30000
+          reply:
+            status: 200
+            content-type: application/json; charset=UTF-8
+            body: '{"mock":"http-mock-response-server","ok":true}'
+        - name: wait
+          scenario: WAIT_FOR_CLIENT_DISCONNECT
+          host: "${RESPONSE_MOCK_HOST:127.0.0.1}"
+          port: ${RESPONSE_WAIT_PORT:28082}
+          options:
+            read-timeout-millis: 30000
+        - name: slow
+          scenario: SLOW_READ
+          host: "${RESPONSE_MOCK_HOST:127.0.0.1}"
+          port: ${RESPONSE_SLOW_PORT:28083}
+          options:
+            read-chunk-size: 1024
+            read-interval: 100ms
+            read-timeout-millis: 30000
+  http:
+    port: ${HTTP_PORT:8080}
