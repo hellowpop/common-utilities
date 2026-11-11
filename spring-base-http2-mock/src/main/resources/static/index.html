@@ -7,6 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/test-console.css">
   <script src="/test-console.js" defer></script>
+  <script src="/execute-console.js" defer></script>
 </head>
 <body>
 <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">↔</span> INZENT <span class="brand-divider">/</span> <span>Developer tools</span></div><span class="build-label">SPRING BOOT MOCK</span></header>
@@ -62,6 +63,20 @@
       <div class="result-header"><span>MESSAGE LOG</span><span id="ws-meta">종료 코드 확인 가능</span></div><pre id="ws-result" class="output stream-output" role="log" aria-live="polite" tabindex="0">연결 상태와 수신 메시지가 여기에 표시됩니다.</pre>
     </section>
   </div>
+  <section class="card execution-panel" aria-labelledby="execution-title">
+    <div class="card-heading"><div><span class="number">05</span><h2 id="execution-title">Payload 동시·반복 요청</h2></div><span id="execution-status" class="status" role="status">대기</span></div>
+    <p class="description">payload의 5개 필드는 배열로 입력합니다. 각 스레드가 매 반복마다 배열 값들의 모든 조합으로 본문을 생성해 endpoint에 POST합니다. 총 요청 수는 threadCount × loopCount × 조합 수이며 각 SSE 응답은 endpointUrl과 status만 전송합니다.</p>
+    <div class="execution-columns">
+      <form id="execution-form">
+        <label for="execution-spec">실행 요청 <span>JSON · 생성 길이는 압축 전 byte 수</span></label>
+        <textarea id="execution-spec" rows="16" spellcheck="false"></textarea>
+        <p id="execution-note" class="hint">blockSize는 dummy 값 길이이며 HTTP 청크 크기가 아닙니다. headers는 선택 항목이고 본문 관련 헤더는 생성기가 설정합니다. HTTPS endpoint는 JVM에서 신뢰하는 인증서가 필요합니다.</p>
+        <div class="actions"><button id="execution-start" type="submit">백그라운드 실행 →</button><button id="execution-cancel" type="button" class="secondary" disabled>실행 중지</button></div>
+      </form>
+      <div><div class="result-header"><span>FINAL SUMMARY</span><span id="execution-count">0회 완료</span></div><pre id="execution-summary" class="output" tabindex="0">전체 수행 건수, HTTP 상태별 건수와 수행 시간 통계가 표시됩니다.</pre></div>
+    </div>
+    <div class="result-header"><span>SSE RESULT LOG</span><span>최근 40개 이벤트 · 개별 응답은 endpointUrl · status</span></div><pre id="execution-log" class="output" role="log" aria-live="polite" tabindex="0">started → response → summary</pre>
+  </section>
   <footer><span class="live-dot"></span> spring-base-http2-mock <span>로컬 프로토콜 테스트 · 각 요청은 현재 페이지와 같은 출처로 전송됩니다.</span></footer>
 </main>
 </body>

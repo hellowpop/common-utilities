@@ -13,6 +13,18 @@ server:
   http2:
     enabled: true
 mock:
+  execution:
+    max-thread-count: 16
+    max-concurrent-jobs: 4
+    max-total-requests: 100000
+    max-content-length: 1073741824
+    response-preview-bytes: 65536
+    event-queue-capacity: 64
+    max-summary-groups: 256
+    connect-timeout: 5s
+    request-timeout: 10s
+    job-timeout: 15m
+    heartbeat-interval: 2s
   services:
     netty:
       enabled: ${NETTY_MOCK_ENABLED:true}

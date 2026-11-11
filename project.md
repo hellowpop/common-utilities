@@ -15,6 +15,8 @@
 
 ## 구조 변경내역
 
+- 2026-11-11: [spring-base-http2-mock 구성](spring-base-http2-mock/project.md)과 [사용법](spring-base-http2-mock/README.md)을 현재 기능 중심으로 정리했다. HTTP/HTTPS·TLS HTTP/2·SSE·WebSocket, Netty/response 엔진 동시 서비스·제어와 payload 배열 조합 백그라운드 요청을 제공한다. `/api/execute-mock-request`의 개별 SSE는 endpointUrl/status만 전달하며 최종 summary는 responseSummaries를 제외한다. [http-payload-generator](http-payload-generator/project.md)에 압축 생성 interrupt 취소를 추가했다.
+
 - 2026-11-06: 미반영 변경 전체를 점검하여 Hazelcast native client 설정·설치 프로필·수명 관리 보강, Netty default/status 응답, CharSequence 비교 모듈, 메일 분석 설계와 POJO 요구사항 문서를 함께 반영한다. 10개 Maven 모듈은 기존 소스 JAR 첨부를 유지하고 모듈 루트의 `*.md`를 `META-INF/docs/<artifactId>/`에 포함한다. 빌드 산출물은 Git에서 제외한다.
 
 - 2026-11-06: `java-performance-tuning/README.md`에 수치형 옵션의 Java 17 기본값·자동 결정 기준, 값 증감에 따른 기대 효과·부작용·검증 지표 및 로그·진단 수집 조건의 기본값을 보강했다. GC별 실행 flag를 비교하고 예측 분석과 실측 결과를 구분했다.

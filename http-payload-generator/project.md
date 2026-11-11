@@ -1,5 +1,12 @@
 # HTTP Payload Generator 구성
 
+## 백그라운드 실행 취소 지원 (2026-11-11, 현재 동작)
+
+Spring mock 실행 API가 압축 중인 worker를 취소할 수 있도록 NettyPayloadEncoder의 입력 블록 처리 사이에 interrupt를 검사한다.
+취소 시 interrupt 상태를 유지하고 InterruptedIOException을 UncheckedIOException으로 전달한다. 기존 자원 scope가 codec·스트림·임시 파일을 정리하며 callback은 호출하지 않는다.
+PayloadCancellationTest가 실제 중단된 별도 스레드에서 예외 원인·interrupt 상태 보존·callback 미호출을 검증한다. 기존 재현성 및 원문/압축 계약은 유지한다.
+사용 예제는 [README.md](README.md), 동시·반복 조합 요청은 [Spring mock 실행 API](../spring-base-http2-mock/README.md)를 참고한다. 2026-11-11 푸시 전 PARANOID verify에서 전체 74개 테스트가 실패·오류·건너뜀 없이 통과했다. install은 테스트 없이 수행했다.
+
 ## Dummy value 순번 반복 및 재현성 (2026-11-08, 현재 동작)
 
 랜덤 생성을 제거하고 `0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz`를 반복한다. 스트림마다 순번을 0부터 시작하고 value 경계를 넘어 이어간다. literal과 padding은 순번에 포함하지 않는다. 순번은 0~61의 int로 유지하여 long 크기에서 누적 오버플로 없이 상수 메모리로 생성한다.

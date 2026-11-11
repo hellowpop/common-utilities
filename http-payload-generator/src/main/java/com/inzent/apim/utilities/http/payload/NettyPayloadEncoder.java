@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.embedded.EmbeddedChannel;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Objects;
@@ -24,7 +25,10 @@ final class NettyPayloadEncoder {
             channel.checkException();
             byte[] buffer = new byte[8192];
             int count;
-            while ((count = in.read(buffer)) != -1) {
+            while (true) {
+                if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("Payload compression cancelled");
+                count = in.read(buffer);
+                if (count == -1) break;
                 // Channel.writeAndFlush owns the message even when the channel is already closed.
                 // EmbeddedChannel.writeOutbound can reject it before taking ownership.
                 channel.writeAndFlush(channel.alloc().buffer(count).writeBytes(buffer, 0, count))

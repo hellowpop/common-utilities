@@ -2,17 +2,19 @@
 
 Java 17 이상에서 실행하는 Spring Boot 3.5.16 기반 HTTP/1.1 · HTTP/2(TLS h2) · SSE · WebSocket mock webapp.
 
+이 문서는 실행·설정·API 사용법을 다룬다. 내부 구성, 실행 수명주기와 검증 기록은 [project.md](project.md)를 참고한다.
+
 ## 빌드 및 실행
 
 프로젝트 디렉터리에서 실행한다.
 
 ```powershell
-# 최초 빌드: 두 형제 모듈을 먼저 설치하고 Spring 앱을 빌드한다(테스트 실행 생략).
+# 최초 빌드: payload generator와 두 mock 모듈을 먼저 설치하고 Spring 앱을 빌드한다(테스트 실행 생략).
 ./scripts/Build-WithMockServers.ps1
 java -jar target/spring-base-http2-mock-1.0.0-SNAPSHOT.jar
 ```
 
-세 모듈의 테스트까지 실행하려면 `./scripts/Build-WithMockServers.ps1 -RunTests`를 사용한다. Node.js가 설치되어 있으면 콘솔 JavaScript 테스트도 실행한다.
+네 모듈의 테스트까지 실행하려면 `./scripts/Build-WithMockServers.ps1 -RunTests`를 사용한다. Node.js가 설치되어 있으면 콘솔 JavaScript 테스트도 실행한다.
 의존 모듈이 설치된 이후에는 이 모듈에서 일반 `mvn package`를 사용할 수 있다. 실행 중 JAR을 Windows에서 다시 빌드하려면 해당 서버를 먼저 종료한다.
 
 기본 주소는 HTTP `http://localhost:8080`, HTTPS `https://localhost:8443`이다.
@@ -27,6 +29,7 @@ mvn clean package -DskipTests=false
 mvn install
 # 브라우저 연결 상태 로직 회귀 테스트(Node.js 사용)
 node --test src/test/js/test-console.test.cjs
+node --test src/test/js/execute-console.test.cjs
 ```
 
 `skipTests=true`가 기본값이므로 package도 테스트 실행을 생략한다. 테스트 컴파일은 수행한다.
@@ -220,7 +223,111 @@ HTTPS는 처음 접속할 때 self-signed 인증서 경고를 수락해야 한�
 HTTP/2 Ping의 응답 `protocol`과 `nextHopProtocol` 표시로 실제 협상을 확인할 수 있다. 브라우저가 Resource Timing 정보를 제공하지 않으면 `브라우저 미제공`으로 표시한다.
 SSE와 WebSocket의 연결 제한 시간은 15초이며 페이지 이동 시 연결을 정리한다.
 
-## API 목록
+## Payload 동시·반복 요청 실행
+
+`POST /api/execute-mock-request`에 JSON을 보내면 같은 HTTP 연결에서 `text/event-stream`으로 실행 결과를 받는다.
+요청 처리는 백그라운드에서 수행한다. **각 thread가 매 반복마다 payload 배열의 모든 조합**을 순차 실행한다.
+조합 수는 `chunked.length × contentType.length × contentEncoding.length × contentLength.length × blockSize.length`이며, 총 요청 수는 `threadCount × loopCount × 조합 수`다.
+5개 payload 필드는 값이 하나여도 배열로 보낸다. 빈 배열·null·null 요소·단일 값 입력은 400 오류다. 입력 순서를 유지하고 중복 값도 별도 항목으로 수행한다.
+조합은 chunked → contentType → contentEncoding → contentLength → blockSize 순으로 중첩되며 blockSize가 가장 먼저 바뀐다. 각 스레드/반복에서 같은 순서로 실행하되 결과는 완료 순서로 전달한다.
+대상 endpoint에는 HTTP/1.1 POST로 본문을 전송한다. redirect를 자동 추적하지 않으며 3xx도 해당 요청의 응답으로 수집한다.
+
+`execution.json` 예:
+
+```json
+{
+  "threadCount": 2,
+  "loopCount": 3,
+  "endpointUrl": "http://127.0.0.1:28080/",
+  "chunked": [true, false],
+  "contentType": ["TEXT_PLAIN", "APPLICATION_JSON"],
+  "contentEncoding": ["IDENTITY", "GZIP"],
+  "contentLength": [4096, 8192],
+  "blockSize": [128, 256],
+  "headers": {"x-response-action": "copy-and-send"}
+}
+```
+
+위 예제는 32개 조합을 각 스레드가 3번씩 실행하므로 총 `2 × 3 × 32 = 192`건을 전송한다.
+
+```powershell
+curl.exe --http1.1 -N -H "Content-Type: application/json" -H "Accept: text/event-stream" --data-binary "@execution.json" http://localhost:8080/api/execute-mock-request
+```
+
+| 필드 | 의미 |
+| --- | --- |
+| `threadCount` | 작업별 동시 실행 worker 수. 기본 허용 범위 1~16 |
+| `loopCount` | 각 worker가 전체 조합을 실행하는 반복 횟수. 양수이며 조합 수까지 곱한 총 횟수는 기본 최대 100000 |
+| `endpointUrl` | 절대 HTTP/HTTPS URL. URL user info와 fragment는 허용하지 않음 |
+| `chunked` | boolean 배열. true면 HTTP/1.1 chunked, false면 실제 인코딩 결과의 Content-Length 사용 |
+| `contentType` | enum 배열: `TEXT_PLAIN`, `APPLICATION_JSON`, `APPLICATION_XML`, `TEXT_HTML`, `APPLICATION_FORM_URLENCODED`, `APPLICATION_OCTET_STREAM` |
+| `contentEncoding` | enum 배열: `IDENTITY`, `GZIP`, `DEFLATE`, `BR`, `ZSTD`, `SNAPPY` |
+| `contentLength` | 압축 전 원문 byte 수(long) 배열. 기본 허용 최대 1 GiB. 0은 빈 원문이며 각 양수는 선택한 모든 타입의 최소 길이를 충족해야 함 |
+| `blockSize` | dummy value의 최대 길이(long) 배열, 각 값은 양수. HTTP 청크 크기가 아님 |
+| `headers` | 선택 추가 헤더 객체. 최대 32개, 문자열 값. Host·Connection·Expect·Upgrade·Content-Type/Encoding/Length·Transfer-Encoding은 생성기/클라이언트가 관리하므로 직접 지정할 수 없음 |
+
+모든 조합을 실행 전에 검증한다. 잘못된 조합이 하나라도 있거나 총 요청 수 제한/long 범위를 초과하면 요청을 전송하지 않고 400 오류를 반환한다. 조합 전체를 메모리에 생성하지 않고 실행 시 인덱스로 선택한다.
+
+`started` 이벤트는 jobId·설정한 스레드/반복 수·조합 수(`combinationCount`)·총 요청 수를 알린다.
+`response` 이벤트는 완료 순서로 전송되며 JSON에는 `endpointUrl`과 HTTP 상태 코드 `status`만 담는다. HTTP 응답을 받지 못한 연결 실패·timeout 등의 경우 `status`는 null이다. 응답 헤더·본문·조합 정보·요청 번호·개별 오류 정보는 전송하지 않는다. 오류가 난 요청도 한 건의 결과로 집계하고 다음 조합/반복을 계속 수행한다.
+
+```text
+event:started
+data:{"jobId":"...","threadCount":2,"loopCount":3,"combinationCount":32,"totalCount":192,...}
+
+event:response
+data:{"endpointUrl":"http://127.0.0.1:28080/","status":200}
+
+event:summary
+data:{"jobId":"...","totalCount":192,"completedCount":192,"successCount":192,"failureCount":0,"httpStatusCounts":{"200":192},...}
+
+```
+
+대상 응답의 본문은 끝까지 읽어 수신 바이트·성공 여부·시간 통계에 반영하지만 SSE로 전송하지 않는다. 압축된 응답도 원본 byte 기준으로 집계한다. HTTP 상태 코드를 받은 뒤 본문 수신이 실패하면 개별 이벤트에는 수신한 status를 유지하고, 최종 summary의 failureCount/errorCounts에 실패를 반영한다.
+
+마지막 `summary`를 전송한 후 SSE를 종료한다.
+
+- `totalCount`: 계획한 총 횟수, `attemptedCount`: 시작한 횟수, `completedCount`: 결과를 수집한 횟수, `deliveredCount`: SSE로 전송한 응답 이벤트 수.
+- `successCount`: 오류 없이 응답을 끝까지 받은 2xx, `failureCount`: 그 외 완료 건수. 2xx라도 본문 수신 timeout이면 실패다.
+- `remainingCount`, `cancelled`, `cancellationReason`: 전체 작업 timeout 등으로 남은 작업과 취소 여부.
+- `httpStatusCounts`, `errorCounts`: 실제 받은 상태 코드와 네트워크·codec·timeout 오류 분류별 건수.
+- `responseSummaries`는 전송하지 않는다. 응답 본문 샘플도 summary에 포함하지 않는다.
+- `ungroupedResponseCount`는 내부 응답 구분 키 추적 한도 초과 건수다. 기존 통계 호환을 위해 유지하며 상태/성공/실패 총계에서는 누락하지 않는다.
+- 전체 수신 바이트 및 전체 경과 시간, 요청별 최소·최대·평균 응답 시간을 제공한다.
+
+브라우저 콘솔의 **Payload 동시·반복 요청**에서 같은 JSON을 편집하고 실행·중지할 수 있다. 결과 로그는 최근 40개 이벤트만 표시한다.
+POST SSE이므로 브라우저에서는 EventSource 대신 `fetch` 응답 스트림을 읽는다. HTTP/1.1 API 정책상 브라우저 실행 버튼은 HTTP 콘솔에서 제공한다.
+HTTPS API를 직접 호출하려면 인증서를 신뢰하는 HTTP/1.1 클라이언트를 사용한다. 대상 HTTPS endpoint의 인증서는 서버 JVM에서 신뢰해야 하며 호스트명 검증도 유지한다.
+로컬 self-signed 대상 호출이 필요하면 서버 JVM을 시작할 때 해당 공개 인증서를 포함한 `javax.net.ssl.trustStore`를 지정한다. 인증서 검증을 끄는 옵션은 제공하지 않는다.
+
+### 실행 제한·timeout·취소
+
+설정은 `application.yml`의 `mock.execution`에 둔다.
+
+```yaml
+mock:
+  execution:
+    max-thread-count: 16
+    max-concurrent-jobs: 4
+    max-total-requests: 100000
+    max-content-length: 1073741824
+    response-preview-bytes: 65536
+    event-queue-capacity: 64
+    max-summary-groups: 256
+    connect-timeout: 5s
+    request-timeout: 10s
+    job-timeout: 15m
+    heartbeat-interval: 2s
+```
+
+동시 작업을 초과하면 429 JSON 오류, 잘못된 요청은 400, 실행기 종료 중에는 503을 반환한다.
+request-timeout은 해당 시도의 payload 생성부터 응답 본문 수신까지 적용한다. timeout은 요청 실패로 수집하고 다음 반복을 계속한다.
+job-timeout은 전체 작업을 취소하고 연결이 유효하면 부분 수행 summary를 보낸다. SSE 컨테이너 timeout에는 송신 정리를 위한 추가 30초 여유가 있다.
+SSE 클라이언트는 계속 스트림을 읽어야 한다. 느린 클라이언트에는 유한 결과 큐로 backpressure를 적용하며, 연결이 막혀 있으면 송신/연결 정리가 끝날 때까지 동시 작업 슬롯을 유지한다.
+클라이언트 종료는 heartbeat 또는 전송 오류로 감지해 worker·진행 중 HTTP 교환·압축 생성을 취소한다. 클라이언트가 연결을 닫으면 마지막 summary는 받을 수 없다.
+정상/오류/취소 후 작업을 보관하지 않으며 결과 영속화·재연결 replay 기능은 없다.
+
+## 엔드포인트 목록
 
 | 경로 | 메서드/프로토콜 | 응답 |
 | --- | --- | --- |

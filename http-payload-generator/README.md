@@ -127,6 +127,9 @@ generator.generate(false, ContentType.APPLICATION_JSON, ContentEncoding.IDENTITY
 
 대용량 처리에서는 위 예제의 `readAllBytes()` 대신 `transferTo()` 또는 버퍼 읽기를 사용합니다. 비동기 전송이 필요하면 콜백 안에서 호출자 소유의 파일/버퍼로 복사한 뒤 전송하고 자원을 직접 해제해야 합니다. 이미 인코딩된 본문을 다시 압축하지 않도록 pipeline을 구성하세요.
 
+압축 생성은 8 KiB 입력 블록 사이에서 스레드 interrupt를 확인하고 `InterruptedIOException`을 원인으로 한 `UncheckedIOException`으로 중단합니다. interrupt 상태는 유지하며 스트림·codec·임시 파일을 정리합니다.
+생성한 payload를 동시·반복 POST하고 SSE로 결과를 수집하려면 [Spring mock 실행 API](../spring-base-http2-mock/README.md)를 사용할 수 있습니다.
+
 구성과 검증 범위는 [project.md](project.md)를 참고하세요.
 
 리소스/NPE 실패 경로 분석과 조치 내역은 [resource-safety-review.md](resource-safety-review.md)에 정리했습니다. 압축 채널 초기화/쓰기 실패도 호출자에게 전달하며, 정리 중 추가 오류는 원래 오류의 suppressed 예외로 보존합니다. OS 파일 잠금·권한 문제로 임시 파일 삭제가 실패하면 예외로 알립니다.
