@@ -24,7 +24,7 @@ final class DummyInputStream extends InputStream {
     DummyInputStream(ContentType type, long length, long blockSize) {
         this.type = type;
         this.blockSize = blockSize;
-        bodyRemaining = length == 0 ? 0 : length - type.minimumLength();
+        bodyRemaining = length == 0 ? 0 : length - (type == ContentType.MULTIPART_FORM_DATA ? type.close.length() : type.minimumLength());
         stage = length == 0 ? 5 : 0;
     }
 
@@ -39,17 +39,26 @@ final class DummyInputStream extends InputStream {
                 case 0 -> { literal(type.open); stage = 1; }
                 case 1 -> {
                     if (bodyRemaining == 0) { stage = 4; continue; }
-                    String start = (index == 0 ? "" : type.separator) + String.format(Locale.ROOT, type.key, index);
+                    boolean multipart = type == ContentType.MULTIPART_FORM_DATA;
+                    String start = multipart ? ContentType.multipartHeader(index)
+                        : (index == 0 ? "" : type.separator) + String.format(Locale.ROOT, type.key, index);
                     String end = String.format(Locale.ROOT, type.end, index);
                     long overhead = start.length() + end.length();
                     if (bodyRemaining < overhead || (overhead == 0 && type != ContentType.APPLICATION_OCTET_STREAM)) {
+                        if (multipart) { stage = 4; continue; }
                         sequenceValue = false;
                         repeatedByte = (byte) type.padding;
                         repeated = bodyRemaining;
                         bodyRemaining = 0;
                         stage = 4;
                     } else {
-                        long valueLength = Math.min(blockSize, bodyRemaining - overhead);
+                        long available = bodyRemaining - overhead;
+                        // Reserve the mandatory file part and share available data between the first two parts.
+                        if (multipart && index == 0) {
+                            available -= ContentType.multipartHeader(1).length() + 2;
+                            available = available / 2 + available % 2;
+                        }
+                        long valueLength = Math.min(blockSize, available);
                         bodyRemaining -= overhead + valueLength;
                         literal(start);
                         sequenceValue = true;
@@ -60,7 +69,15 @@ final class DummyInputStream extends InputStream {
                     }
                 }
                 case 2 -> { literal(pendingEnd); stage = 1; }
-                case 4 -> { literal(type.close); stage = 5; }
+                case 4 -> { literal(type.close); stage = type == ContentType.MULTIPART_FORM_DATA ? 6 : 5; }
+                case 6 -> {
+                    // MIME epilogue preserves exact length without exceeding any part's blockSize.
+                    sequenceValue = false;
+                    repeatedByte = ' ';
+                    repeated = bodyRemaining;
+                    bodyRemaining = 0;
+                    stage = 5;
+                }
                 default -> { return false; }
             }
         }

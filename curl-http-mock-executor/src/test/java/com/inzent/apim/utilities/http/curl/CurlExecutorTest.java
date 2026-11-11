@@ -56,6 +56,19 @@ class CurlExecutorTest {
         return ExecuteContext.builder().url(base.resolve(path)).configure(ExecuteConfigure.builder().temporaryDirectory(temp).build());
     }
 
+    @Test void sendsMultipartBoundaryAndTextFileParts() throws Exception {
+        try (var c = context("/").contentType(ContentType.MULTIPART_FORM_DATA).build()) {
+            new CurlHttpMockExecutor().handle(c);
+            assertEquals(ExecutionRecord.State.COMPLETED, c.record().state());
+            assertEquals("multipart/form-data; boundary=HttpPayloadBoundary", receivedHeaders.get().getFirst("Content-Type"));
+            assertEquals(4096, received.get().length);
+            String body = new String(received.get(), StandardCharsets.US_ASCII);
+            assertTrue(body.startsWith("--HttpPayloadBoundary\r\n"));
+            assertTrue(body.contains("name=\"text0\""));
+            assertTrue(body.contains("name=\"file1\"; filename=\"file1.bin\""));
+        }
+    }
+
     @Test void sendsBuilderAndPreHeadersCapturesLogsAndCleansUp() throws Exception {
         Path out, err, directory;
         InputStream retained;

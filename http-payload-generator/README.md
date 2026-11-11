@@ -46,6 +46,7 @@ void HttpPayloadGenerator.generate(boolean chunked, ContentType contentType, Con
 | TEXT_HTML | text/html; charset=UTF-8 | 26 |
 | APPLICATION_FORM_URLENCODED | application/x-www-form-urlencoded; charset=UTF-8 | 1 |
 | APPLICATION_OCTET_STREAM | application/octet-stream | 1 |
+| MULTIPART_FORM_DATA | multipart/form-data; boundary=HttpPayloadBoundary | 233 |
 
 `ContentEncoding`은 Netty HTTP 압축 기능의 전체 코딩인 `GZIP`, `DEFLATE`, `BR`, `ZSTD`, `SNAPPY`와 `IDENTITY`를 제공합니다. `DEFLATE`는 zlib wrapper를 포함하며 `SNAPPY`는 framed Snappy입니다. IDENTITY에서는 Content-Encoding 헤더를 생략합니다. IANA에 등록된 모든 코딩(예: compress, dcb, dcz)을 지원한다는 의미는 아닙니다.
 
@@ -72,6 +73,25 @@ ContentType.APPLICATION_JSON.generate(4096, 128, input -> {
 `blockSize`는 key/value 형식에서 value의 최대 길이입니다. `key0`, `key1`, ... 순서로 값을 생성하고 마지막 value는 남은 공간에 맞춰 짧아질 수 있습니다. JSON/XML/HTML에서는 문법을 유지하도록 남은 공간에 공백을 채우며 form에서는 `&`로 빈 필드를 추가합니다. text/plain은 `key0=012`와 줄바꿈 형식이며 끝부분에 공백이 들어갈 수 있습니다. 작은 길이에서는 key/value가 하나도 없을 수 있습니다. OCTET_STREAM도 영숫자 순번 패턴으로 채우며 blockSize가 데이터 형식을 바꾸지 않습니다. blockSize는 HTTP 청크 크기가 아닙니다.
 
 모든 타입의 dummy value는 `0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz`의 62개 ASCII 문자를 순서대로 반복합니다. 각 스트림은 `0`부터 시작하고 다음 value에서도 순서를 이어갑니다. 예를 들어 TEXT_PLAIN에서 contentLength=27, blockSize=3이면 `key0=012\nkey1=345\nkey2=678\n`입니다. key·태그·구분자와 길이 조정용 공백·`&`는 순번을 진행시키지 않습니다. 같은 Content-Type·contentLength·blockSize에서는 매번 동일한 본문을 생성하며 단일 바이트·버퍼·혼합 읽기의 결과도 같습니다. 같은 전송·Content-Encoding 설정과 codec 실행 환경에서는 헤더와 압축 결과도 동일합니다. 값은 읽는 시점에 생성하며 전체 본문이나 blockSize 크기의 배열을 미리 만들지 않습니다.
+
+## Multipart form-data 생성
+
+```java
+new DefaultHttpPayloadGenerator().generate(
+    false, ContentType.MULTIPART_FORM_DATA, ContentEncoding.IDENTITY,
+    4096, 128, (headers, input) -> {
+        try {
+            // headers의 Content-Type에는 본문과 일치하는 boundary가 포함됩니다.
+            input.transferTo(outputStream); // 호출자가 소유한 OutputStream
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    });
+```
+
+양수 길이에서는 `text0` text 필드와 `file1` file 파트를 항상 포함합니다. file 파트의 filename은 `file1.bin`, Content-Type은 `application/octet-stream`입니다. 남은 공간에 따라 `text2`, `file3`, ... 파트를 교대로 추가하며 각 파트의 데이터 길이는 `blockSize` 이하입니다. 첫 두 파트에 사용할 데이터를 나누고 각 데이터는 기존 영숫자 순번을 이어갑니다. 실제 파일을 읽지 않고 업로드 테스트용 dummy 파일 내용을 생성합니다.
+
+`contentLength`에는 boundary, 파트 헤더, CRLF와 데이터 전체가 포함됩니다. 최소 양수 길이는 233바이트이며 이때 두 파트의 데이터는 비어 있습니다. 추가 파트가 들어가지 않는 나머지는 종료 boundary 뒤 MIME epilogue의 공백으로 채웁니다. 길이 0은 기존 계약에 따라 빈 스트림이며 유효한 multipart 문서가 아닙니다. boundary는 재현성을 위해 `HttpPayloadBoundary`로 고정하며 생성 데이터는 boundary와 충돌하지 않습니다. 원문 생성은 `ContentType.MULTIPART_FORM_DATA.generate(...)`로도 가능하고, 모든 ContentEncoding과 chunked 옵션을 동일하게 사용할 수 있습니다.
 
 ## Netty request/response 생성
 
@@ -132,7 +152,7 @@ generator.generate(false, ContentType.APPLICATION_JSON, ContentEncoding.IDENTITY
 
 구성과 검증 범위는 [project.md](project.md)를 참고하세요.
 
-리소스/NPE 실패 경로 분석과 조치 내역은 [resource-safety-review.md](resource-safety-review.md)에 정리했습니다. 압축 채널 초기화/쓰기 실패도 호출자에게 전달하며, 정리 중 추가 오류는 원래 오류의 suppressed 예외로 보존합니다. OS 파일 잠금·권한 문제로 임시 파일 삭제가 실패하면 예외로 알립니다.
+리소스/NPE 실패 경로 분석과 조치 내역은 [resource-safety-review.md](resource-safety-review.md)에 정리했습니다. multipart를 포함한 모든 타입·encoding에서 callback NPE/예외와 조기 종료 후 자원 정리를 검증합니다. multipart 압축 취소 시에도 임시 파일을 정리합니다. 검증용 Netty multipart 디코더는 생성 전부터 요청을 finally로 소유하고, 거부된 파트도 정리하도록 기본 mixed-mode factory를 사용합니다. 압축 채널 초기화/쓰기 실패도 호출자에게 전달하며, 정리 중 추가 오류는 원래 오류의 suppressed 예외로 보존합니다. OS 파일 잠금·권한 문제로 임시 파일 삭제가 실패하면 예외로 알립니다.
 
 리소스 회귀 테스트를 포함한 검증:
 

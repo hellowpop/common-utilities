@@ -1,5 +1,11 @@
 # Curl HTTP Mock Executor 설계
 
+## Multipart 연동 (2026-11-11)
+
+`http-payload-generator`의 `MULTIPART_FORM_DATA` 추가에 맞춰 PayloadPreparation의 Content-Type 중복 switch를 제거하고 `ContentType.mediaType()`을 사용한다. boundary 포함 헤더가 생성기와 일치하며 기존 타입의 charset 계약도 유지한다. 새 enum을 구버전 switch에 전달할 때의 IncompatibleClassChangeError를 실제 curl 테스트로 재현한 후 수정했다. `CurlExecutorTest.sendsMultipartBoundaryAndTextFileParts`에서 수신한 Content-Type, 본문 크기와 text/file 파트를 검사한다.
+
+PARANOID `clean verify`에서 전체 46개 테스트가 실패·오류·건너뜀 없이 통과했다. JAR과 소스 JAR 생성을 확인했으며 install은 테스트를 생략한다.
+
 - 작성일: 2026-10-19
 - 상태: 구현 및 Windows 실제 curl 검증 완료.
 - 모듈: `curl-http-mock-executor` — Java 17 독립 Maven 라이브러리

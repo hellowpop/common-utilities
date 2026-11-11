@@ -43,6 +43,7 @@ class SequentialDummyContentTest {
                         case TEXT_HTML -> "<div data-key=\"key[0-9]+\">([^<]*)</div>";
                         case TEXT_PLAIN -> "key[0-9]+=([^\\n]*)\\n";
                         case APPLICATION_FORM_URLENCODED -> "key[0-9]+=([^&]*)";
+                        case MULTIPART_FORM_DATA -> "\\r\\n\\r\\n([A-Za-z0-9]*)\\r\\n";
                         default -> throw new AssertionError();
                     };
                     StringBuilder joined = new StringBuilder();

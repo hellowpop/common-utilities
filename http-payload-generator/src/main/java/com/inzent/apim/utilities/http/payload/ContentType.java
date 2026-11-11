@@ -13,7 +13,8 @@ public enum ContentType {
     APPLICATION_XML("application/xml; charset=UTF-8", "<root>", "</root>", "", "<key%d>", "</key%d>", ' '),
     TEXT_HTML("text/html; charset=UTF-8", "<html><body>", "</body></html>", "", "<div data-key=\"key%d\">", "</div>", ' '),
     APPLICATION_FORM_URLENCODED("application/x-www-form-urlencoded; charset=UTF-8", "", "", "&", "key%d=", "", '&'),
-    APPLICATION_OCTET_STREAM("application/octet-stream", "", "", "", "", "", ' ');
+    APPLICATION_OCTET_STREAM("application/octet-stream", "", "", "", "", "", ' '),
+    MULTIPART_FORM_DATA("multipart/form-data; boundary=HttpPayloadBoundary", "", "--HttpPayloadBoundary--\r\n", "", "", "\r\n", ' ');
 
     final String open, close, separator, key, end;
     final char padding;
@@ -30,7 +31,18 @@ public enum ContentType {
     }
 
     public String mediaType() { return mediaType; }
-    public int minimumLength() { return open.length() + close.length(); }
+    public int minimumLength() {
+        if (this == MULTIPART_FORM_DATA) return multipartHeader(0).length() + multipartHeader(1).length() + 4 + close.length();
+        return open.length() + close.length();
+    }
+
+    static String multipartHeader(long index) {
+        boolean file = (index & 1) != 0;
+        return "--HttpPayloadBoundary\r\nContent-Disposition: form-data; name=\""
+            + (file ? "file" : "text") + index + "\""
+            + (file ? "; filename=\"file" + index + ".bin\"\r\nContent-Type: application/octet-stream" : "")
+            + "\r\n\r\n";
+    }
 
     /** Invokes the callback synchronously; the stream closes when it returns. */
     public void generate(long contentLength, long blockSize, Consumer<InputStream> acceptor) {

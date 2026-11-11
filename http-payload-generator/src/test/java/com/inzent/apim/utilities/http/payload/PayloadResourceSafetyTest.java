@@ -3,6 +3,8 @@ package com.inzent.apim.utilities.http.payload;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,14 +15,21 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class PayloadResourceSafetyTest {
     private enum Consumption { UNREAD, PARTIAL, FULL, CLOSE_EARLY, RUNTIME_FAILURE, NPE, ERROR }
 
-    @ParameterizedTest @EnumSource(ContentEncoding.class)
-    void everyCallbackExitClosesStreamAndDeletesTemporaryPayload(ContentEncoding encoding) throws IOException {
+    static Stream<Arguments> contentTypesAndEncodings() {
+        return Arrays.stream(ContentType.values()).flatMap(type ->
+            Arrays.stream(ContentEncoding.values()).map(encoding -> Arguments.of(type, encoding)));
+    }
+
+    @ParameterizedTest @MethodSource("contentTypesAndEncodings")
+    void everyCallbackExitClosesStreamAndDeletesTemporaryPayload(ContentType type, ContentEncoding encoding) throws IOException {
         Path directory = temporaryDirectory();
         var generator = new DefaultHttpPayloadGenerator();
         for (Consumption consumption : Consumption.values()) {
@@ -33,7 +42,7 @@ class PayloadResourceSafetyTest {
                 case ERROR -> new AssertionError("callback error");
                 default -> null;
             };
-            Runnable generate = () -> generator.generate(false, ContentType.APPLICATION_JSON, encoding, 20000, 17, (headers, in) -> {
+            Runnable generate = () -> generator.generate(false, type, encoding, 20000, 17, (headers, in) -> {
                 stream.set(in);
                 try {
                     ownedFiles.addAll(payloads(directory));
@@ -65,25 +74,26 @@ class PayloadResourceSafetyTest {
             assertEquals("contentType", assertThrows(NullPointerException.class,
                 () -> generator.generate(false, null, encoding, 100, 7, (h, in) -> fail())).getMessage());
         }
-        assertEquals("contentEncoding", assertThrows(NullPointerException.class,
-            () -> generator.generate(false, ContentType.TEXT_PLAIN, null, 100, 7, (h, in) -> fail())).getMessage());
-        for (ContentEncoding encoding : ContentEncoding.values()) {
-            assertEquals("acceptor", assertThrows(NullPointerException.class,
-                () -> generator.generate(false, ContentType.TEXT_PLAIN, encoding, 100, 7, null)).getMessage());
-        }
         for (ContentType type : ContentType.values()) {
+            assertEquals("contentEncoding", assertThrows(NullPointerException.class,
+                () -> generator.generate(false, type, null, 100, 7, (h, in) -> fail())).getMessage());
+            for (ContentEncoding encoding : ContentEncoding.values()) {
+                assertEquals("acceptor", assertThrows(NullPointerException.class,
+                    () -> generator.generate(false, type, encoding, 100, 7, null)).getMessage());
+            }
             assertEquals("acceptor", assertThrows(NullPointerException.class,
                 () -> type.generate(100, 7, null)).getMessage());
         }
         assertEquals(before, payloads(directory));
     }
 
-    @Test void invalidReadArgumentsDoNotAdvanceOrBreakStream() {
-        ContentType.TEXT_PLAIN.generate(100, 7, in -> {
+    @ParameterizedTest @EnumSource(value = ContentType.class, names = {"TEXT_PLAIN", "MULTIPART_FORM_DATA"})
+    void invalidReadArgumentsDoNotAdvanceOrBreakStream(ContentType type) {
+        type.generate(1024, 7, in -> {
             assertThrows(NullPointerException.class, () -> in.read(null, 0, 0));
             assertThrows(IndexOutOfBoundsException.class, () -> in.read(new byte[1], -1, 1));
             assertThrows(IndexOutOfBoundsException.class, () -> in.read(new byte[1], 0, 2));
-            try { assertEquals('k', in.read()); }
+            try { assertEquals(type == ContentType.MULTIPART_FORM_DATA ? '-' : 'k', in.read()); }
             catch (IOException e) { throw new UncheckedIOException(e); }
         });
     }

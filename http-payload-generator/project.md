@@ -1,5 +1,20 @@
 # HTTP Payload Generator 구성
 
+## Multipart 메모리 누수·NPE 후속 점검 (2026-11-11)
+
+운영 생성기의 새 내부 NPE/누수는 발견되지 않았다. multipart 검증 코드에서 디코더 생성 실패 시 요청과 거부된 file 파트가 해제되지 않는 경로를 각각 refCnt=1로 재현했다. 요청의 바깥 finally와 파트 추적 factory로 수정했으며 refCnt=0을 직접 단언한다. 모든 타입·압축 조합의 callback 종료 경로 및 multipart의 5개 압축 취소 경로로 자원 검증을 확대했다. 분석 근거·조치·보장 범위는 [resource-safety-review.md](resource-safety-review.md)의 multipart 후속 분석에 기록한다.
+
+수정 후 PARANOID `clean verify`에서 총 123개 테스트가 실패·오류·건너뜀 없이 통과하고 LEAK 보고가 없었다. JAR·소스 JAR 생성을 확인했으며 최종 문서를 포함한 install은 테스트를 생략한다.
+
+## Multipart form-data (2026-11-11)
+
+- `ContentType.MULTIPART_FORM_DATA`를 기존 generate API에 추가한다. Content-Type의 고정 boundary `HttpPayloadBoundary`와 본문 delimiter를 일치시킨다.
+- 첫 두 파트는 `text0`(text 필드), `file1`(filename=`file1.bin`, Content-Type=`application/octet-stream`)이다. 이후 text/file을 번갈아 추가하며 파트 데이터는 영숫자 순번을 이어가고 `blockSize`를 넘지 않는다. 실제 파일 입력 API는 추가하지 않는다.
+- 최소 양수 길이는 빈 text/file 파트와 종료 boundary를 포함한 233바이트다. 0은 기존 빈 스트림 계약을 유지하고 1~232는 거부한다. 추가 파트가 들어가지 않는 공간은 종료 boundary 뒤 MIME epilogue 공백으로 맞춘다.
+- 설계 선택: 별도 multipart 전용 공개 API나 본문 전체 버퍼 대신 기존 DummyInputStream의 세그먼트 생성 전략을 확장한다. 정확한 long 길이, 상수 메모리, 읽기 방식별 재현성, callback 수명 및 압축/전송 헤더 계약을 유지한다.
+- 검증: Netty multipart 디코더로 text/file 분류·filename·Content-Type·데이터 순번·파트 크기를 검사한다. 최소/나머지/일반 길이, 0/잘못된 길이, Long.MAX_VALUE 부분 읽기와 스트림 종료를 검사한다. 기존 enum 기반 회귀 테스트에 읽기 재현성과 모든 encoding의 원문 복원을 포함한다.
+- PARANOID `clean verify`: 전체 80개 테스트 실패·오류·건너뜀 없이 통과. 일반 JAR의 `META-INF/docs/http-payload-generator/` 문서와 소스 JAR의 변경 소스를 확인했다. 로컬 저장소 install은 `-Dmaven.test.skip=true`로 수행했다. 연동 모듈 curl-http-mock-executor의 Content-Type 중복 분기도 함께 정리했다.
+
 ## 백그라운드 실행 취소 지원 (2026-11-11, 현재 동작)
 
 Spring mock 실행 API가 압축 중인 worker를 취소할 수 있도록 NettyPayloadEncoder의 입력 블록 처리 사이에 interrupt를 검사한다.

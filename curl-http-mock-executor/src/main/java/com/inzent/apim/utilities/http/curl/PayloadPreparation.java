@@ -2,7 +2,6 @@ package com.inzent.apim.utilities.http.curl;
 
 import com.inzent.apim.utilities.http.payload.*;
 import io.netty.handler.codec.http.*;
-import io.netty.util.CharsetUtil;
 import java.io.*;
 import java.util.*;
 
@@ -53,18 +52,7 @@ final class PayloadPreparation {
                 && !(port == 443 && c.url().getScheme().equalsIgnoreCase("https"))) host += ":"+port;
         headers.set(HttpHeaderNames.HOST,host);
         if (!CurlArguments.noBody(c)) {
-            CharSequence mediaType = switch (c.contentType()) {
-                case TEXT_PLAIN -> HttpHeaderValues.TEXT_PLAIN;
-                case APPLICATION_JSON -> HttpHeaderValues.APPLICATION_JSON;
-                case APPLICATION_XML -> HttpHeaderValues.APPLICATION_XML;
-                case TEXT_HTML -> HttpHeaderValues.TEXT_HTML;
-                case APPLICATION_FORM_URLENCODED -> HttpHeaderValues.APPLICATION_X_WWW_FORM_URLENCODED;
-                case APPLICATION_OCTET_STREAM -> HttpHeaderValues.APPLICATION_OCTET_STREAM;
-            };
-            String value = mediaType.toString();
-            if (c.contentType() != ContentType.APPLICATION_OCTET_STREAM)
-                value += "; "+HttpHeaderValues.CHARSET+'='+CharsetUtil.UTF_8.name();
-            headers.set(HttpHeaderNames.CONTENT_TYPE,value);
+            headers.set(HttpHeaderNames.CONTENT_TYPE,c.contentType().mediaType());
             CharSequence encoding = switch(c.contentEncoding()) {
                 case IDENTITY -> HttpHeaderValues.IDENTITY;
                 case GZIP -> HttpHeaderValues.GZIP;

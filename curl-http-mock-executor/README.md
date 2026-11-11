@@ -2,6 +2,10 @@
 
 Java 17 라이브러리로 더미 HTTP 요청을 실제 curl 프로세스에서 실행하고, 요청/응답과 실행 단계를 `ExecuteContext`에 기록합니다. HTTP/1.1 단일 요청을 실행하며 응답은 대상 서버의 실제 응답입니다.
 
+## Multipart form-data 요청
+
+`ExecuteContext.builder().contentType(ContentType.MULTIPART_FORM_DATA)`로 text와 file 파트를 포함한 dummy 업로드 요청을 생성합니다. `contentLength`는 multipart 헤더와 boundary를 포함한 전체 원문 길이이며 최소 양수 길이는 233바이트입니다. `blockSize`는 각 파트 데이터의 최대 길이입니다. Content-Type에는 생성기의 boundary가 자동으로 포함됩니다. 실제 파일 대신 dummy 파일 데이터를 생성하며 상세 형식은 [생성기 사용법](../http-payload-generator/README.md)을 참고하세요.
+
 ## 빌드
 
 저장소 루트에서 기존 생성기를 먼저 설치한 뒤 실행기 모듈을 빌드합니다.

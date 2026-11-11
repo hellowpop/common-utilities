@@ -181,12 +181,14 @@ class HttpPayloadGeneratorTest {
                 case TEXT_HTML -> "<html><body><div data-key=\"key0\">";
                 case APPLICATION_FORM_URLENCODED -> "key0=";
                 case APPLICATION_OCTET_STREAM -> "";
+                case MULTIPART_FORM_DATA -> "--HttpPayloadBoundary\r\n";
             };
             generator.generate(false, type, encoding, 256, 7, (headers, in) -> {
                 byte[] body = decode(encoding, read(in));
                 assertEquals(256, body.length);
                 assertEquals(type.mediaType(), headers.get(HttpHeaderNames.CONTENT_TYPE));
                 assertTrue(new String(body, java.nio.charset.StandardCharsets.US_ASCII).startsWith(prefix));
+                type.generate(256, 7, plain -> assertArrayEquals(read(plain), body));
             });
         }
     }

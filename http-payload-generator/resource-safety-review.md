@@ -1,5 +1,36 @@
 # 리소스 누수 및 NPE 분석·조치
 
+## Multipart 후속 분석·조치 (2026-11-11)
+
+범위: multipart 추가분과 ContentType.generate → DummyInputStream → DefaultHttpPayloadGenerator → NettyPayloadEncoder의 소유권 경로 및 연관 검증 코드. 아래 2026-10-16 기록은 이전 분석 이력이다.
+
+### 발견 및 수정
+
+| 구분 | 발생 조건·근거 | 조치 |
+|---|---|---|
+| 검증 코드의 요청 ByteBuf 누수 | MultipartPayloadTest에서 디코더를 try 범위 전에 생성했다. maxFields=1로 두 번째 파트를 거부하면 생성자가 예외를 던져 request.release()가 실행되지 않았다. 요청 refCnt=1로 실패하는 테스트로 재현했다. | 디코더 생성 전부터 요청을 바깥 try/finally로 소유하고, 디코더 destroy의 성공 여부와 관계없이 요청을 해제한다. |
+| 검증 코드의 file 파트 버퍼 누수 | Netty 4.1.139.Final의 DefaultHttpDataFactory(false)는 memory 파트를 factory 정리 목록에 등록하지 않는다. 디코더가 file 파트를 만든 뒤 maxFields 제한으로 bodyList 등록을 거부하면 생성자 내부 destroy가 해당 파트를 정리하지 못한다. 실제 file 파트 refCnt=1과 PARANOID LEAK 로그를 확인했다. | 검증 helper를 기본 mixed-mode DefaultHttpDataFactory()로 변경하여 목록 등록 전 거부된 파트까지 factory가 추적·정리하게 했다. 동일 실패 조건에서 요청과 file 파트 refCnt=0을 직접 검사한다. 외부 Netty 소스나 생성기 공개 API는 변경하지 않았다. |
+
+소스 근거는 로컬 Maven `netty-codec-http-4.1.139.Final-sources.jar`의 HttpPostMultipartRequestDecoder 생성자·parseBodyMultipart/addHttpData/destroy 및 DefaultHttpDataFactory createFileUpload/cleanRequestHttpData 경로다. 생성기 운영 코드는 multipart 디코더를 사용하지 않는다.
+
+### 메모리·NPE 검토 결과
+
+- DummyInputStream은 파트 목록이나 전체 파일 내용을 쌓지 않는다. 현재 헤더의 작은 byte 배열, long 카운터와 영숫자 순번만 유지하며 파트 수·본문 길이·blockSize에 비례하는 배열을 만들지 않는다. Long.MAX_VALUE 부분 읽기도 검증한다. 헤더 String/byte[]의 반복 할당은 GC 대상이며 누적 참조를 보관하지 않는다.
+- DefaultHttpPayloadGenerator는 원문 스트림·압축 파일 입출력·임시 파일을 중첩 try-with-resources로 정리한다. NettyPayloadEncoder는 입력 쓰기 후 소유권을 채널에 넘기고 출력 버퍼는 finally로 해제한다. 기존 초기화/입출력 실패의 refCnt 검증을 유지했다.
+- enum의 multipart 설정값은 non-null이고 공개 contentType/contentEncoding/acceptor는 자원 생성 전에 검사한다. 이번 범위에서 정상 인수로 발생하는 생성기 내부 NPE는 발견하지 못했다. 잘못된 read 버퍼의 NPE와 callback이 던진 NPE는 호출 계약에 따른 실패로 구분한다.
+- NPE/Error/RuntimeException을 던진 callback에도 동일 예외를 전달하고 스트림과 파일을 정리하는지 모든 ContentType × ContentEncoding에서 확인한다. 디코더 consumer NPE 후 실제 요청·text/file 파트 refCnt=0도 확인한다.
+
+### 회귀 검증 구성
+
+- PayloadResourceSafetyTest: 7개 ContentType × 6개 ContentEncoding × 7개 callback 종료 경로(미읽기/부분/전체/조기 close/RuntimeException/NPE/Error), 종료 후 스트림 읽기 거부·임시 파일 삭제.
+- 공개 null 인수는 모든 타입·encoding에서 이름이 명시된 NPE 및 임시 파일 미생성을 검사한다. TEXT_PLAIN/MULTIPART_FORM_DATA는 null/잘못된 read 범위가 위치를 바꾸지 않는지 확인한다.
+- PayloadCancellationTest: multipart의 5개 압축 encoding에서 interrupt 상태 보존·callback 미호출·예외 원인·취소 후 임시 파일 미잔류.
+- MultipartPayloadTest: 디코더 생성 실패 시 요청·거부된 file 파트 해제, consumer NPE 시 요청·모든 등록 파트 해제. 실패 테스트의 최종 보호 정리는 단언 실패 시 테스트 자체가 버퍼를 남기지 않도록 한다.
+
+검증의 한계: PARANOID 로그 부재만으로 모든 실행 환경의 누수 부재를 증명하지 않는다. 실제 참조 수·파일 상태·스트림 상태를 함께 검사한다. OS 파일 잠금/권한 변경, JVM 강제 종료, 호출자 소유 자원의 미해제에 대한 기존 한계는 유지한다.
+
+최종 검증: Windows x86_64/JDK 21.0.3에서 `mvn -f http-payload-generator/pom.xml -Dio.netty.leakDetection.level=paranoid clean verify` 실행. 총 123개 테스트, 실패·오류·건너뜀 0, BUILD SUCCESS이며 해당 실행 로그에 LEAK 보고가 없었다. JAR·소스 JAR을 생성했고 문서를 포함한 최종 산출물의 install은 `-Dmaven.test.skip=true`로 수행한다. 운영 코드에서 이번 점검으로 추가 수정할 내부 NPE/누수는 발견하지 못했으며 위 두 조치는 검증 코드의 실패 경로에 적용했다.
+
 분석일: 2026-10-16. 대상은 `http-payload-generator` 모듈이다. 기존 다른 모듈은 회귀 테스트 대상으로만 확인했다.
 
 ## 확인된 문제와 조치
