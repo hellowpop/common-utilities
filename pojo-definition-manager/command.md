@@ -7,7 +7,7 @@ POJO 를 설명할 수 있는 class / yml,json 같은 meta 를 표준형식인 d
 - lombok 사용
 - jackson 사용 ( json, xml manage )
 - 이외의 구현은 pure java 기능을 통해 구현함.
-- 잘 정리된 추가 dependency 필요시 제안
+- 추가 dependency 필요시 제안
 
 # 개발 내역
 ## manager
@@ -33,6 +33,7 @@ POJO 를 설명할 수 있는 class / yml,json 같은 meta 를 표준형식인 d
 ```
 - external bean registry 를 통한 bean wire 관리
   - manager 에 external bean registry 를 통한 bean wire 관리
+
 ## definition
 -
 ## annotation / annotation processors
@@ -71,9 +72,20 @@ class 형태의 meta에서 각 type / field 에 대한 선언과 해당 field �
 - pojo 에서 참조하는 다른 bean 이 있을 경우 해당 bean 을 참조가능한 ExternalBeanRegistry interface 를 구현한 registry 를 통해 injection 할 수 있음
 - external bean injection 을 위한 interface 정의
     ```java
-    public interface ExternalBeanRegistry {
-        <T> T getBean(Class<T> clazz);
-        <T> T getBean(String name,Class<T> clazz);
+  public interface ExternalBeanRegistry {
+  	<T> T getBean(Class<T> clazz);
+  	<T> T getBean(String name,Class<T> clazz);
+  }
+    ```
+- class type pojo 생성에서 transient field 에 @Injection("bean-name") 으로 선언된 필드는 bean registry 에서 참조된 object wire 수행함.
+    ```java
+    public class OtherBean {
+        @Injection
+        transient InjectComponent injectComponent;
+        @Injection("bean-first")
+        transient NamedComponent firstNamedComponent;
+        @Injection("bean-second")
+        transient NamedComponent secondNamedComponent;
     }
     ```
 - manager 에 ext
