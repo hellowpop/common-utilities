@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>4.1.2</version><relativePath/></parent>
+  <groupId>com.inzent.apim.utilities</groupId><artifactId>http-mock-request-caller</artifactId><version>1.0.0-SNAPSHOT</version>
+  <name>HTTP Mock Request Caller</name>
+  <properties><java.version>17</java.version><maven.compiler.release>17</maven.compiler.release><netty.version>4.1.139.Final</netty.version><skipTests>true</skipTests><caller.build.directory>target</caller.build.directory><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
+  <dependencyManagement><dependencies><dependency><groupId>io.netty</groupId><artifactId>netty-bom</artifactId><version>${netty.version}</version><type>pom</type><scope>import</scope></dependency></dependencies></dependencyManagement>
+  <dependencies>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-jdbc</artifactId></dependency>
+    <dependency><groupId>org.liquibase</groupId><artifactId>liquibase-core</artifactId></dependency>
+    <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>com.inzent.apim.utilities</groupId><artifactId>http-payload-generator</artifactId><version>1.0.0-SNAPSHOT</version></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-handler</artifactId></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport</artifactId></dependency>
+    <dependency><groupId>org.apache.commons</groupId><artifactId>commons-jexl3</artifactId><version>3.7.1</version></dependency>
+    <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.20.1</version></dependency>
+    <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.20.1</version></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+  </dependencies>
+  <build><directory>${caller.build.directory}</directory>
+    <resources><resource><directory>src/main/resources</directory></resource><resource><directory>${project.basedir}</directory><targetPath>META-INF/docs/${project.artifactId}</targetPath><includes><include>*.md</include></includes><filtering>false</filtering></resource></resources>
+    <plugins>
+      <plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-source-plugin</artifactId><version>3.4.0</version><executions><execution><id>attach-sources</id><phase>package</phase><goals><goal>jar-no-fork</goal></goals></execution></executions></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><configuration><argLine>-XX:ActiveProcessorCount=4 -Dio.netty.leakDetection.level=paranoid</argLine></configuration></plugin>
+    </plugins>
+  </build>
+</project>

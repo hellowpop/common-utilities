@@ -15,6 +15,12 @@
 
 ## 구조 변경내역
 
+- 2026-11-15: 사용자 요청에 따라 HTTP Mock Request Caller의 구현·테스트·문서를 develop에 커밋하여 origin/develop에 반영한다. 좌측 메뉴 독립 스크롤, 가변 본문 너비와 전문보기 JSON 레이어·색상 구분을 포함한다. 푸시 전 기술문서를 갱신하고 Java 17 verify 및 JSON 테스트를 재검증하며 빌드 산출물·실행 데이터는 제외한다.
+
+- 2026-11-12: `http-mock-request-caller` 독립 Spring Boot/Java 17 앱을 구현했다. Netty HTTP/HTTPS, payload 조합, worker/ramp-up·취소, JEXL hooks, JDBC/Liquibase 이력, 실행별 rolling 로그, 진행 SSE와 정적 콘솔 및 offline HTML 보고서를 제공한다. [구성/검증](http-mock-request-caller/project.md), [사용법](http-mock-request-caller/README.md). Java 17 clean verify 36개 테스트 통과, 실제 JAR의 브라우저 저장·실행·보고서 다운로드와 sources/Markdown 패키징 및 install 테스트 생략을 확인했다. 커밋/push는 수행하지 않았다.
+
+- 2026-11-12: `http-mock-request-caller/command.md`를 기준으로 [구현 설계](http-mock-request-caller/project.md)를 작성했다. 독립 Spring Boot 웹 앱, Netty 전송과 payload 배열 조합, worker/ramp-up, 네 레벨 JEXL hook, 실행 이력·진행 집계, 개별 rolling 로그 및 HTML 보고서의 계약과 검증 계획을 정리했다. 구현 전 문서 작업이며 소스·POM 생성, 빌드·기능 테스트, 커밋/push는 수행하지 않았다.
+
 - 2026-11-11: [spring-base-http2-mock 구성](spring-base-http2-mock/project.md)과 [사용법](spring-base-http2-mock/README.md)을 현재 기능 중심으로 정리했다. HTTP/HTTPS·TLS HTTP/2·SSE·WebSocket, Netty/response 엔진 동시 서비스·제어와 payload 배열 조합 백그라운드 요청을 제공한다. `/api/execute-mock-request`의 개별 SSE는 endpointUrl/status만 전달하며 최종 summary는 responseSummaries를 제외한다. [http-payload-generator](http-payload-generator/project.md)에 압축 생성 interrupt 취소를 추가했다.
 
 - 2026-11-06: 미반영 변경 전체를 점검하여 Hazelcast native client 설정·설치 프로필·수명 관리 보강, Netty default/status 응답, CharSequence 비교 모듈, 메일 분석 설계와 POJO 요구사항 문서를 함께 반영한다. 10개 Maven 모듈은 기존 소스 JAR 첨부를 유지하고 모듈 루트의 `*.md`를 `META-INF/docs/<artifactId>/`에 포함한다. 빌드 산출물은 Git에서 제외한다.

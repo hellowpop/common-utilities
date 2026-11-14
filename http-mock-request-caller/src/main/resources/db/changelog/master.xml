@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+  <changeSet id="caller-1" author="common-utilities">
+    <createTable tableName="caller_scenario">
+      <column name="id" type="varchar(64)"><constraints primaryKey="true" nullable="false"/></column><column name="version" type="bigint"/><column name="title" type="varchar(200)"/><column name="definition" type="clob"/><column name="deleted" type="boolean"/>
+    </createTable>
+    <createTable tableName="caller_run">
+      <column name="id" type="varchar(64)"><constraints primaryKey="true" nullable="false"/></column><column name="scenario_id" type="varchar(64)"/><column name="title" type="varchar(200)"/><column name="started_at" type="varchar(40)"/><column name="status" type="varchar(32)"/><column name="document" type="clob"/>
+    </createTable>
+    <createTable tableName="caller_result">
+      <column name="id" type="varchar(64)"><constraints primaryKey="true" nullable="false"/></column><column name="run_id" type="varchar(64)"/><column name="path_id" type="varchar(64)"/><column name="success" type="boolean"/><column name="document" type="clob"/>
+    </createTable>
+    <createTable tableName="caller_artifact">
+      <column name="id" type="varchar(64)"><constraints primaryKey="true" nullable="false"/></column><column name="run_id" type="varchar(64)"/><column name="path" type="varchar(1000)"/><column name="body_size" type="bigint"/><column name="content_type" type="varchar(200)"/>
+    </createTable>
+    <createIndex tableName="caller_scenario" indexName="caller_scenario_title"><column name="title"/></createIndex>
+    <createIndex tableName="caller_run" indexName="caller_run_search"><column name="scenario_id"/><column name="started_at"/><column name="id"/></createIndex>
+    <createIndex tableName="caller_run" indexName="caller_run_time"><column name="started_at"/><column name="id"/></createIndex>
+    <createIndex tableName="caller_result" indexName="caller_result_search"><column name="run_id"/><column name="path_id"/><column name="id"/></createIndex>
+  </changeSet>
+  <changeSet id="caller-2" author="common-utilities">
+    <addColumn tableName="caller_run"><column name="idempotency_key" type="varchar(200)"/></addColumn>
+    <addUniqueConstraint tableName="caller_run" columnNames="scenario_id,idempotency_key" constraintName="caller_run_idempotency"/>
+    <createTable tableName="caller_cleanup"><column name="run_id" type="varchar(64)"><constraints primaryKey="true" nullable="false"/></column></createTable>
+  </changeSet>
+</databaseChangeLog>
