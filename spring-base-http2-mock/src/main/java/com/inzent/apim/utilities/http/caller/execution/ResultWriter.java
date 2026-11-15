@@ -47,8 +47,11 @@ final class ResultWriter implements AutoCloseable {
     @SuppressWarnings("unchecked")
     static void recover(CallerStore store,Path data){
         Path directory=data.resolve("journal");if(!Files.isDirectory(directory))return;
+        Set<String> pendingCleanup=new HashSet<>(store.pendingCleanup());
         try(var files=Files.list(directory)){
             for(Path file:files.filter(p->p.getFileName().toString().endsWith(".jsonl")).toList()){
+                String journalRunId=file.getFileName().toString().replaceFirst("\\.jsonl$","");
+                if(pendingCleanup.contains(journalRunId))continue;
                 if(Files.size(file)>64L*1024*1024)throw new IllegalStateException("Journal exceeds recovery budget");
                 byte[] raw=Files.readAllBytes(file);int complete=raw.length;while(complete>0&&raw[complete-1]!='\n')complete--;
                 // Frame bytes first: a crash may tear a UTF-8 code point as well as JSON syntax.

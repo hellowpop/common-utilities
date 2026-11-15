@@ -44,6 +44,7 @@ public final class CallerController {
     @PostMapping("/scenarios/{id}/runs") public ResponseEntity<String> start(@PathVariable String id,@RequestHeader(name="Idempotency-Key",required=false)String key){var r=runs.start(id,key);return ResponseEntity.accepted().location(URI.create("/api/runs/"+r.get("id"))).contentType(MediaType.APPLICATION_JSON).body(store.encode(r));}
     @GetMapping("/runs") public ResponseEntity<String> history(@RequestParam(required=false)String scenarioId,@RequestParam(required=false)String title,@RequestParam(required=false)String from,@RequestParam(required=false)String to,@RequestParam(required=false)String status,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size){pages(page,size);return ok(store.searchRuns(scenarioId,title,from,to,status,page,size));}
     @GetMapping("/runs/{id}") public ResponseEntity<String> progress(@PathVariable String id){return ok(runs.progress(id));}
+    @DeleteMapping("/runs/{id}") public ResponseEntity<String> deleteRun(@PathVariable String id){runs.delete(id);return ok(Map.of("deleted",true));}
     @PostMapping("/runs/{id}/cancel") public ResponseEntity<String> cancel(@PathVariable String id){var r=runs.cancel(id);return ResponseEntity.status(terminal(r)?200:202).contentType(MediaType.APPLICATION_JSON).body(store.encode(r));}
     @GetMapping("/runs/{id}/requests")
     public ResponseEntity<String> requests(@PathVariable String id,

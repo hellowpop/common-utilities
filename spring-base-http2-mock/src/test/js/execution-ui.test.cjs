@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const model=require('../../main/resources/caller-ui/path-model.js');
 function app(){
- const elements=new Map();const element=()=>({value:'',textContent:'',hidden:false,disabled:false,style:{},classList:{toggle(){}},children:[],append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(){},close(){this.open=false;},showModal(){this.open=true;}});
+ const elements=new Map();const element=()=>({value:'',textContent:'',hidden:false,disabled:false,style:{},classList:{toggle(){}},children:[],listeners:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(type,handler){this.listeners[type]=handler;},close(){this.open=false;},showModal(){this.open=true;}});
  const context={document:{getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);},createElement:element},window:{addEventListener(){}},CallerPathModel:model,CallerPathUI:{create(){return {render(){}};}},URLSearchParams,console};
  vm.createContext(context);const source=fs.readFileSync(require.resolve('../../main/resources/caller-ui/app.js'),'utf8');
  vm.runInContext(source.slice(0,source.lastIndexOf("action(async()=>{csrf=")),context);
@@ -36,7 +36,8 @@ test('run summaries render table cells including status, errors, latency and nam
  a.run('showRun(snapshot)');
  const cells=id=>a.el(id).children.flatMap(row=>row.children.map(cell=>cell.textContent));
  assert.ok(cells('run-stats').includes('200'));assert.ok(cells('run-stats').includes('TIMEOUT'));
- assert.ok(cells('latency').includes('3.50 req/s'));assert.ok(cells('latency').includes('1.25 ms'));
+ assert.deepEqual(a.el('latency').children[0].children.map(cell=>cell.textContent),['처리량','3.50','req/s']);
+ assert.deepEqual(a.el('latency').children[5].children.map(cell=>cell.textContent),['평균','1.25','ms']);
  assert.ok(cells('path-stats').includes('echo'));assert.ok(cells('path-stats').includes('/echo'));
  a.run('showRun({status:"QUEUED",persistenceState:"OK"})');assert.equal(a.el('path-stats').children.length,1);
 });
@@ -56,4 +57,25 @@ test('request search sends combined filters and keeps applied filters across pag
  assert.equal(a.el('request-results').hidden,false);assert.equal(a.el('request-rows').children.length,1);
  a.el('request-status').value='200';await a.run('requestPage=1;results()');assert.equal(new URL(calls[1],'http://local').searchParams.get('status'),'500');
  a.el('request-min-elapsed').value='30';await assert.rejects(a.run('searchRequests()'),/소요시간/);assert.equal(calls.length,2);
+});
+
+test('history delete buttons disable active runs and stop row navigation',async()=>{
+ const a=app();const calls=[];let stopped=false;
+ a.context.confirm=()=>false;
+ a.context.fetch=async url=>{calls.push(url);return {ok:true,json:async()=>[{id:'ended',title:'done',status:'COMPLETED'},{id:'active',status:'RUNNING'}]};};
+ await a.run('history()');
+ const rows=a.el('history-rows').children;
+ const ended=rows[0].children[5].children[0],active=rows[1].children[5].children[0];
+ assert.equal(ended.textContent,'삭제');assert.equal(ended.disabled,false);assert.equal(active.disabled,true);
+ await ended.listeners.click({stopPropagation(){stopped=true;}});assert.equal(stopped,true);assert.equal(calls.length,1);
+});
+
+test('deleting selected run clears details and goes back a page when the last row is deleted',async()=>{
+ const a=app();const calls=[];a.context.confirm=()=>true;
+ a.context.fetch=async(url,options)=>{calls.push({url,method:options.method});return {ok:true,json:async()=>options.method==='DELETE'?{deleted:true}:[]};};
+ a.run('currentRun="ended";historyPage=1');a.el('request-detail').textContent='old';
+ await a.run('deleteRun({id:"ended",title:"done",status:"COMPLETED"})');
+ assert.equal(calls[0].url,'/api/runs/ended');assert.equal(calls[0].method,'DELETE');
+ assert.equal(a.run('currentRun'),null);assert.equal(a.el('request-detail').textContent,'');assert.equal(a.el('run-title').textContent,'실행을 선택하세요');assert.equal(a.el('cancel').disabled,true);
+ assert.equal(a.run('historyPage'),0);assert.equal(calls.length,3);
 });

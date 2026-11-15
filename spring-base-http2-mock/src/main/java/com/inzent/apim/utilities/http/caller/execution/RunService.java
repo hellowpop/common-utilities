@@ -50,6 +50,12 @@ public final class RunService implements AutoCloseable {
     public Map<String,Object> progress(String id){RunState s=active.get(id);return s==null?store.run(id):s.snapshot();}
     public Map<String,Object> cancel(String id){RunState s=active.get(id);if(s!=null)synchronized(s){if(s.endedAt==null){s.stop("USER");s.status("STOPPING");}}return progress(id);}
     public synchronized boolean isRunningScenario(String id){return activeScenario.containsKey(id);}
+    public synchronized void delete(String id){
+        if(active.containsKey(id))throw new CallerStore.Conflict("Cannot delete an active run; wait for finalization");
+        Map<String,Object> run=store.run(id);
+        if(!Set.of("COMPLETED","FAILED","CANCELLED","INTERRUPTED").contains(String.valueOf(run.get("status"))))throw new CallerStore.Conflict("Only ended runs can be deleted");
+        storage.deleteRun(id);
+    }
     public boolean degraded(){return degraded||scripts.isDegraded();}
     private void execute(RunState state,String key){
         ResultWriter writer=new ResultWriter(store,state,data);RunLogManager logs=null;

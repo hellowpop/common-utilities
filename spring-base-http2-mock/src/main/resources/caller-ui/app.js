@@ -27,7 +27,19 @@ async function loadScenarios(){scenarioRows=await api('/scenarios?title='+encode
 async function save(){const s=read();CallerPathModel.validateExecution(s);for(const p of s.paths)CallerPathModel.validateDelay(p.delay);const result=await api('/scenarios'+(s.id?'/'+s.id:''),s.id?'PUT':'POST',s);populate(result);await loadScenarios();message('시나리오를 저장했습니다.');}
 function time(s){return s?new Date(s).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'—';}
 function td(row,text,small){const cell=document.createElement('td');cell.textContent=text??'—';if(small){const span=document.createElement('small');span.textContent=small;cell.append(span);}row.append(cell);}
-async function history(){let q=new URLSearchParams({page:historyPage,title:$('history-title').value,status:$('history-status').value});for(const key of ['from','to'])if($(key).value)q.set(key,new Date($(key).value).toISOString());historyRows=await api('/runs?'+q);$('history-rows').replaceChildren();for(const r of historyRows){const tr=document.createElement('tr');tr.className='clickable';td(tr,r.title,r.id);td(tr,time(r.startedAt));td(tr,r.status,r.outcome);td(tr,CallerPathModel.runCountSummary(r),r.executionMode==='DURATION'?(r.durationSeconds+'초 · 시간 기준'):undefined);td(tr,r.failed);tr.addEventListener('click',action(()=>openRun(r.id)));$('history-rows').append(tr);}$('history-page').textContent=historyPage+1;$('history-prev').disabled=historyPage===0;$('history-next').disabled=historyRows.length<20;}
+async function history(){let q=new URLSearchParams({page:historyPage,title:$('history-title').value,status:$('history-status').value});for(const key of ['from','to'])if($(key).value)q.set(key,new Date($(key).value).toISOString());historyRows=await api('/runs?'+q);$('history-rows').replaceChildren();for(const r of historyRows){const tr=document.createElement('tr');tr.className='clickable';td(tr,r.title,r.id);td(tr,time(r.startedAt));td(tr,r.status,r.outcome);td(tr,CallerPathModel.runCountSummary(r),r.executionMode==='DURATION'?(r.durationSeconds+'초 · 시간 기준'):undefined);td(tr,r.failed);const controls=document.createElement('td');const remove=document.createElement('button');remove.type='button';remove.className='danger subtle';remove.textContent='삭제';remove.disabled=!terminal(r.status);remove.title=remove.disabled?'실행 종료 후 삭제할 수 있습니다.':'실행 이력 삭제';remove.addEventListener('click',event=>{event.stopPropagation();return action(()=>deleteRun(r))();});controls.append(remove);tr.append(controls);tr.addEventListener('click',action(()=>openRun(r.id)));$('history-rows').append(tr);}$('history-page').textContent=historyPage+1;$('history-prev').disabled=historyPage===0;$('history-next').disabled=historyRows.length<20;}
+async function deleteRun(run){
+ if(!terminal(run.status))return;
+ if(!confirm('실행 이력 "'+run.title+'"을 삭제할까요? 요청 결과, 보관 본문, 로그도 함께 삭제되며 복구할 수 없습니다.'))return;
+ await api('/runs/'+run.id,'DELETE');
+ if(currentRun===run.id){
+  if(source){source.close();source=null;}currentRun=null;resetRequests();
+  showRun({title:'실행을 선택하세요',status:'—',outcome:'—',persistenceState:'OK'});
+  $('run-meta').textContent='';$('cancel').disabled=true;$('hook-detail').textContent='';$('log-content').textContent='';
+ }
+ await history();if(!historyRows.length&&historyPage>0){historyPage--;await history();}
+ message('실행 이력을 삭제했습니다.');
+}
 async function openRun(id){if(source)source.close();currentRun=id;requestPage=0;tab('detail');message('');const run=await api('/runs/'+id);showRun(run);resetRequests();if(!terminal(run.status)){source=new EventSource('/api/runs/'+id+'/events');source.addEventListener('progress',event=>{try{const r=JSON.parse(event.data);showRun(r);if(terminal(r.status)){source.close();results().catch(e=>message(e.message));}}catch(e){message(e.message);}});source.onerror=()=>{$('run-meta').textContent+=' · 연결 재시도 중';};}}
 function durationTime(ms){return ms==null?'—':(ms/1000).toLocaleString('ko-KR',{maximumFractionDigits:1})+'초';}
 
@@ -42,8 +54,8 @@ function showSummaryTables(r){
  gridRows('run-stats',[...Object.entries(r.statusCounts||{}).map(([code,count])=>['HTTP',code,metricValue(count,'',0)]),...Object.entries(r.errorCounts||{}).map(([code,count])=>['오류',code,metricValue(count,'',0)])],3);
  const latency=r.latency||{};
  gridRows('latency',[
- ['처리량',metricValue(r.throughput,' req/s')],['송신',metricValue(r.sentBytes,' bytes',0)],['수신',metricValue(r.receivedBytes,' bytes',0)],['지연 표본 수',metricValue(latency.samples,'',0)],
- ...[['최소','minMillis'],['평균','meanMillis'],['최대','maxMillis'],['P50','p50Millis'],['P95','p95Millis'],['P99','p99Millis']].map(([label,key])=>[label+(latency.approximate&&key.startsWith('p')?' (근사)':''),metricValue(latency[key],' ms')])],2);
+ ['처리량',metricValue(r.throughput),'req/s'],['송신',metricValue(r.sentBytes,'',0),'bytes'],['수신',metricValue(r.receivedBytes,'',0),'bytes'],['지연 표본 수',metricValue(latency.samples,'',0),'건'],
+ ...[['최소','minMillis'],['평균','meanMillis'],['최대','maxMillis'],['P50','p50Millis'],['P95','p95Millis'],['P99','p99Millis']].map(([label,key])=>[label+(latency.approximate&&key.startsWith('p')?' (근사)':''),metricValue(latency[key]),'ms'])],3);
  const paths=new Map((r.snapshot?.paths||[]).map(path=>[path.id,path]));
  gridRows('path-stats',(r.pathStatistics||[]).map(stat=>{const path=paths.get(stat.pathId);return [path?.name||stat.pathId,path?.requestPath||stat.pathId,...['completed','succeeded','failed'].map(key=>metricValue(stat[key],'',0))];}),5);
 }
@@ -84,7 +96,7 @@ $('delete').addEventListener('click',action(async()=>{if(!definition?.id)return;
 $('scenario-search').addEventListener('change',action(async()=>{scenarioPage=0;await loadScenarios();}));$('scenario-more').addEventListener('click',action(async()=>{scenarioPage=scenarioRows.length===20?scenarioPage+1:0;await loadScenarios();}));
 $('edit-tab').addEventListener('click',()=>tab('edit'));$('history-tab').addEventListener('click',action(async()=>{tab('history');await history();}));$('detail-tab').addEventListener('click',()=>tab('detail'));
 $('refresh-history').addEventListener('click',action(async()=>{historyPage=0;await history();}));$('history-prev').addEventListener('click',action(async()=>{historyPage=Math.max(0,historyPage-1);await history();}));$('history-next').addEventListener('click',action(async()=>{historyPage++;await history();}));
-$('cancel').addEventListener('click',action(async()=>{if(currentRun)showRun(await api('/runs/'+currentRun+'/cancel','POST',{}));}));$('refresh-results').addEventListener('click',action(async()=>{if(currentRun)showRun(await api('/runs/'+currentRun));await results();}));$('request-search').addEventListener('submit',event=>{event.preventDefault();action(searchRequests)();});$('request-prev').addEventListener('click',action(async()=>{requestPage=Math.max(0,requestPage-1);await results();}));$('request-next').addEventListener('click',action(async()=>{requestPage++;await results();}));
+$('cancel').addEventListener('click',action(async()=>{if(currentRun)showRun(await api('/runs/'+currentRun+'/cancel','POST',{}));}));$('refresh-results').addEventListener('click',action(async()=>{if(currentRun)showRun(await api('/runs/'+currentRun));await results();}));for(const id of ['request-status','request-worker','request-min-elapsed','request-max-elapsed']){$(id+'-clear').addEventListener('click',()=>{$(id).value='';$(id).focus();});}$('request-search').addEventListener('submit',event=>{event.preventDefault();action(searchRequests)();});$('request-prev').addEventListener('click',action(async()=>{requestPage=Math.max(0,requestPage-1);await results();}));$('request-next').addEventListener('click',action(async()=>{requestPage++;await results();}));
 $('load-logs').addEventListener('click',action(async()=>{if(!currentRun)return;const w=$('log-worker').value;const logs=await api('/runs/'+currentRun+'/logs'+(w?'?workerIndex='+encodeURIComponent(w):''));$('log-content').textContent=pretty(logs.files)+'\n\n'+logs.tail;}));
 window.addEventListener('beforeunload',()=>{if(source)source.close();});
 const pathEditor=CallerPathUI.create({getScenario:read,setScenario:populate,onError:message});

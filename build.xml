@@ -1,0 +1,29 @@
+<project name="common-utilities" basedir=".">
+    <property environment="env"/>
+    <property name="mvn.cmd" value="${env.MVN_HOME}/bin/mvn.cmd"/>
+    <property name="settings.path" value="${env.PROJECT_HOME}/settings.xml"/>
+    <property name="repo.path" value="${env.MVN_REPO}"/>
+    <property name="repo.option" value="-Dmaven.repo.local=${repo.path}"/>
+    <!--  ################# main build process  ########################## -->
+    <target name="spring-base-http2-mock">
+        <echo message="package"/>
+        <exec executable="${mvn.cmd}" dir=".">
+            <arg value="-s"/>
+            <arg value="${settings.path}"/>
+            <arg value="${repo.option}"/>
+            <arg value="-f"/>
+            <arg value="spring-base-http2-mock"/>
+            <arg value="clean"/>
+            <arg value="package"/>
+        </exec>
+        <copy file="spring-base-http2-mock/target/spring-mock.jar" overwrite="true" todir="runtime/sping-mock"/>
+        <echo message="call install Help"/>
+        <exec executable="java" dir="runtime/sping-mock">
+            <arg value="-Duser.country=US"/>
+            <arg value="-Duser.language=en"/>
+            <arg value="-Dcaller.data-directory=./data"/>
+            <arg value="-jar"/>
+            <arg value="spring-mock.jar"/>
+        </exec>
+    </target>
+</project>

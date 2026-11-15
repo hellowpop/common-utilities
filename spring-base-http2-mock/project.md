@@ -24,7 +24,11 @@ HTTP/HTTPS·HTTP/2·SSE·WebSocket과 별도 mock 엔진을 같은 JVM에서 제
 ### Caller 실행 상세 조회 구성 (2026-11-15)
 
 - `caller-ui/index.html`, `app.js`, `app.css`: 상태코드·오류, 지연·처리량, Path별 집계를 테두리 있는 grid table로 표시한다. Path 이름과 URL은 실행 snapshot에 저장된 설정으로 해석한다.
+- 지연·처리량 표의 숫자와 단위를 각각 별도 셀로 렌더링한다. `latency-grid`에서 숫자 열은 우측 정렬 및 tabular 숫자, 단위 열은 좌측 정렬을 적용한다.
+- 실행 이력의 행별 삭제 버튼은 클릭 전파를 차단하고 삭제 확인 후 `DELETE /api/runs/{id}`를 호출한다. 종료 상태만 활성화하며, 선택된 이력을 삭제하면 상세를 초기화하고 마지막 행을 삭제한 페이지는 이전 페이지로 이동한다.
+- `RunService.delete`는 active 실행 및 종료 저장 중인 실행을 거부한다. `StorageMaintenance.deleteRun`은 정리 표식을 먼저 저장한 뒤 실행별 journal·본문·로그·보고서와 DB의 요청·artifact·이력을 정리한다. 보관기간 정리와 수동 삭제는 같은 잠금과 경로 검증을 사용하며 실패 시 표식을 남겨 재시도한다. 시작 시 journal 복구는 정리 표식이 있는 실행을 건너뛰어 삭제된 이력의 재생성을 방지한다.
 - 단위 요청은 접이식 조회 영역으로 분리한다. 실행 선택이나 SSE 종료만으로 요청을 조회하지 않으며, 사용자가 조회한 이후의 갱신·페이지 이동에는 적용된 조건을 유지한다. 요청 조회가 진행되는 동안 실행·조건·페이지가 바뀌면 이전 응답을 무시한다.
+- 검색 입력별 `×` 버튼은 해당 입력값을 비우고 포커스를 돌려준다. 자동 재조회 없이 다음 조회에 반영한다. 시나리오 편집의 실행 기준·반복 횟수·실행 시간은 `execution-fields`의 한 줄 grid로 묶고, 좁은 화면은 가로 스크롤로 제공한다.
 - `CallerController.requests`: 선택 조건 `status`, `workerIndex`, `minElapsedMillis`, `maxElapsedMillis`를 전달한다. `CallerStore.results`는 범위를 검증하고 기존 `pathId`·`success`와 AND로 결합한 parameterized SQL에 limit/offset을 적용한다. 소요시간 입력은 ms이고 저장·비교는 nanos 기준이다.
 - Liquibase `caller-3-result-search`: `status_code`, `worker_index`, `elapsed_nanos`, `search_ready`와 검색 인덱스를 추가한다. 기존 changeSet은 유지한다. 시작 시 미보완 행을 500개씩 읽어 JSON의 검색값을 보완하며, 신규 저장은 검색값을 함께 기록한다. 이전 데이터의 누락값은 null로 유지한다.
 - 회귀 검증: `RequestSearchTest`는 조건 조합·시간 경계·검색 후 페이지 분할·기존 JSON 보완·잘못된 조건 거부를 검증한다. `execution-ui.test.cjs`는 집계 표·지연 조회·적용 조건 유지·빈 결과를 검증한다.
@@ -128,7 +132,9 @@ Response의 모든 바인딩은 하나의 실행기와 max-clients 한도를 공
 `scripts/New-LocalCertificate.ps1`는 JDK keytool로 self-signed PKCS12와 공개 인증서를 생성한다. 기본 alias는 localhost, SAN은 localhost/127.0.0.1/::1이며 TLSv1.2/TLSv1.3을 사용한다.
 로컬 mock 인증서와 개인키를 배포물에 포함한다. 별도 인증서는 SSL_KEY_STORE, SSL_KEY_STORE_PASSWORD, SSL_KEY_ALIAS로 지정한다. 대상 HTTPS 호출에는 JVM에서 신뢰하는 인증서가 필요하다.
 
-package 단계에 maven-source-plugin의 jar-no-fork를 연결해 sources JAR을 첨부한다. 모듈 루트 `*.md`는 `META-INF/docs/spring-base-http2-mock/`에 포함한다.
+`build.finalName=spring-mock`으로 실행 산출물 이름을 `target/spring-mock.jar`로 고정한다. package 단계에 maven-source-plugin의 jar-no-fork를 연결해 `spring-mock-sources.jar`를 첨부한다. 모듈 루트 `*.md`는 `META-INF/docs/spring-base-http2-mock/`에 포함한다.
+
+루트 `build.xml`과 `mc.cmd`는 Maven 패키징과 `runtime/sping-mock/` 복사·실행을 연결한다. `settings.xml`에는 Maven 미러 설정을 두며 `runtime/`은 실행 산출물·데이터 경로로 Git에서 제외한다.
 이 모듈은 skipTests=true가 기본이다. 검증은 `mvn test -DskipTests=false` 또는 `mvn verify -DskipTests=false`, install은 테스트를 생략한다.
 최초 빌드 스크립트의 -RunTests는 각 모듈을 verify한 뒤 테스트 없이 install하고 Node 콘솔 테스트를 실행한다. Windows에서 실행 중인 동일 JAR을 다시 패키징하려면 서버를 먼저 종료한다.
 

@@ -11,7 +11,7 @@ Java 17 이상에서 실행하는 Spring Boot 3.5.16 기반 HTTP/1.1 · HTTP/2(T
 ```powershell
 # 최초 빌드: payload와 두 mock 서버를 먼저 설치하고 caller를 포함한 Spring 앱을 빌드한다.
 ./scripts/Build-WithMockServers.ps1
-java -jar target/spring-base-http2-mock-1.0.0-SNAPSHOT.jar
+java -jar target/spring-mock.jar
 ```
 
 네 모듈의 테스트까지 실행하려면 `./scripts/Build-WithMockServers.ps1 -RunTests`를 사용한다. Node.js가 설치되어 있으면 caller와 mock 콘솔 JavaScript 테스트도 실행한다.
@@ -33,7 +33,9 @@ node --test src/test/js/execute-console.test.cjs
 ```
 
 `skipTests=true`가 기본값이므로 package도 테스트 실행을 생략한다. 테스트 컴파일은 수행한다.
-package는 실행 JAR과 `*-sources.jar`를 만든다. 루트의 `README.md`, `project.md` 등 `*.md`는 JAR의 `META-INF/docs/spring-base-http2-mock/`에 포함된다.
+package는 실행 JAR `spring-mock.jar`와 소스 JAR `spring-mock-sources.jar`를 만든다. 루트의 `README.md`, `project.md` 등 `*.md`는 JAR의 `META-INF/docs/spring-base-http2-mock/`에 포함된다.
+
+루트의 `build.xml`은 `ant spring-base-http2-mock`으로 Maven `clean package`를 수행한 뒤 실행 JAR을 `runtime/sping-mock/`에 복사해 실행한다. `MVN_HOME`, `MVN_REPO`, `PROJECT_HOME` 환경변수와 루트 `settings.xml`을 사용한다. `mc.cmd`는 현재 디렉터리를 `PROJECT_HOME`으로 지정하고 `mock` 별칭을 등록한다. 이 실행 경로의 caller 데이터는 `runtime/sping-mock/data/`에 저장하며 `runtime/`은 Git에서 제외한다.
 
 ## Request Caller 통합 사용
 
@@ -45,9 +47,17 @@ API는 기존 caller의 `/api/csrf`, `/api/example`, `/api/status`, `/api/scenar
 
 ### Caller 실행 상세와 단위 요청 조회
 
+실행 이력 목록의 **삭제** 버튼으로 종료된 이력을 삭제할 수 있다. 확인창에서 승인하면 해당 실행의 요청 결과, 보관 본문, 로그, 보고서 및 복구 journal을 함께 정리한다. 시나리오와 다른 실행 이력은 유지한다. 실행 중이거나 종료 저장이 진행 중인 이력은 삭제할 수 없다. 삭제는 복구할 수 없다.
+
+API는 `DELETE /api/runs/{id}`이며 세션 쿠키와 `X-CSRF-Token`이 필요하다. 성공 시 200, 진행 중이면 409, 없는 이력이면 404를 반환한다.
+
 실행 이력에서 실행을 선택하면 상태코드·오류별 요청 수, 지연·처리량, Path별 완료·성공·실패 결과를 grid table로 확인할 수 있다. 지연은 ms, 처리량은 req/s, 송수신 크기는 bytes로 표시하며 SSE로 집계가 갱신된다.
 
+지연·처리량 표는 지표·값·단위의 세 열로 표시한다. 숫자 값은 우측 정렬하고 단위(ms, req/s, bytes, 건)는 별도 셀에서 좌측 정렬한다.
+
 **단위 요청 조회**를 펼치고 응답코드(100~599), Worker 번호(1~32), 최소·최대 소요시간(ms)을 입력한 뒤 **조회**를 누른다. 조건은 AND로 적용되고 소요시간 경계값을 포함한다. 빈 조건은 제한하지 않는다. 요청 목록은 조회 후 표시하며, 페이지 이동은 마지막으로 조회한 조건을 유지한다. 다른 실행을 열면 조건·목록·요청 상세를 초기화한다. 행을 선택하면 요청 상세와 보관된 본문 다운로드 링크를 확인할 수 있다.
+
+각 검색 입력창의 `×` 버튼은 해당 조건만 비운다. 변경한 조건은 **조회**를 눌러 적용한다. 시나리오 편집에서는 실행 기준 선택·Loop count·실행 시간을 한 줄로 표시하며, 선택한 실행 기준의 입력만 활성화한다. 좁은 화면에서는 해당 줄을 가로로 스크롤할 수 있다.
 
 ```text
 GET /api/runs/{id}/requests?status=200&workerIndex=1&minElapsedMillis=0.5&maxElapsedMillis=100&page=0&size=20

@@ -9,7 +9,7 @@ Request Caller는 `spring-base-http2-mock`의 내장 기능입니다. Java 17+, 
 ```powershell
 ./spring-base-http2-mock/scripts/Build-WithMockServers.ps1 -RunTests
 Set-Location spring-base-http2-mock
-java -jar target/spring-base-http2-mock-1.0.0-SNAPSHOT.jar
+java -jar target/spring-mock.jar
 ```
 
 [caller 콘솔](http://localhost:8080/caller/) 또는 `https://localhost:8443/caller/`를 엽니다. 기존 mock 콘솔은 `/`입니다. 상세 서버 설정은 [README](README.md)를 참고합니다. 선행 모듈 설치 후에는 `mvn -f spring-base-http2-mock/pom.xml -DskipTests=false verify`로 모든 Java 테스트를 수행할 수 있습니다. `mvn install`은 기본적으로 테스트를 생략합니다.
@@ -242,6 +242,7 @@ Invoke-RestMethod "$base/runs/$($run.id)" -WebSession $callerSession
 | GET /runs?title=&from=&to=&status=&scenarioId= | 제목/시간/상태 검색 |
 | GET /runs/{id}, /runs/{id}/events | 집계 조회·1초 snapshot SSE |
 | POST /runs/{id}/cancel | 취소. 종료 실행에는 상태 변경 없음 |
+| DELETE /runs/{id} | 종료된 이력 및 요청·본문·로그·보고서·복구 journal 삭제 (CSRF 필요, 진행 중 409) |
 | GET /runs/{id}/requests?pathId=&success=&status=&workerIndex=&minElapsedMillis=&maxElapsedMillis= | 조건 검색 후 요청 결과 pagination (소요시간 ms, 양쪽 경계 포함) |
 | GET /runs/{id}/requests/{requestId} | 단위 요청 상세 |
 | GET /runs/{id}/artifacts/{artifactId} | 해당 실행 소유 본문 다운로드 |

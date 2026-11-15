@@ -9,3 +9,7 @@
 - 기능을 생성
   - 해당 project 를 생성하는 하위 경로에 project.md 로 각 기능에 대한 구성을 정리한다.
   - 기능 구현이 종료되면 각 기능에 대한 사용법을 프로젝트 경로 아래 README.md 로 정리한다.
+  - 생성되는 xml 파일은 pretty 포멧으로 저장한다.
+  - java code
+    - var 를 사용하지 않고 class name 사용
+    - static import 사용하지 않음

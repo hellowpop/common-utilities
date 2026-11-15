@@ -13,15 +13,37 @@ final class StorageMaintenance {
     private final AtomicLong retained=new AtomicLong();
     StorageMaintenance(CallerStore store,Path data,int days){this.store=store;this.data=data.toAbsolutePath().normalize();this.days=days;try{retained.set(size(this.data.resolve("bodies")));}catch(IOException e){throw new IllegalStateException(e);}}
     boolean reserve(long bytes){long current;do{current=retained.get();if(bytes>4L*1024*1024*1024-current)return false;}while(!retained.compareAndSet(current,current+bytes));return true;}
-    void sweep(Set<String> active,boolean startup){
+    synchronized void deleteRun(String id){
+        validateId(id);
+        store.markCleanup(id);
+        try{cleanupRun(id);}catch(IOException e){throw new IllegalStateException("Run cleanup failed; tombstone retained for retry",e);}
+    }
+    private static void validateId(String id){
+        if(id==null||!id.matches("[a-zA-Z0-9-]{1,64}"))throw new IllegalArgumentException("Invalid cleanup run identifier");
+    }
+    private void cleanupRun(String id)throws IOException{
+        validateId(id);
+        remove(data.resolve("journal").resolve(id+".jsonl"));
+        Path journals=data.resolve("journal");
+        if(Files.isDirectory(journals,LinkOption.NOFOLLOW_LINKS)){
+            try(java.util.stream.Stream<Path> files=Files.list(journals)){
+                for(Path file:files.filter(path->path.getFileName().toString().startsWith(id+".jsonl.")&&path.getFileName().toString().endsWith(".incomplete")).toList())remove(file);
+            }
+        }
+        remove(data.resolve("bodies").resolve(id));
+        remove(data.resolve("logs").resolve(id));
+        remove(data.resolve("reports").resolve(id));
+        store.finishCleanup(id);
+    }
+    synchronized void sweep(Set<String> active,boolean startup){
         try{
             Instant cutoff=Instant.now().minus(Duration.ofDays(days));
             for(String id:store.expiredRuns(cutoff)){
                 Map<String,Object> run=store.run(id);Object ended=run.get("endedAt");if(ended!=null&&Instant.parse(ended.toString()).isBefore(cutoff)&&!active.contains(id))store.markCleanup(id);
             }
             for(String id:store.pendingCleanup()){
-                if(active.contains(id))continue;if(!id.matches("[a-zA-Z0-9-]{1,64}"))throw new IOException("Invalid cleanup run identifier");
-                remove(data.resolve("bodies").resolve(id));remove(data.resolve("logs").resolve(id));remove(data.resolve("reports").resolve(id));store.finishCleanup(id);
+                if(active.contains(id))continue;
+                cleanupRun(id);
             }
             if(startup){
                 remove(data.resolve("temp"));Files.createDirectories(data.resolve("temp"));

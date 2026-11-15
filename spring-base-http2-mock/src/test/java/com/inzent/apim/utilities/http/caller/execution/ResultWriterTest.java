@@ -13,6 +13,25 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ResultWriterTest {
     @TempDir Path data;
+    @Test void pendingDeletionSkipsJournalReplayAndCompletesCleanupAfterRestart() throws Exception {
+        JdbcTemplate jdbc=new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";DB_CLOSE_DELAY=-1","sa",""));
+        CallerStore store=new CallerStore(jdbc,new ObjectMapper(),data);store.initialize();
+        Scenario scenario=store.createScenario(Scenario.example());
+        RunState state=new RunState(scenario,1);state.status("COMPLETED");store.saveRun(state.snapshot());
+        try(ResultWriter writer=new ResultWriter(store,state,data)){
+            writer.append(Map.of("type","result","value",Map.of("id","deleted-request","runId",state.id,"pathId","p","success",true)));
+            writer.append(Map.of("type","run","value",state.snapshot()));
+        }
+        store.markCleanup(state.id);
+        jdbc.update("delete from caller_run where id=?",state.id);
+        ResultWriter.recover(store,data);
+        org.junit.jupiter.api.Assertions.assertTrue(store.results(state.id,null,null,0,20).isEmpty());
+        StorageMaintenance maintenance=new StorageMaintenance(store,data,7);
+        maintenance.sweep(Set.of(),false);
+        org.junit.jupiter.api.Assertions.assertThrows(CallerStore.Missing.class,()->store.run(state.id));
+        org.junit.jupiter.api.Assertions.assertFalse(Files.exists(data.resolve("journal").resolve(state.id+".jsonl")));
+        org.junit.jupiter.api.Assertions.assertTrue(store.pendingCleanup().isEmpty());
+    }
     @Test void replayRepairsRecoveryPendingAndNeverConcealsKnownLoss()throws Exception{
         var jdbc=new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";DB_CLOSE_DELAY=-1","sa",""));
         var store=new CallerStore(jdbc,new ObjectMapper().findAndRegisterModules(),data);store.initialize();

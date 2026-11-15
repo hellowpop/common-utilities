@@ -102,7 +102,7 @@ class RunServiceTest {
         Scenario s=scenario();s.maxWorkers=1;
         beforeFinalWrite=new CountDownLatch(1);allowFinalWrite=new CountDownLatch(1);
         var a=store.createScenario(s);String id=String.valueOf(service.start(a.id,null).get("id"));
-        try{assertTrue(beforeFinalWrite.await(5,TimeUnit.SECONDS));assertEquals("COMPLETED",service.cancel(id).get("status"));}finally{allowFinalWrite.countDown();}
+        try{assertTrue(beforeFinalWrite.await(5,TimeUnit.SECONDS));assertEquals("COMPLETED",service.cancel(id).get("status"));org.junit.jupiter.api.Assertions.assertThrows(CallerStore.Conflict.class,()->service.delete(id));}finally{allowFinalWrite.countDown();}
         assertEquals("COMPLETED",await(id).get("status"));
     }
 }

@@ -17,6 +17,37 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest(classes=MockApplication.class,webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties={"server.ssl.enabled=false", "mock.http.port=0", "mock.services.netty.enabled=false", "mock.services.response.enabled=false"})
 class CallerApiTest {
+    @Test void deletesEndedRunAndOwnedFilesButKeepsScenarioAndOtherRuns() throws Exception {
+        String token=json.readTree(send("/api/csrf","GET",null,null).body()).get("token").asText();
+        Scenario scenario=store.createScenario(Scenario.example());
+        String id="delete-"+UUID.randomUUID();
+        String other="keep-"+UUID.randomUUID();
+        store.saveRun(Map.of("id",id,"scenarioId",scenario.id,"title","delete","status","COMPLETED","startedAt","2026-11-15T00:00:00Z"));
+        store.saveRun(Map.of("id",other,"scenarioId",scenario.id,"title","keep","status","RUNNING","startedAt","2026-11-15T00:00:00Z"));
+        store.saveResult(Map.of("id",id+"-request","runId",id,"pathId","p","success",true));
+        Path body=DATA.resolve("bodies").resolve(id).resolve("body.bin");
+        Path log=DATA.resolve("logs").resolve(id).resolve("control.log");
+        Path report=DATA.resolve("reports").resolve(id).resolve("report.html");
+        Path journal=DATA.resolve("journal").resolve(id+".jsonl");
+        Path incomplete=DATA.resolve("journal").resolve(id+".jsonl.crash.incomplete");
+        Path otherJournal=DATA.resolve("journal").resolve(other+".jsonl.crash.incomplete");
+        Path keep=DATA.resolve("logs").resolve(other).resolve("control.log");
+        for(Path file:List.of(body,log,report,journal,incomplete,otherJournal,keep)){Files.createDirectories(file.getParent());Files.writeString(file,"test");}
+        store.artifact(id,id+"-artifact",body,4,"application/octet-stream");
+        org.junit.jupiter.api.Assertions.assertEquals(403,send("/api/runs/"+id,"DELETE",null,null).statusCode());
+        HttpResponse<String> deleted=send("/api/runs/"+id,"DELETE",null,token);
+        org.junit.jupiter.api.Assertions.assertEquals(200,deleted.statusCode(),deleted.body());
+        org.junit.jupiter.api.Assertions.assertEquals(404,send("/api/runs/"+id,"GET",null,null).statusCode());
+        org.junit.jupiter.api.Assertions.assertTrue(store.results(id,null,null,0,20).isEmpty());
+        org.junit.jupiter.api.Assertions.assertThrows(com.inzent.apim.utilities.http.caller.persistence.CallerStore.Missing.class,()->store.artifact(id,id+"-artifact"));
+        for(Path file:List.of(body,log,report,journal,incomplete))org.junit.jupiter.api.Assertions.assertFalse(Files.exists(file),file.toString());
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(otherJournal));
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(keep));
+        org.junit.jupiter.api.Assertions.assertEquals(scenario.id,store.scenario(scenario.id).id);
+        org.junit.jupiter.api.Assertions.assertEquals(409,send("/api/runs/"+other,"DELETE",null,token).statusCode());
+        org.junit.jupiter.api.Assertions.assertEquals("RUNNING",store.run(other).get("status"));
+        org.junit.jupiter.api.Assertions.assertEquals(404,send("/api/runs/"+id,"DELETE",null,token).statusCode());
+    }
     @org.springframework.beans.factory.annotation.Autowired
     com.inzent.apim.utilities.http.caller.persistence.CallerStore store;
 
