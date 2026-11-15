@@ -18,6 +18,35 @@ import java.util.concurrent.atomic.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class RunServiceTest {
+    @Test void durationContinuesPastLoopCountAndCompletesNormally()throws Exception{
+        server.createContext("/",e->{e.getRequestBody().readAllBytes();e.sendResponseHeaders(204,-1);e.close();});server.start();
+        Scenario s=scenario();s.maxWorkers=1;s.executionMode="DURATION";s.durationSeconds=1;s.loopCount=1;s.paths.get(0).payload.contentLength=List.of(64L);s.paths.get(0).delay.mode="FIXED";s.paths.get(0).delay.fixedMillis=100;
+        var a=store.createScenario(s);String id=String.valueOf(service.start(a.id,null).get("id"));var run=await(id);
+        assertEquals("COMPLETED",run.get("status"));assertEquals("SUCCESS",run.get("outcome"));assertNull(run.get("planned"));assertNull(run.get("remaining"));
+        assertTrue(((Number)run.get("completed")).longValue()>1);assertEquals(0L,((Number)run.get("skipped")).longValue());assertEquals(1.0,((Number)run.get("progress")).doubleValue());
+        assertTrue(((Number)run.get("executionElapsedMillis")).doubleValue()>=1000);
+    }
+    @Test void fixedDelayAppliesAcrossLoopBoundaries()throws Exception{
+        List<Long> arrivals=new CopyOnWriteArrayList<>();server.createContext("/",e->{e.getRequestBody().readAllBytes();arrivals.add(System.nanoTime());e.sendResponseHeaders(204,-1);e.close();});server.start();
+        Scenario s=scenario();s.maxWorkers=1;s.loopCount=3;s.paths.get(0).payload.contentLength=List.of(64L);s.paths.get(0).delay.mode="FIXED";s.paths.get(0).delay.fixedMillis=100;
+        var a=store.createScenario(s);var run=await(String.valueOf(service.start(a.id,null).get("id")));
+        assertEquals("COMPLETED",run.get("status"));assertEquals(3,arrivals.size());
+        for(int i=1;i<arrivals.size();i++)assertTrue(arrivals.get(i)-arrivals.get(i-1)>=90_000_000,"gap too short");
+    }
+    @Test void durationAllowsCurrentRequestToFinishWithoutStartingAnother()throws Exception{
+        AtomicInteger calls=new AtomicInteger();server.createContext("/",e->{e.getRequestBody().readAllBytes();calls.incrementAndGet();try{Thread.sleep(1200);}catch(InterruptedException ignored){}e.sendResponseHeaders(204,-1);e.close();});server.start();
+        Scenario s=scenario();s.maxWorkers=1;s.executionMode="DURATION";s.durationSeconds=1;s.paths.get(0).payload.contentLength=List.of(64L);
+        var a=store.createScenario(s);var run=await(String.valueOf(service.start(a.id,null).get("id")));
+        assertEquals("COMPLETED",run.get("status"));assertEquals(1,calls.get());assertEquals(1L,((Number)run.get("succeeded")).longValue());
+    }
+    @Test void cancellationDoesNotWaitForAPathDelayToExpire()throws Exception{
+        server.createContext("/",e->{e.getRequestBody().readAllBytes();e.sendResponseHeaders(204,-1);e.close();});server.start();
+        Scenario s=scenario();s.maxWorkers=1;s.executionMode="DURATION";s.durationSeconds=5;s.paths.get(0).payload.contentLength=List.of(64L);s.paths.get(0).delay.mode="FIXED";s.paths.get(0).delay.fixedMillis=600000;
+        var a=store.createScenario(s);String id=String.valueOf(service.start(a.id,null).get("id"));
+        long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(3);while(((Number)service.progress(id).get("completed")).longValue()<1&&System.nanoTime()<until)Thread.sleep(10);
+        long cancelAt=System.nanoTime();service.cancel(id);var run=await(id);
+        assertEquals("CANCELLED",run.get("status"));assertTrue(System.nanoTime()-cancelAt<TimeUnit.SECONDS.toNanos(2));assertEquals(0L,((Number)run.get("inFlight")).longValue());
+    }
     @TempDir Path data;
     CallerStore store;RunService service;HttpServer server;
     volatile CountDownLatch beforeFinalWrite,allowFinalWrite;

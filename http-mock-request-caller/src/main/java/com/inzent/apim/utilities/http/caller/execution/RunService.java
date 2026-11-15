@@ -61,7 +61,7 @@ public final class RunService implements AutoCloseable {
             boolean pre=hook(state,state.scenario.scenarioHooks.pre,context,"scenario","pre",logs,"control");
             if(!pre)state.fatal(new IllegalStateException("Scenario pre hook failed"));
             if(pre&&!state.stopping()){
-                state.status("RUNNING");CountDownLatch latch=new CountDownLatch(state.scenario.maxWorkers);long t0=System.nanoTime();
+                state.status("RUNNING");CountDownLatch latch=new CountDownLatch(state.scenario.maxWorkers);long t0=System.nanoTime();state.startExecution(t0);
                 List<ScheduledFuture<?>> scheduled=new ArrayList<>();
                 for(int i=0;i<state.scenario.maxWorkers;i++){
                     RunState.Worker w=new RunState.Worker(i+1,latch);w.vars.putAll(store.decode(store.encode(state.initialVars)));state.workers.add(w);
@@ -75,12 +75,12 @@ public final class RunService implements AutoCloseable {
                 }
                 scheduled.forEach(f->f.cancel(false));
             }
-            state.status("FINALIZING");
+            state.finishExecution();state.status("FINALIZING");
             Thread.interrupted();context=context(state,null,null,null,"scenario","post");context.put("vars",state.initialVars);context.put("workerVars",state.workers.stream().map(w->new LinkedHashMap<>(w.vars)).toList());
             if(!hook(state,state.scenario.scenarioHooks.post,context,"scenario","post",logs,"control"))state.fatal(new IllegalStateException("Scenario post hook failed"));
         }catch(Throwable e){state.fatal(e);state.stop("FATAL");}
         finally{
-            timeout.cancel(false);state.stop.compareAndSet(null,"FINISHED");
+            timeout.cancel(false);state.finishExecution();state.stop.compareAndSet(null,"FINISHED");
             for(var w:state.workers)w.cancel();
             // Never return admission while a worker still owns network/body/context resources.
             for(var w:state.workers)while(w.thread!=null){try{Thread.sleep(10);}catch(InterruptedException e){Thread.interrupted();}}
@@ -100,7 +100,7 @@ public final class RunService implements AutoCloseable {
     }
     static Map<String,Object> context(RunState s,RunState.Worker w,Scenario.RequestPath p,Map<String,Object> exchange,String scope,String phase){
         Map<String,Object> c=new LinkedHashMap<>();c.put("scenario",Collections.unmodifiableMap(Map.of("id",s.scenario.id,"title",s.scenario.title,"endpointBaseUrl",s.scenario.endpointBaseUrl)));
-        c.put("run",Collections.unmodifiableMap(Map.of("id",s.id,"seed",s.seed,"cancelled",s.stopping())));
+        c.put("run",Collections.unmodifiableMap(Map.of("id",s.id,"seed",s.seed,"cancelled",s.stopping(),"executionMode",s.scenario.executionMode,"durationSeconds",s.scenario.durationSeconds)));
         c.put("scope",new LinkedHashMap<>(Map.of("level",scope,"phase",phase,"failed",s.error!=null,"cancelled",s.stopping())));
         if(w!=null){Map<String,Object> worker=new LinkedHashMap<>();worker.put("index",w.index);worker.put("threadName",Thread.currentThread().getName());worker.put("threadId",Thread.currentThread().getId());worker.put("vars",w.vars);c.put("worker",worker);}
         if(p!=null)c.put("path",Collections.unmodifiableMap(Map.of("id",p.id,"name",p.name,"requestPath",p.requestPath)));

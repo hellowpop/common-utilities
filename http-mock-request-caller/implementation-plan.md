@@ -72,6 +72,43 @@ Interfaces: /api/scenarios CRUD; /api/runs search/progress/requests/cancel/event
 
 ## Progress / decisions
 
+### Offline report, path copy and YAML interchange (2026-11-15)
+
+Design: retain the existing offline report and scenario editor. Render status/error category counts as inline SVG line charts (category axis, not a time series), with values and empty-state text. Render latency, path statistics (joined to snapshot names) and worker timing as escaped tables. Do not include scripts, bodies or headers in reports.
+
+Path copy opens an isolated new-record draft of the current form, changes ID and name, and requires Add before insertion; cancel preserves the source. YAML export includes the full current configuration and strips scenario identity/version. Import accepts one safe YAML mapping, rejects duplicate keys/custom tags/aliases/oversized input, uses existing strict model validation and returns a detached scenario draft without persisting. New-scenario UI accepts a file or pasted YAML. Existing JSON editing remains available. Use already resolved SnakeYAML as an explicit dependency, with SafeConstructor and bounded LoaderOptions; no browser dependency or CDN.
+
+- [x] Report: add rendering regressions (charts, tables, escaping, empty/one category), watch fail, implement HtmlReport helpers and run focused tests.
+- [x] YAML: API round-trip and malformed/unsafe/fractional regressions first; implement ScenarioYaml and export/import endpoints, validate without persisting.
+- [x] UI: path copy isolation tests first; add copy action, YAML download and new-scenario import layer; verify browser flows and full Java/Node suites.
+- [x] Update README/project documents, package executable/sources/Markdown in isolated target-report-yaml and inspect delivery.
+
+Verification: Java 54 tests and Node 19 tests pass. Independent review found copy-at-100 state corruption and JavaScript rounding of 64-bit seed; regressions reproduced both, then state ordering and string serialization of Scenario.seed fixed them. Browser verified invalid duplicate-key YAML rejection, paste/file import, copy cancel/add with source preserved, download/file round-trip into a distinct saved scenario, and exact Long.MAX_VALUE seed in the saved configuration. A 2-worker/3-loop/3-path run produced 18 completed (12 HTTP 200, 6 intentionally HTTP 404), and its downloaded report showed two charts and the three required tables. A smoke JVM held the packaged JAR during an intermediate build and blocked repackaging; stop the task-owned JVM before final verify/package. The user's default app remains running. No commit/push.
+
+### Duration execution and per-path request pacing (2026-11-15)
+
+Contract:
+- Scenario `executionMode`: `LOOPS` (backward-compatible default) or `DURATION`; `durationSeconds`: positive integer, default 60. Only the selected limit is validated/used. DURATION is shorter than runTimeoutMillis and rampUpSeconds is shorter than durationSeconds.
+- Duration starts after scenario.pre and includes ramp-up and request delays. No new request after expiry; current requests finish under request/run timeout. The existing runTimeoutMillis remains a fatal safety deadline. Duration mode has unknown planned/remaining request counts (`null` in API) and time-based progress. The 100000 request safety limit still applies and stops a duration run with FAILED/REQUEST_LIMIT if reached early.
+- Each path has `delay:{mode:'NONE'|'FIXED'|'RANDOM',fixedMillis:0,minMillis:0,maxMillis:0}` (all defaults). Active bounds are integers 0..600000; RANDOM inclusive min<=max.
+- A worker waits before a subsequent request to the same path, measured from previous request completion (post/cleanup included), including loop boundaries. First request is immediate, no delay after the final request, other-path execution counts toward the interval. Random intervals are selected once per gap using per-worker/per-path seeded RNG. Wait is interruptible, outside request timeout and inside duration budget.
+- UI toggles loopCount/durationSeconds and exposes delay mode/values in the shared path layer/grid. JSON and existing missing-field configurations remain compatible. Reports/history/progress show duration and unknown request totals honestly.
+
+- [x] Backend: tests first for mode validation, actual duration completion/cancel and deterministic pacing boundaries; implement model/validator/engine/counters.
+- [x] Frontend: mode toggles, duration summary, path delay fields/validation/JSON round-trip and Node regressions (independent owned files).
+- [x] Integrate Java/Node suites, review runtime races, browser verify, update Markdown and package isolated JAR.
+
+Java verify 50 tests and frontend 16 tests passed. Review identified fractional integer coercion; API regressions reproduced it and strict integer deserialization fixed it. Browser verified mutually exclusive limits with retained values, delay range validation and persistence, and a 3-second duration run with 2 workers: 31 successes, 0 failures, normal COMPLETED. Executable/sources JARs are delivered under target-duration without replacing the user's running default JAR. No commit/push performed.
+
+### Path grid / shared editor layer (2026-11-15)
+
+- [x] Add path grid and bottom Add button; rows open the same form as new records.
+- [x] Implement isolated drafts, payload arrays, repeated headers and four path/request hooks; preserve ids, order and duplicate payload entries.
+- [x] Synchronize grid, scenario JSON and planned counts on apply; cancel/Esc preserve original.
+- [x] Verify model tests, browser add/view/edit/cancel/JSON round-trip and Java suite; update README and package JARs.
+
+Java verify 36 tests and frontend 9 tests passed. Browser verified add/edit, cancel/Esc, malformed numeric rejection, repeated headers/hooks preservation, stable id, JSON round-trip and persistence after reload. Main input events now synchronize quick fields before save. The task-owned smoke JVM was isolated from the user's running app; deliverable is under target-path-grid.
+
 - 2026-11-12: 계획 작성. 기존 모듈은 테스트 baseline 대상이 아니며 신규 모듈의 red/green부터 진행한다.
 - 실행 중 스크립트와 Netty callback의 별도 소유권을 유지한다. 타 작업과 소스 디렉터리를 분리하고 최종 통합 검증은 한 프로세스에서 수행한다.
 - Ruling: JDBC + Liquibase와 정적 UI로 구현한다. ORM/template 의존 없이 실행 snapshot/결과의 명확한 소유권과 단독 배포를 유지한다.

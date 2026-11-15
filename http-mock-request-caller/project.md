@@ -15,6 +15,16 @@
 
 ### 구현 검증 기록
 
+- 2026-11-15 푸시 준비: 사용자 요청에 따라 path 그리드·공통 편집/복사, 반복/시간 실행 토글, worker별 path 고정/랜덤 지연, HTML 리포트 그래프·테이블 및 YAML 전문 다운로드/신규 가져오기의 소스·테스트·문서를 develop에 함께 반영한다. Java verify 54개와 Node 19개를 푸시 전에 재검증하고 executable/sources JAR의 루트 Markdown 포함을 확인한다. 빌드 산출물·실행 데이터·검증 로그는 Git에서 제외한다.
+
+- 2026-11-15 리포트/복사/YAML: 오프라인 HTML의 상태 코드·오류 분포는 외부 의존성 없는 SVG 범주별 꺾은선 그래프, 지연·Path 결과·Worker timeline은 HTML 테이블로 구현했다. Path 상세의 복사는 현재 폼을 새 ID의 독립 추가 draft로 옮기고 추가/저장 전까지 원본을 유지한다. 전문 다운로드는 전체 설정의 YAML을 내보내며 시나리오 ID/version은 제외한다. YAML 파일/텍스트를 신규 시나리오 입력값으로 검증·복원하며 자동 저장하지 않는다. SafeConstructor와 크기/깊이 제한으로 중복 key·alias·임의 tag·다중 문서를 거부한다. Scenario.seed는 문자열 출력으로 JavaScript의 64-bit 정밀도 손실을 방지한다. Java 54개·Node 19개 테스트 통과, 독립 리뷰의 100개 path 복사 한도 상태/큰 seed 손실을 red→green 회귀 검증했다. 브라우저에서 한글 YAML 다운로드→파일 가져오기→신규 저장, 복사·취소·등록 및 큰 seed 보존과 실제 18건(의도된 200 12건/404 6건) 실행의 보고서 그래프·테이블을 확인했다. executable/sources/루트 Markdown은 target-report-yaml로 제공하고 커밋/push는 수행하지 않았다.
+
+- 2026-11-15 시간/간격 최종 검증: Java 17 verify 50개와 frontend 16개 테스트 통과(실패/오류/건너뜀 0). 정수 시간·지연 필드의 소수 자동 절삭을 API에서 거부하도록 회귀 테스트와 함께 수정했다. 브라우저에서 실행 기준 전환 시 값 보존, 랜덤 범위 오류, 저장/재조회 및 2 workers·3초 실행의 31건 성공/0건 실패/정상 COMPLETED를 확인했다. 기존 실행 중인 기본 JAR은 보존하고 executable/sources JAR과 최신 루트 Markdown은 target-duration에 패키징한다. 커밋/push는 수행하지 않았다.
+
+- 2026-11-15: 시나리오에 LOOPS/DURATION 실행 기준과 durationSeconds를 추가하고 UI에서 loopCount와 배타적으로 선택한다. 시간은 scenario.pre 이후 ramp-up/요청/간격을 포함하며 만료 후 새 요청은 시작하지 않고 진행 중 요청을 마무리한다. 기존 runTimeout은 강제 안전 제한이며 시간 기준 요청 수는 null/시간 진행률로 표현한다. path.delay의 NONE/FIXED/RANDOM은 worker별 동일 path 요청의 완료~다음 시작 간격을 보장하고 loop 재방문에도 적용한다. 첫 요청/마지막 완료에는 불필요한 대기가 없으며 중간 다른 path 수행 시간을 차감하고 취소/시간 만료에 응답한다. 구체 계약은 README와 implementation-plan의 Duration 항목에 정리한다.
+
+- 2026-11-15: 시나리오 편집에 path 그리드와 하단 추가 버튼을 추가했다. 신규/기존 path를 동일한 native dialog 폼으로 추가·조회·편집하며 요청 정보·다중 헤더·payload 조합·성공 상태 범위·path/request hooks를 제공한다. draft 적용 시 원래 path ID·순서와 payload 중복을 보존하고 전체 JSON/예상 요청 수와 동기화한다. 취소/Esc는 원본을 유지한다. Java verify 36개와 frontend 9개 테스트 통과. 실제 브라우저에서 추가·조회·수정·취소, ID/헤더/hooks 보존, 전문보기 양방향 동기화, 빈 숫자 토큰 거부와 저장 후 재조회까지 확인했다. 상단 필드도 input 시점에 동기화해 저장 전 값 누락을 방지했다. 실행 중인 기본 JAR을 보존하고 수정 executable/sources JAR은 target-path-grid에 생성했다. 커밋/push는 수행하지 않았다.
+
 - 2026-11-15: 사용자 푸시 요청에 따라 현재 구현과 UI 개선 전체를 develop에 커밋하여 origin/develop에 반영한다. 기존 command.md의 최신 작업 내용을 포함하고 target 계열·data·로그 파일은 제외한다. 푸시 검증은 실행 중인 기본 JAR과 분리한 target-push 디렉터리에서 Java 17 clean verify와 Node JSON 테스트로 수행한다.
 
   푸시 전 재검증: Java 17.0.10 clean verify 36개 및 Node JSON 테스트 3개 통과(실패/오류/건너뜀 0). JS 문법, 소스 JAR 생성과 루트 Markdown 5개 패키징 및 커밋 범위의 산출물 제외를 확인했다.

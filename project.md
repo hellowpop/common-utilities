@@ -15,6 +15,14 @@
 
 ## 구조 변경내역
 
+- 2026-11-15: 사용자 푸시 요청으로 HTTP Mock Request Caller의 path 그리드/복사, 시간 실행과 path 간격, HTML 리포트 및 YAML 재사용 기능을 develop에 커밋하여 origin/develop에 반영한다. 기술문서를 선행 갱신하고 Java 54개·Node 19개 테스트와 소스/문서 패키징을 재확인하며 target 계열·data·로그는 제외한다.
+
+- 2026-11-15: HTTP Mock Request Caller HTML 리포트에 상태/오류 꺾은선 그래프와 지연/Path/Worker 테이블, Path 상세 복사, YAML 전문 다운로드 및 파일·텍스트 기반 신규 시나리오 가져오기를 구현했다. 원본 편집 상태와 시나리오 ID를 분리하고 64-bit seed는 문자열로 보존한다. Java 54개·Node 19개 및 실제 브라우저 복사·YAML 재등록·실행 보고서 검증을 완료했다. 산출물은 target-report-yaml에 생성하며 커밋/push는 수행하지 않았다.
+
+- 2026-11-15: HTTP Mock Request Caller에 루프 횟수/실행 시간 토글과 path별 NONE/FIXED/RANDOM 요청 간격(ms)을 추가했다. 시간 만료 후 새 요청은 시작하지 않고 진행 중 요청을 마무리하며, worker마다 동일 path의 이전 완료부터 다음 시작까지 간격을 적용한다. Java 50개·frontend 16개 테스트 및 실제 브라우저 3초/2 workers/31건 성공 검증을 완료했다. 구성·사용법은 모듈 project.md/README.md에 반영하고 수정 JAR은 target-duration에 생성한다. 커밋/push는 수행하지 않았다.
+
+- 2026-11-15: HTTP Mock Request Caller의 시나리오 path 등록을 그리드와 공통 추가/조회/편집 레이어로 제공한다. payload 배열·다중 헤더·스크립트·성공 상태 범위와 전문보기/예상 요청 수를 동기화하며 기존 path ID와 중복 조합을 보존한다. Java 36개·frontend 9개 테스트 및 브라우저 저장·재조회 검증을 완료했다. 수정 JAR은 target-path-grid에 생성했고 커밋/push는 수행하지 않았다.
+
 - 2026-11-15: 사용자 요청에 따라 HTTP Mock Request Caller의 구현·테스트·문서를 develop에 커밋하여 origin/develop에 반영한다. 좌측 메뉴 독립 스크롤, 가변 본문 너비와 전문보기 JSON 레이어·색상 구분을 포함한다. 푸시 전 기술문서를 갱신하고 Java 17 verify 및 JSON 테스트를 재검증하며 빌드 산출물·실행 데이터는 제외한다.
 
 - 2026-11-12: `http-mock-request-caller` 독립 Spring Boot/Java 17 앱을 구현했다. Netty HTTP/HTTPS, payload 조합, worker/ramp-up·취소, JEXL hooks, JDBC/Liquibase 이력, 실행별 rolling 로그, 진행 SSE와 정적 콘솔 및 offline HTML 보고서를 제공한다. [구성/검증](http-mock-request-caller/project.md), [사용법](http-mock-request-caller/README.md). Java 17 clean verify 36개 테스트 통과, 실제 JAR의 브라우저 저장·실행·보고서 다운로드와 sources/Markdown 패키징 및 install 테스트 생략을 확인했다. 커밋/push는 수행하지 않았다.

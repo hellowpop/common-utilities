@@ -14,10 +14,11 @@ if ($RunTests) {
     & mvn -f $callerPom '-DskipTests=false' clean verify
     if ($LASTEXITCODE -ne 0) { throw 'Caller verification failed' }
     if (Get-Command node -ErrorAction SilentlyContinue) {
-        & node --test (Join-Path $modulePath 'src/test/js/json-view.test.cjs')
-        if ($LASTEXITCODE -ne 0) { throw 'JSON view verification failed' }
+        $frontendTests = @(Get-ChildItem -LiteralPath (Join-Path $modulePath 'src/test/js') -Filter '*.test.cjs' | Sort-Object Name | ForEach-Object FullName)
+        & node --test @frontendTests
+        if ($LASTEXITCODE -ne 0) { throw 'Frontend verification failed' }
     } else {
-        Write-Warning 'Node.js is not installed; JSON view tests were not run.'
+        Write-Warning 'Node.js is not installed; frontend tests were not run.'
     }
 }
 & mvn -f $callerPom '-DskipTests=true' install

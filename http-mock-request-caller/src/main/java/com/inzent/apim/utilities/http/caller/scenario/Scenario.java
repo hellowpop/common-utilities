@@ -13,10 +13,13 @@ public class Scenario {
     public boolean enabled=true;
     public int maxWorkers=4;
     public int loopCount=1;
+    public String executionMode="LOOPS";
+    public long durationSeconds=60;
     public double rampUpSeconds=0;
     public long requestTimeoutMillis=30000;
     public long runTimeoutMillis=900000;
     public String selectionMode="SHUFFLED_ALL";
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     public Long seed;
     public String bodyRetention="FAILURES";
     public Hooks scenarioHooks=new Hooks();
@@ -43,6 +46,13 @@ public class Scenario {
         public Hooks requestHooks=new Hooks();
         public int successStatusMin=200;
         public int successStatusMax=299;
+        public RequestDelay delay=new RequestDelay();
+    }
+    public static class RequestDelay {
+        public String mode="NONE";
+        public long fixedMillis=0;
+        public long minMillis=0;
+        public long maxMillis=0;
     }
     public static class Payload {
         public List<Boolean> chunked=List.of(false);

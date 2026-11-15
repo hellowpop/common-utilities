@@ -10,10 +10,13 @@ public final class ScenarioValidator {
         require(s.title!=null&&!s.title.isBlank()&&s.title.length()<=200,"title required, max 200 characters");
         require(s.description!=null&&s.description.length()<=10000,"description exceeds limit");
         require(s.maxWorkers>=1&&s.maxWorkers<=32,"maxWorkers must be 1..32");
-        require(s.loopCount>=1&&s.loopCount<=100000,"loopCount must be 1..100000");
+        require(s.executionMode!=null&&Set.of("LOOPS","DURATION").contains(s.executionMode),"executionMode must be LOOPS or DURATION");
+        boolean timed="DURATION".equals(s.executionMode);
+        if(!timed)require(s.loopCount>=1&&s.loopCount<=100000,"loopCount must be 1..100000");
         require(s.runTimeoutMillis>=1&&s.runTimeoutMillis<=86400000,"run timeout must be 1ms..24h");
         require(s.requestTimeoutMillis>=1&&s.requestTimeoutMillis<=s.runTimeoutMillis,"invalid request timeout");
         require(Double.isFinite(s.rampUpSeconds)&&s.rampUpSeconds>=0&&s.rampUpSeconds*1000<s.runTimeoutMillis,"invalid ramp-up");
+        if(timed){require(s.durationSeconds>=1&&s.durationSeconds<=86400&&s.durationSeconds*1000<s.runTimeoutMillis,"durationSeconds must be 1..86400 and shorter than runTimeoutMillis");require(s.rampUpSeconds<s.durationSeconds,"ramp-up must be shorter than durationSeconds");}
         require(Set.of("SHUFFLED_ALL","ORDERED_ALL").contains(s.selectionMode),"invalid selectionMode");
         require(Set.of("NONE","FAILURES","ALL").contains(s.bodyRetention),"invalid bodyRetention");
         require(s.logging!=null&&s.logging.maxFileSize>=1024&&s.logging.maxFileSize<=1024L*1024*1024&&s.logging.maxFiles>=1&&s.logging.maxFiles<=100,"invalid logging limits");
@@ -28,6 +31,7 @@ public final class ScenarioValidator {
             origins.add(uri.getScheme()+"://"+uri.getRawAuthority());
             require(Set.of("GET","HEAD","POST","PUT","PATCH","DELETE","OPTIONS").contains(p.method),"unsupported method");
             require(p.successStatusMin>=100&&p.successStatusMax<=599&&p.successStatusMin<=p.successStatusMax,"invalid success range");
+            validateDelay(p.delay);
             validateHeaders(p.headers);hooks(p.pathHooks);hooks(p.requestHooks);
             PayloadMatrix matrix=new PayloadMatrix(p.payload);
             for(long i=0;i<matrix.size();i++){
@@ -41,8 +45,9 @@ public final class ScenarioValidator {
             total=Math.addExact(total,matrix.size());
         }
         require(origins.size()<=16,"max 16 origins");
-        total=Math.multiplyExact(Math.multiplyExact(total,s.maxWorkers),s.loopCount);
-        require(total<=100000,"planned requests exceed 100000");return total;
+        total=Math.multiplyExact(total,s.maxWorkers);
+        if(!timed)total=Math.multiplyExact(total,s.loopCount);
+        require(total<=100000,"planned requests exceed 100000");return timed?-1:total;
     }
     public static URI resolve(String base,String path){
         URI b=base(base);require(path!=null&&(path.isEmpty()||path.startsWith("/"))&&!path.startsWith("//"),"path must be a relative /path");
@@ -67,5 +72,10 @@ public final class ScenarioValidator {
         }require(bytes<=32768,"header limit 32 KiB");
     }
     private static void hooks(Scenario.Hooks h){require(h!=null&&h.pre!=null&&h.post!=null&&h.pre.length()<=32768&&h.post.length()<=32768,"invalid hook length");}
+    public static void validateDelay(Scenario.RequestDelay d){
+        require(d!=null&&d.mode!=null&&Set.of("NONE","FIXED","RANDOM").contains(d.mode),"delay.mode must be NONE, FIXED or RANDOM");
+        if("FIXED".equals(d.mode))require(d.fixedMillis>=0&&d.fixedMillis<=600000,"fixed delay must be 0..600000 ms");
+        if("RANDOM".equals(d.mode))require(d.minMillis>=0&&d.maxMillis>=d.minMillis&&d.maxMillis<=600000,"random delay requires 0 <= minMillis <= maxMillis <= 600000");
+    }
     public static void require(boolean condition,String message){if(!condition)throw new IllegalArgumentException(message);}
 }

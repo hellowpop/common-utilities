@@ -27,15 +27,27 @@ Set-Location http-mock-request-caller
 
 본문은 최대 너비 제한 없이 좌측 메뉴를 제외한 브라우저의 가용 너비 전체를 사용합니다. 창 크기를 조절하면 본문과 내부 패널도 함께 확장·축소됩니다.
 
-1. 새 시나리오에서 제목, base URL, worker 수, ramp-up, 반복 수와 본문 보관 정책을 설정합니다.
-2. 편집창 하단의 **전문보기**를 누르면 JSON 편집 레이어가 열립니다. `paths`에 요청을 추가하고 URL·메서드·headers·payload와 네 레벨 hook을 편집합니다. 괄호는 보라색, 키는 파란색, 문자열 값은 녹색, 숫자는 갈색, boolean/null은 자주색으로 구분합니다.
-3. 레이어의 **JSON 정렬**로 들여쓰기를 정리하고 **적용**을 눌러 편집창에 반영합니다. 취소·닫기·Esc는 변경을 반영하지 않습니다. JSON 문법이 잘못되면 레이어 안에 오류를 표시하며 적용하지 않습니다. 적용은 서버 저장과 별개입니다. Ctrl/⌘+Enter로 적용할 수도 있습니다.
+1. 새 시나리오에서 제목, base URL, worker 수, ramp-up과 본문 보관 정책을 설정합니다. **실행 기준**은 **반복 횟수 / 실행 시간** 중 선택하며 선택하지 않은 입력은 비활성화됩니다. 실행 시간은 초 단위입니다.
+2. **요청 Path 목록** 그리드에서 등록된 순서·이름·메서드·base URL·path·payload 조합 수를 확인합니다. 그리드 하단 **추가** 버튼으로 입력 레이어를 열고, 기존 행 또는 **조회 / 편집** 버튼을 누르면 동일한 레이아웃에서 등록 내용을 조회·수정할 수 있습니다. 레이어는 요청 정보, 다중 헤더, payload 복수 선택·숫자 배열, 성공 상태 범위와 path/request 전후 스크립트를 제공합니다. 추가/적용 후 그리드·전문보기·예상 요청 수가 함께 갱신되며 취소·닫기·Esc는 원본을 보존합니다.
+3. 편집창 하단 **전문보기**로 전체 JSON도 편집할 수 있습니다. 시나리오/worker hook과 로그 등 전체 설정을 확인하고 **JSON 정렬**·**적용**으로 반영합니다. 괄호·키·값을 색상으로 구분하고, 잘못된 JSON은 적용하지 않습니다. 적용은 서버 저장과 별개이며 Ctrl/⌘+Enter로 적용할 수도 있습니다. JSON에서 paths를 수정한 뒤 적용하면 그리드도 다시 표시됩니다.
 4. 저장 → 저장본 검증 → 실행을 선택합니다. 실행 버튼은 현재 편집 내용을 저장한 뒤 새 실행을 만듭니다.
 5. 실행 상세에서 완료/성공/실패/생략 수, worker, 상태 코드·오류, 지연과 path별 결과를 확인합니다. 단위 요청을 클릭하면 상세 및 보관된 본문 다운로드를 표시합니다.
 6. 실행 이력은 실행 당시 제목과 시작 시간 범위·상태로 검색합니다. 입력은 브라우저 현지 시간, 표시 시간은 Asia/Seoul입니다. 시간 범위는 시작 포함, 종료 미포함입니다.
-7. 종료 실행은 외부 리소스 없는 HTML 보고서를 다운로드할 수 있습니다. 보고서에는 본문·스크립트·header를 넣지 않아 자격 증명 노출을 줄입니다. 상세 이력/API에는 실제 header가 있으므로 데이터 디렉터리와 콘솔 접근을 관리하세요.
+7. 종료 실행은 외부 리소스 없는 HTML 보고서를 다운로드할 수 있습니다. **상태 코드 / 오류 분포**는 범주별 건수를 꺾은선 그래프로 표시합니다(시간 추이가 아닌 범주별 집계). **지연 시간**은 표본 수·최소·평균·최대·p50/p95/p99(ms), **Path별 결과**는 이름·ID·메서드·요청 path·완료/성공/실패, **Worker timeline**은 상태·시작/종료(Asia/Seoul)·수행 시간(ms)·완료 요청을 테이블로 표시합니다. 데이터가 없으면 빈 집계를 안내합니다. 보고서에는 본문·스크립트·header를 넣지 않아 자격 증명 노출을 줄입니다. 상세 이력/API에는 실제 header가 있으므로 데이터 디렉터리와 콘솔 접근을 관리하세요.
 
-JSON 구문 색상 처리의 회귀 테스트는 Node.js가 설치된 개발 환경에서 `node --test http-mock-request-caller/src/test/js/json-view.test.cjs`로 실행할 수 있습니다. 앱 실행에는 Node.js가 필요하지 않습니다.
+### Path 복사
+
+기존 path의 **조회 / 편집 → 복사**를 누르면 현재 폼의 입력값을 새 path 추가 창으로 옮깁니다. 새 ID와 `(복사)` 이름을 사용하고 헤더·payload 중복 조합·스크립트·지연 설정을 독립적으로 보존합니다. **추가**를 누른 뒤 시나리오를 저장해야 반영됩니다. 취소하면 원본과 목록은 유지됩니다. path는 시나리오당 최대 100개입니다.
+
+### YAML 전문 다운로드와 신규 추가
+
+- 편집창 하단 **전문 다운로드**를 누르면 현재 입력값을 검증해 `scenario.yml`로 저장합니다. 서버 저장 전 수정 내용도 포함하며 시나리오 ID/version은 제외합니다. path ID, 실행 기준·시간·반복 수, 지연·헤더·payload·스크립트·로그 설정은 보존합니다.
+- 좌측 **YAML로 시나리오 추가**에서 `.yml`/`.yaml` 파일을 선택하거나 전문을 붙여넣고 **불러오기**를 누릅니다. 검증 후 새 시나리오 편집창에 반영되며 **시나리오 저장**을 눌러 신규 등록합니다. 기존 시나리오를 덮어쓰지 않습니다.
+- YAML은 단일 객체이며 최대 1048576자입니다(파일 선택은 최대 4 MiB). 중복 key, alias, 임의 Java tag, 여러 YAML 문서와 잘못된 정수/설정은 거부합니다. 오류 시 현재 편집 내용을 유지합니다.
+- 선택 seed는 Java signed 64-bit 범위이며 브라우저 정밀도 손실을 막기 위해 JSON/YAML 출력에서 문자열로 보존합니다. 숫자 또는 정수 문자열 입력을 모두 받습니다.
+- YAML에는 재사용에 필요한 실제 헤더 값과 스크립트가 포함됩니다. 파일을 공유하기 전에 자격 증명 등 입력 내용을 확인하세요.
+
+JSON 구문 색상 처리와 path 편집의 회귀 테스트는 Node.js가 설치된 개발 환경에서 `node --test http-mock-request-caller/src/test/js/*.test.cjs`로 실행할 수 있습니다. 앱 실행에는 Node.js가 필요하지 않습니다.
 
 ## 시나리오 예제
 
@@ -48,6 +60,8 @@ JSON 구문 색상 처리의 회귀 테스트는 Node.js가 설치된 개발 환
   "maxWorkers": 4,
   "rampUpSeconds": 3,
   "loopCount": 2,
+  "executionMode": "LOOPS",
+  "durationSeconds": 60,
   "requestTimeoutMillis": 30000,
   "runTimeoutMillis": 900000,
   "selectionMode": "SHUFFLED_ALL",
@@ -60,6 +74,7 @@ JSON 구문 색상 처리의 회귀 테스트는 Node.js가 설치된 개발 환
     "name": "orders",
     "requestPath": "/orders?test=true",
     "method": "POST",
+    "delay": {"mode": "NONE", "fixedMillis": 0, "minMillis": 0, "maxMillis": 0},
     "headers": {"X-Caller": ["mock"]},
     "payload": {
       "chunked": [false, true],
@@ -95,6 +110,42 @@ JSON 구문 색상 처리의 회귀 테스트는 Node.js가 설치된 개발 환
 
 ## Worker와 전·후처리
 
+### 실행 기준 선택
+
+- `executionMode="LOOPS"`(기본): 각 worker가 전체 path/조합을 `loopCount`번 수행합니다. `durationSeconds`는 무시합니다.
+- `executionMode="DURATION"`: `durationSeconds` 동안 전체 path/조합을 반복하며 `loopCount`는 무시합니다. 기존 설정에 새 필드가 없으면 LOOPS / 60초로 읽으므로 기존 실행 방식은 유지됩니다.
+- 시간 측정은 **scenario.pre가 성공한 직후** 시작하며 ramp-up·요청·path 지연을 모두 포함합니다. 시간이 끝나면 새 요청 scope를 시작하지 않고 진행 중인 요청과 후처리를 마무리하므로 실제 종료는 설정 시간보다 늦을 수 있습니다. 시간 만료 자체는 정상 COMPLETED입니다.
+- 기존 `runTimeoutMillis`는 별도의 강제 안전 제한입니다. duration은 1..86400초 정수이며 `durationSeconds × 1000 < runTimeoutMillis`, `rampUpSeconds < durationSeconds`여야 합니다. 기본 전체 timeout은 15분이므로 더 긴 시간 실행은 전문보기에서 runTimeoutMillis도 늘려야 합니다. 요청은 여전히 requestTimeoutMillis와 전체 timeout을 적용받습니다.
+- 시간 기준은 총 요청 수를 미리 정할 수 없어 API의 `planned`/`remaining`이 null이며 화면·리포트는 **시간 기준**으로 표시합니다. 진행률은 실행 시간 기준, 완료/성공/실패는 실제 요청 기준입니다. skipped는 0이며 반복 모드의 planned=completed+skipped 식은 적용하지 않습니다.
+- 시간 기준도 실행당 100000회 요청 시작 한도를 적용합니다. 시간 만료 전에 한도에 도달하면 FAILED / REQUEST_LIMIT으로 중단합니다. 시간 도달 후의 새 요청은 시작하지 않으며 사용자 취소와 오류는 정상 시간 만료와 구분됩니다.
+
+```json
+{
+  "executionMode": "DURATION",
+  "durationSeconds": 60,
+  "loopCount": 7
+}
+```
+
+위 예제에서 loopCount=7은 보관만 하며 실행 종료 기준에 사용하지 않습니다. UI에서 다시 반복 횟수로 전환하면 해당 값을 사용할 수 있습니다.
+
+### Path 요청 사이 간격
+
+path 추가/편집 레이어의 **요청 사이 간격**에서 `NONE`(기본), `FIXED`, `RANDOM` 중 선택합니다. 단위는 ms이며 활성 값은 0..600000 정수입니다. RANDOM은 최소값 ≤ 최대값이고 양 끝 값을 모두 포함합니다. 사용하지 않는 모드의 숫자는 보관만 합니다.
+
+```json
+{
+  "delay": {"mode": "FIXED", "fixedMillis": 100, "minMillis": 0, "maxMillis": 0}
+}
+```
+
+범위 무작위는 `"delay":{"mode":"RANDOM","fixedMillis":0,"minMillis":100,"maxMillis":500}`처럼 지정합니다. 소수 시간/간격은 API에서도 정수로 잘라서 수용하지 않고 입력 오류로 거부합니다.
+
+- 각 worker가 **동일 path의 이전 요청 완료(후처리·본문 정리 포함) → 다음 요청 시작** 사이 간격을 보장합니다. 서로 다른 worker의 요청을 직렬화하지 않습니다.
+- 첫 요청은 즉시 시작하고 마지막 요청 뒤에는 별도로 기다리지 않습니다. 다음 loop에서 동일 path를 재방문할 때도 적용합니다. 중간에 다른 path를 실행한 시간은 이미 지난 간격으로 계산하여 남은 시간만 기다립니다.
+- RANDOM은 worker/path별 seed 기반 난수를 사용하여 요청 간격마다 한 번 선택합니다. 실행 seed가 같으면 간격 선택 순서가 재현되지만 OS 스케줄링·네트워크 차이로 실제 도착 시각까지 같다는 의미는 아닙니다.
+- 대기는 요청 timeout 밖에서 수행하지만 duration/전체 timeout에는 포함됩니다. 사용자 취소·앱 종료·전체 timeout 시 즉시 interrupt하며 시간 기준 실행은 남은 시간까지만 기다립니다.
+
 첫 worker는 scenario pre 직후 시작하고 마지막 worker는 ramp-up 초에 시작합니다. worker=1 또는 ramp-up=0이면 즉시 시작합니다. worker당 한 번에 한 요청을 수행하고 일찍 끝난 worker를 다시 만들지 않습니다.
 
 ```text
@@ -112,7 +163,7 @@ scenario.post
 
 진입한 scope의 post는 pre 실패·요청 실패·취소에도 한 번 시도합니다. path pre 실패는 해당 path iteration을 생략하고 다음 path를 실행합니다. request pre/HTTP/post 실패는 해당 요청을 실패로 기록하고 다음 조합으로 진행합니다. worker/scenario hook 실패와 저장·로그·자원 오류는 실행을 중단합니다.
 
-COMPLETED는 실행 엔진의 완료입니다. 실패 요청/path hook이 있으면 `outcome=WITH_FAILURES`입니다. FAILED는 실행 자체의 실패, CANCELLED는 사용자/앱 종료 취소, INTERRUPTED는 이전 프로세스에서 정리가 끝나지 않은 실행입니다. `planned=completed+skipped`, `completed=succeeded+failed`가 정상 종료 시 성립합니다.
+COMPLETED는 실행 엔진의 완료입니다. 실패 요청/path hook이 있으면 `outcome=WITH_FAILURES`입니다. FAILED는 실행 자체의 실패, CANCELLED는 사용자/앱 종료 취소, INTERRUPTED는 이전 프로세스에서 정리가 끝나지 않은 실행입니다. 반복 횟수 기준은 `planned=completed+skipped`가 성립하며, 모든 모드에서 `completed=succeeded+failed`가 성립합니다.
 
 ### JEXL 컨텍스트
 
@@ -186,6 +237,8 @@ Invoke-RestMethod "$base/runs/$($run.id)" -WebSession $callerSession
 | --- | --- |
 | GET /csrf, /example, /status | token/기본 정의/엔진 상태 |
 | GET/POST /scenarios | 제목 검색·신규 저장 |
+| POST /scenarios/export | JSON 전문을 검증하고 application/yaml 첨부파일 반환, 저장 없음 |
+| POST /scenarios/import | YAML 원문을 검증하고 id=null/version=0인 신규 JSON draft 반환, 저장 없음 |
 | GET/PUT/DELETE /scenarios/{id} | 조회·version 기반 수정·soft delete |
 | POST /scenarios/{id}/validate | 저장본 검증, 전송 안 함 |
 | POST /scenarios/{id}/runs | 실행, 202. 선택 Idempotency-Key는 같은 scenario에서 재사용 시 기존 실행 반환 |
@@ -213,6 +266,8 @@ pagination은 page=0, size=20 기본이며 size 최대 100입니다. 시간 API�
 | caller.run-body-budget | 1073741824 (1GiB) |
 | caller.retention-days | 7 |
 | scenario workers / loop / ramp-up | 4 / 1 / 0초 |
+| scenario executionMode / durationSeconds | LOOPS / 60초 (모드별 종료 기준 선택) |
+| path delay mode / 고정 / 무작위 범위 | NONE / 0ms / 0..0ms, 활성 값 최대 600000ms |
 | scenario request/run timeout | 30초 / 15분 |
 | scenario worker 최대 / path 최대 / origin 최대 | 32 / 100 / 16 |
 | 계획 요청 수 / 원문 크기 상한 | 100000 / 요청당 64MiB |

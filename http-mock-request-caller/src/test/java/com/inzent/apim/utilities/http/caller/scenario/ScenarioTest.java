@@ -5,6 +5,29 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.*;
 
 class ScenarioTest {
+    @Test void oldJsonDefinitionsKeepLoopExecutionAndNoDelay()throws Exception{
+        Scenario s=new com.fasterxml.jackson.databind.ObjectMapper().readValue("{\"title\":\"legacy\",\"paths\":[{\"requestPath\":\"/\"}]}",Scenario.class);
+        assertEquals("LOOPS",s.executionMode);assertEquals(60,s.durationSeconds);assertEquals("NONE",s.paths.get(0).delay.mode);assertEquals(4,new ScenarioValidator().validate(s));
+    }
+    @Test void durationAndLoopLimitsAreMutuallyExclusive(){
+        Scenario s=Scenario.example();s.durationSeconds=0;
+        assertEquals(4,new ScenarioValidator().validate(s));
+        s.executionMode="DURATION";s.durationSeconds=1;s.loopCount=0;
+        assertEquals(-1,new ScenarioValidator().validate(s));
+        s.durationSeconds=0;assertThrows(IllegalArgumentException.class,()->new ScenarioValidator().validate(s));
+        s.durationSeconds=1;s.rampUpSeconds=1;assertThrows(IllegalArgumentException.class,()->new ScenarioValidator().validate(s));
+        s.rampUpSeconds=0;s.durationSeconds=900;assertThrows(IllegalArgumentException.class,()->new ScenarioValidator().validate(s));
+        s.durationSeconds=1;s.executionMode="UNKNOWN";assertThrows(IllegalArgumentException.class,()->new ScenarioValidator().validate(s));
+    }
+    @Test void validatesOnlyActiveDelayParameters(){
+        Scenario s=Scenario.example();var d=s.paths.get(0).delay;
+        d.fixedMillis=-1;new ScenarioValidator().validate(s);
+        d.mode="FIXED";assertThrows(IllegalArgumentException.class,()->new ScenarioValidator().validate(s));
+        d.fixedMillis=100;new ScenarioValidator().validate(s);
+        d.mode="RANDOM";d.minMillis=50;d.maxMillis=40;assertThrows(IllegalArgumentException.class,()->new ScenarioValidator().validate(s));
+        d.maxMillis=60;new ScenarioValidator().validate(s);
+        d.maxMillis=600001;assertThrows(IllegalArgumentException.class,()->new ScenarioValidator().validate(s));
+    }
     @Test void keepsBasePrefixAndPathQuery() {
         assertEquals("https://example.test/api/orders?q=a%20b", ScenarioValidator.resolve("https://example.test/api/", "/orders?q=a%20b").toString());
         assertThrows(IllegalArgumentException.class, () -> ScenarioValidator.resolve("https://example.test/api", "//evil.test/a"));

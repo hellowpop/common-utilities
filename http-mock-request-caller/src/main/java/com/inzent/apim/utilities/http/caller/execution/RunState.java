@@ -24,12 +24,22 @@ final class RunState {
     long started,completed,succeeded,failed,skipped,receivedBytes,sentBytes,hookFailures,wireSamples,wireNanos,minNanos=Long.MAX_VALUE,maxNanos,sequence;
     long retainedBytes;
     volatile boolean writerFailed;
+    volatile long executionStartedNanos,executionEndedNanos;
+    volatile String executionStartedAt;
     RunState(Scenario s,long count){scenario=s;planned=count;seed=s.seed==null?ThreadLocalRandom.current().nextLong():s.seed;}
     boolean stopping(){return stop.get()!=null;}
     void stop(String reason){stop.compareAndSet(null,reason);for(Worker w:workers)w.cancel();}
     synchronized void fatal(Throwable failure){if(error==null)error=brief(failure);stop("FATAL");}
     synchronized void status(String value){status=value;sequence++;}
-    synchronized void requestStarted(){started++;sequence++;}
+    boolean durationMode(){return "DURATION".equals(scenario.executionMode);}
+    synchronized void startExecution(long now){executionStartedNanos=now;executionStartedAt=Instant.now().toString();sequence++;}
+    synchronized void finishExecution(){if(executionStartedNanos!=0&&executionEndedNanos==0)executionEndedNanos=System.nanoTime();}
+    long remainingDurationNanos(){return !durationMode()?Long.MAX_VALUE:executionStartedNanos==0?0:Math.max(0,TimeUnit.SECONDS.toNanos(scenario.durationSeconds)-(System.nanoTime()-executionStartedNanos));}
+    synchronized boolean canStartRequest(){
+        if(stopping()||durationMode()&&remainingDurationNanos()<=0)return false;
+        if(durationMode()&&started>=100000){if(error==null)error="REQUEST_LIMIT: duration execution reached the 100000 request safety limit";stop("REQUEST_LIMIT");return false;}return true;
+    }
+    synchronized boolean tryStartRequest(){if(!canStartRequest())return false;started++;sequence++;return true;}
     synchronized void recoveryPending(){if(!"LOST_RESULTS".equals(persistenceState))persistenceState="RECOVERY_PENDING";}
     synchronized void lostResults(){persistenceState="LOST_RESULTS";}
     synchronized void result(Map<String,Object> r){
@@ -51,7 +61,10 @@ final class RunState {
         Map<String,Object> m=new LinkedHashMap<>();m.put("id",id);m.put("scenarioId",scenario.id);m.put("scenarioVersion",scenario.version);m.put("title",scenario.title);m.put("snapshot",scenario);m.put("seed",seed);
         m.put("status",status);m.put("outcome",failed>0||hookFailures>0||error!=null||stopping()?"WITH_FAILURES":"SUCCESS");m.put("startedAt",startedAt);m.put("endedAt",endedAt);m.put("error",error);m.put("stopReason",stop.get());m.put("persistenceState",persistenceState);m.put("statisticsComplete",!"LOST_RESULTS".equals(persistenceState));
         if(idempotencyKey!=null)m.put("idempotencyKey",idempotencyKey);
-        m.put("planned",planned);m.put("started",started);m.put("completed",completed);m.put("succeeded",succeeded);m.put("failed",failed);m.put("skipped",skipped);m.put("inFlight",started-completed);m.put("remaining",Math.max(0,planned-completed-skipped));m.put("progress",planned==0?1.0:(double)completed/planned);m.put("resolvedProgress",planned==0?1.0:(double)(completed+skipped)/planned);
+        long executionElapsed=executionStartedNanos==0?0:Math.max(0,(executionEndedNanos==0?System.nanoTime():executionEndedNanos)-executionStartedNanos);
+        double timeProgress=Math.min(1.0,(double)executionElapsed/TimeUnit.SECONDS.toNanos(Math.max(1,scenario.durationSeconds)));
+        m.put("executionMode",scenario.executionMode);m.put("durationSeconds",scenario.durationSeconds);m.put("executionStartedAt",executionStartedAt);m.put("executionElapsedMillis",executionElapsed/1e6);m.put("remainingDurationMillis",durationMode()?Math.max(0,scenario.durationSeconds*1000-executionElapsed/1e6):null);m.put("requestLimit",100000);
+        m.put("planned",durationMode()?null:Long.valueOf(planned));m.put("started",started);m.put("completed",completed);m.put("succeeded",succeeded);m.put("failed",failed);m.put("skipped",skipped);m.put("inFlight",started-completed);m.put("remaining",durationMode()?null:Long.valueOf(Math.max(0,planned-completed-skipped)));m.put("progress",durationMode()?timeProgress:planned==0?1.0:(double)completed/planned);m.put("resolvedProgress",durationMode()?timeProgress:planned==0?1.0:(double)(completed+skipped)/planned);
         m.put("sentBytes",sentBytes);m.put("receivedBytes",receivedBytes);m.put("statusCounts",new TreeMap<>(statuses));m.put("errorCounts",new TreeMap<>(errors));
         List<Map<String,Object>> ps=new ArrayList<>();pathStats.forEach((id,v)->ps.add(Map.of("pathId",id,"completed",v[0],"succeeded",v[1],"failed",v[2])));m.put("pathStatistics",ps);
         m.put("hooks",new ArrayList<>(hooks));m.put("hookFailures",hookFailures);m.put("hookDetailsTruncated",hooks.size()>=1000);m.put("pathIterations",new ArrayList<>(pathIterations));m.put("pathDetailsTruncated",pathIterations.size()>=1000);

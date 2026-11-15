@@ -19,7 +19,8 @@ final class WorkerRunner implements Runnable {
     private final RunService service;private final RunState run;private final RunState.Worker worker;
     private final ResultWriter writer;private final RunLogManager logs;private final String stream;
     private final PayloadAdapter adapter=new PayloadAdapter();
-    WorkerRunner(RunService s,RunState r,RunState.Worker w,ResultWriter writer,RunLogManager logs){service=s;run=r;worker=w;this.writer=writer;this.logs=logs;stream=String.format("worker-%04d",w.index);}
+    private final RequestPacer pacer;
+    WorkerRunner(RunService s,RunState r,RunState.Worker w,ResultWriter writer,RunLogManager logs){service=s;run=r;worker=w;this.writer=writer;this.logs=logs;stream=String.format("worker-%04d",w.index);pacer=new RequestPacer(r.seed,w.index);}
     @Override public void run(){
         if(!worker.claimed.compareAndSet(false,true))return;
         worker.thread=Thread.currentThread();worker.status="RUNNING";worker.startedAt=Instant.now().toString();
@@ -28,8 +29,9 @@ final class WorkerRunner implements Runnable {
             logs.log(stream,"START worker="+worker.index);
             var c=RunService.context(run,worker,null,null,"worker","pre");
             if(!service.hook(run,run.scenario.workerHooks.pre,c,"worker","pre",logs,stream))throw new IllegalStateException("Worker pre failed");
-            for(int loop=0;loop<run.scenario.loopCount&&!run.stopping();loop++)for(var path:run.scenario.paths){if(run.stopping())break;path(path,loop);}
-        }catch(Throwable e){run.fatal(e);worker.status="FAILED";}
+            for(long loop=0;run.canStartRequest()&&(run.durationMode()||loop<run.scenario.loopCount);loop++)for(var path:run.scenario.paths){if(!run.canStartRequest())break;path(path,loop);}
+        }catch(InterruptedException e){if(!run.stopping())run.fatal(e);}
+        catch(Throwable e){run.fatal(e);worker.status="FAILED";}
         finally{
             Thread.interrupted();
             try{var c=RunService.context(run,worker,null,null,"worker","post");if(!service.hook(run,run.scenario.workerHooks.post,c,"worker","post",logs,stream))run.fatal(new IllegalStateException("Worker post failed"));logs.log(stream,"END requests="+worker.completed);}
@@ -37,22 +39,24 @@ final class WorkerRunner implements Runnable {
             worker.status=run.stopping()?"CANCELLED":"COMPLETED";worker.endedAt=Instant.now().toString();worker.thread=null;worker.done.countDown();Thread.interrupted();
         }
     }
-    private void path(Scenario.RequestPath path,int loop){
+    private void path(Scenario.RequestPath path,long loop)throws InterruptedException{
         Map<String,Object> iteration=new LinkedHashMap<>();iteration.put("pathId",path.id);iteration.put("workerIndex",worker.index);iteration.put("loopIndex",loop);iteration.put("startedAt",Instant.now().toString());
         try{
             var c=RunService.context(run,worker,path,null,"path","pre");
             if(!service.hook(run,path.pathHooks.pre,c,"path:"+path.id,"pre",logs,stream)){iteration.put("pre","FAILED");return;}iteration.put("pre","OK");
             PayloadMatrix matrix=new PayloadMatrix(path.payload);
-            for(long i=0;i<matrix.size()&&!run.stopping();i++){
+            for(long i=0;i<matrix.size()&&run.canStartRequest();i++){
+                if(!pacer.awaitNext(path,run::canStartRequest,run::remainingDurationNanos))break;
+                if(!run.tryStartRequest())break;
                 long index=matrix.index(i,"SHUFFLED_ALL".equals(run.scenario.selectionMode),run.seed^worker.index*104729L^loop*13007L^path.id.hashCode());
-                request(path,matrix.at(index),index,loop);
+                request(path,matrix.at(index),index,loop);pacer.completed(path.id);
             }
         }finally{
             Thread.interrupted();var c=RunService.context(run,worker,path,null,"path","post");boolean ok=service.hook(run,path.pathHooks.post,c,"path:"+path.id,"post",logs,stream);iteration.put("post",ok?"OK":"FAILED");iteration.put("endedAt",Instant.now().toString());run.iteration(iteration);
         }
     }
-    private void request(Scenario.RequestPath path,PayloadSpec spec,long combination,int loop){
-        run.requestStarted();long begin=System.nanoTime();String id=UUID.randomUUID().toString();
+    private void request(Scenario.RequestPath path,PayloadSpec spec,long combination,long loop){
+        long begin=System.nanoTime();String id=UUID.randomUUID().toString();
         Map<String,Object> result=new LinkedHashMap<>();result.put("id",id);result.put("runId",run.id);result.put("pathId",path.id);result.put("pathName",path.name);result.put("workerIndex",worker.index);result.put("loopIndex",loop);result.put("combinationIndex",combination);result.put("payload",spec);result.put("startedAt",Instant.now().toString());
         Map<String,Object> exchange=new LinkedHashMap<>(),request=new LinkedHashMap<>(),response=new LinkedHashMap<>();exchange.put("id",id);exchange.put("request",request);exchange.put("response",response);exchange.put("success",false);
         PreparedPayload prepared=null,replacement=null;TransportResponse received=null;
