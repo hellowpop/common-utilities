@@ -45,7 +45,20 @@ public final class CallerController {
     @GetMapping("/runs") public ResponseEntity<String> history(@RequestParam(required=false)String scenarioId,@RequestParam(required=false)String title,@RequestParam(required=false)String from,@RequestParam(required=false)String to,@RequestParam(required=false)String status,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size){pages(page,size);return ok(store.searchRuns(scenarioId,title,from,to,status,page,size));}
     @GetMapping("/runs/{id}") public ResponseEntity<String> progress(@PathVariable String id){return ok(runs.progress(id));}
     @PostMapping("/runs/{id}/cancel") public ResponseEntity<String> cancel(@PathVariable String id){var r=runs.cancel(id);return ResponseEntity.status(terminal(r)?200:202).contentType(MediaType.APPLICATION_JSON).body(store.encode(r));}
-    @GetMapping("/runs/{id}/requests") public ResponseEntity<String> requests(@PathVariable String id,@RequestParam(required=false)String pathId,@RequestParam(required=false)Boolean success,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size){pages(page,size);runs.progress(id);return ok(store.results(id,pathId,success,page,size));}
+    @GetMapping("/runs/{id}/requests")
+    public ResponseEntity<String> requests(@PathVariable String id,
+            @RequestParam(required=false) String pathId,
+            @RequestParam(required=false) Boolean success,
+            @RequestParam(required=false) Integer status,
+            @RequestParam(required=false) Integer workerIndex,
+            @RequestParam(required=false) Double minElapsedMillis,
+            @RequestParam(required=false) Double maxElapsedMillis,
+            @RequestParam(defaultValue="0") int page,
+            @RequestParam(defaultValue="20") int size) {
+        pages(page,size);
+        runs.progress(id);
+        return ok(store.results(id,pathId,success,status,workerIndex,minElapsedMillis,maxElapsedMillis,page,size));
+    }
     @GetMapping("/runs/{id}/requests/{requestId}") public ResponseEntity<String> request(@PathVariable String id,@PathVariable String requestId){return ok(store.result(id,requestId));}
     @GetMapping("/runs/{id}/report") public ResponseEntity<String> report(@PathVariable String id){var run=runs.progress(id);if(!terminal(run))throw new CallerStore.Conflict("Report available after execution ends");String html=HtmlReport.render(run,store.results(id,null,false,0,100));return ResponseEntity.ok().contentType(new MediaType("text","html",StandardCharsets.UTF_8)).header(HttpHeaders.CONTENT_DISPOSITION,"attachment; filename=\"report-"+safeId(id)+".html\"").body(html);}
     @GetMapping("/runs/{id}/artifacts/{artifactId}") public ResponseEntity<InputStreamResource> artifact(@PathVariable String id,@PathVariable String artifactId)throws Exception{
@@ -67,6 +80,6 @@ public final class CallerController {
     static boolean terminal(Map<String,Object> r){return Set.of("COMPLETED","FAILED","CANCELLED","INTERRUPTED").contains(String.valueOf(r.get("status")));}
     private static String safeId(String value){if(value==null||!value.matches("[a-zA-Z0-9-]{1,64}"))throw new IllegalArgumentException("Invalid identifier");return value;}
     private static void pages(int page,int size){if(page<0||page>1000000||size<1||size>100)throw new IllegalArgumentException("page >=0, size 1..100 required");}
-    @ExceptionHandler(Exception.class) public ResponseEntity<String> errors(Exception error){int status=error instanceof CallerStore.Missing?404:error instanceof CallerStore.Conflict?409:error instanceof RunService.Capacity?429:error instanceof IllegalArgumentException||error instanceof java.time.format.DateTimeParseException?400:500;return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(store.encode(Map.of("status",status,"title",HttpStatus.valueOf(status).getReasonPhrase(),"detail",status==500?"Internal failure; inspect application logs":String.valueOf(error.getMessage()))));}
+    @ExceptionHandler(Exception.class) public ResponseEntity<String> errors(Exception error){int status=error instanceof CallerStore.Missing?404:error instanceof CallerStore.Conflict?409:error instanceof RunService.Capacity?429:error instanceof IllegalArgumentException||error instanceof org.springframework.web.method.annotation.MethodArgumentTypeMismatchException||error instanceof java.time.format.DateTimeParseException?400:500;return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(store.encode(Map.of("status",status,"title",HttpStatus.valueOf(status).getReasonPhrase(),"detail",status==500?"Internal failure; inspect application logs":String.valueOf(error.getMessage()))));}
     @PreDestroy public void close(){snapshots.shutdownNow();sends.shutdownNow();}
 }

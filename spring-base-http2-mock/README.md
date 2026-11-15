@@ -43,6 +43,18 @@ Spring 앱 하나만 실행하고 [Request Caller](http://localhost:8080/caller/
 
 API는 기존 caller의 `/api/csrf`, `/api/example`, `/api/status`, `/api/scenarios/**`, `/api/runs/**`를 유지한다. 변경 요청은 `/api/csrf`에서 받은 세션 쿠키와 `X-CSRF-Token`을 함께 전달한다. caller 화면/API에만 보안 필터를 적용하며 기존 mock 요청은 종전대로 호출한다. caller API는 HTTP/1.1과 HTTPS HTTP/2를 지원하고 기존 mock `/api/*`의 HTTP/1.1 제한은 유지한다.
 
+### Caller 실행 상세와 단위 요청 조회
+
+실행 이력에서 실행을 선택하면 상태코드·오류별 요청 수, 지연·처리량, Path별 완료·성공·실패 결과를 grid table로 확인할 수 있다. 지연은 ms, 처리량은 req/s, 송수신 크기는 bytes로 표시하며 SSE로 집계가 갱신된다.
+
+**단위 요청 조회**를 펼치고 응답코드(100~599), Worker 번호(1~32), 최소·최대 소요시간(ms)을 입력한 뒤 **조회**를 누른다. 조건은 AND로 적용되고 소요시간 경계값을 포함한다. 빈 조건은 제한하지 않는다. 요청 목록은 조회 후 표시하며, 페이지 이동은 마지막으로 조회한 조건을 유지한다. 다른 실행을 열면 조건·목록·요청 상세를 초기화한다. 행을 선택하면 요청 상세와 보관된 본문 다운로드 링크를 확인할 수 있다.
+
+```text
+GET /api/runs/{id}/requests?status=200&workerIndex=1&minElapsedMillis=0.5&maxElapsedMillis=100&page=0&size=20
+```
+
+기존 `pathId`, `success` 조건도 함께 사용할 수 있다. 검색은 DB에서 페이지 분할 전에 적용된다. 기존 DB는 시작 시 검색용 컬럼·인덱스를 추가하고 과거 요청의 JSON에서 값을 보완하므로 이전 이력에도 같은 조건을 사용할 수 있다.
+
 기본 저장 위치는 **실행 디렉터리의 `data/caller/`**다. DB는 `data/caller/db/caller`, 본문·journal·로그는 같은 데이터 디렉터리 아래에 저장한다. `--caller.data-directory=D:/mock-data/caller`로 변경하면 기본 H2 URL도 해당 경로를 따른다. 외부 DB는 `spring.datasource.*`, DB 암호는 `CALLER_DB_PASSWORD`, 실행 한도는 `caller.*`로 설정한다. 스키마는 CallerStore가 Liquibase로 초기화하므로 `spring.liquibase.enabled=false`를 유지한다.
 
 기존 caller의 로컬 데이터는 이 프로젝트의 `data/caller/`로 복사했다. 기존 프로젝트 디렉터리 전체의 검증된 보존본은 `.migration-archive/caller-original/`에 있으며 Git과 빌드 산출물에서 제외한다. `mvn clean`으로 이 보존본이나 runtime data가 삭제되지 않는다. 두 프로세스가 같은 H2 파일/데이터 디렉터리를 동시에 열지 않도록 한다. Spring 앱 종료 시 caller 실행과 전송·스크립트·SSE 자원도 정리한다.

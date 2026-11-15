@@ -30,3 +30,30 @@ test('duration live metrics show time and unknown totals while old runs retain r
  a.run('showRun(snapshot)');assert.equal(a.el('progress-bar').style.width,'25%');assert.match(a.el('run-duration').textContent,/60초.*15초.*45초/);assert.equal(a.el('metrics').children[0].children[1].textContent,'시간 기준');
  a.run('delete snapshot.executionMode;snapshot.planned=10;showRun(snapshot)');assert.equal(a.el('run-duration').hidden,true);assert.equal(a.el('metrics').children[0].children[1].textContent,'10');
 });
+
+test('run summaries render table cells including status, errors, latency and named paths',()=>{
+ const a=app();a.context.snapshot={id:'r',status:'COMPLETED',persistenceState:'OK',statusCounts:{200:3,500:1},errorCounts:{TIMEOUT:1},latency:{samples:4,meanMillis:1.25,p95Millis:2},throughput:3.5,sentBytes:10,receivedBytes:20,pathStatistics:[{pathId:'p',completed:4,succeeded:3,failed:1}],snapshot:{paths:[{id:'p',name:'echo',requestPath:'/echo'}]}};
+ a.run('showRun(snapshot)');
+ const cells=id=>a.el(id).children.flatMap(row=>row.children.map(cell=>cell.textContent));
+ assert.ok(cells('run-stats').includes('200'));assert.ok(cells('run-stats').includes('TIMEOUT'));
+ assert.ok(cells('latency').includes('3.50 req/s'));assert.ok(cells('latency').includes('1.25 ms'));
+ assert.ok(cells('path-stats').includes('echo'));assert.ok(cells('path-stats').includes('/echo'));
+ a.run('showRun({status:"QUEUED",persistenceState:"OK"})');assert.equal(a.el('path-stats').children.length,1);
+});
+
+test('opening a run defers unit requests until search and clears stale request details',async()=>{
+ const a=app();const calls=[];a.el('request-detail').textContent='stale';
+ a.context.fetch=async url=>{calls.push(url);return {ok:true,json:async()=>({id:'r',status:'COMPLETED',persistenceState:'OK'})};};
+ await a.run('openRun("r")');assert.deepEqual(calls,['/api/runs/r']);assert.equal(a.el('request-results').hidden,true);assert.equal(a.el('request-detail').textContent,'');
+});
+
+test('request search sends combined filters and keeps applied filters across pages',async()=>{
+ const a=app();const calls=[];a.run('currentRun="r"');
+ a.el('request-status').value='500';a.el('request-worker').value='2';a.el('request-min-elapsed').value='1.5';a.el('request-max-elapsed').value='20';
+ a.context.fetch=async url=>{calls.push(url);return {ok:true,json:async()=>[]};};
+ await a.run('searchRequests()');const q=new URL(calls[0],'http://local').searchParams;
+ assert.equal(q.get('status'),'500');assert.equal(q.get('workerIndex'),'2');assert.equal(q.get('minElapsedMillis'),'1.5');assert.equal(q.get('maxElapsedMillis'),'20');
+ assert.equal(a.el('request-results').hidden,false);assert.equal(a.el('request-rows').children.length,1);
+ a.el('request-status').value='200';await a.run('requestPage=1;results()');assert.equal(new URL(calls[1],'http://local').searchParams.get('status'),'500');
+ a.el('request-min-elapsed').value='30';await assert.rejects(a.run('searchRequests()'),/소요시간/);assert.equal(calls.length,2);
+});

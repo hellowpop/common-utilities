@@ -28,7 +28,7 @@ DB·본문·로그·journal은 실행 작업 디렉터리의 `data/caller/`에 �
 2. **요청 Path 목록** 그리드에서 등록된 순서·이름·메서드·base URL·path·payload 조합 수를 확인합니다. 그리드 하단 **추가** 버튼으로 입력 레이어를 열고, 기존 행 또는 **조회 / 편집** 버튼을 누르면 동일한 레이아웃에서 등록 내용을 조회·수정할 수 있습니다. 레이어는 요청 정보, 다중 헤더, payload 복수 선택·숫자 배열, 성공 상태 범위와 path/request 전후 스크립트를 제공합니다. 추가/적용 후 그리드·전문보기·예상 요청 수가 함께 갱신되며 취소·닫기·Esc는 원본을 보존합니다.
 3. 편집창 하단 **전문보기**로 전체 JSON도 편집할 수 있습니다. 시나리오/worker hook과 로그 등 전체 설정을 확인하고 **JSON 정렬**·**적용**으로 반영합니다. 괄호·키·값을 색상으로 구분하고, 잘못된 JSON은 적용하지 않습니다. 적용은 서버 저장과 별개이며 Ctrl/⌘+Enter로 적용할 수도 있습니다. JSON에서 paths를 수정한 뒤 적용하면 그리드도 다시 표시됩니다.
 4. 저장 → 저장본 검증 → 실행을 선택합니다. 실행 버튼은 현재 편집 내용을 저장한 뒤 새 실행을 만듭니다.
-5. 실행 상세에서 완료/성공/실패/생략 수, worker, 상태 코드·오류, 지연과 path별 결과를 확인합니다. 단위 요청을 클릭하면 상세 및 보관된 본문 다운로드를 표시합니다.
+5. 실행 상세에서 완료/성공/실패/생략 수와 worker를 확인합니다. 상태 코드·오류, 지연·처리량, Path별 결과는 grid table로 표시합니다. **단위 요청 조회**를 펼치고 응답코드·Worker·최소/최대 소요시간(ms) 조건으로 **조회**한 뒤, 요청 행을 클릭하면 상세 및 보관된 본문 다운로드를 표시합니다. 조건은 AND로 적용하고 시간 경계값을 포함하며 빈 조건은 전체를 조회합니다. 다른 실행을 선택하면 조회 조건과 결과를 초기화합니다.
 6. 실행 이력은 실행 당시 제목과 시작 시간 범위·상태로 검색합니다. 입력은 브라우저 현지 시간, 표시 시간은 Asia/Seoul입니다. 시간 범위는 시작 포함, 종료 미포함입니다.
 7. 종료 실행은 외부 리소스 없는 HTML 보고서를 다운로드할 수 있습니다. **상태 코드 / 오류 분포**는 범주별 건수를 꺾은선 그래프로 표시합니다(시간 추이가 아닌 범주별 집계). **지연 시간**은 표본 수·최소·평균·최대·p50/p95/p99(ms), **Path별 결과**는 이름·ID·메서드·요청 path·완료/성공/실패, **Worker timeline**은 상태·시작/종료(Asia/Seoul)·수행 시간(ms)·완료 요청을 테이블로 표시합니다. 데이터가 없으면 빈 집계를 안내합니다. 보고서에는 본문·스크립트·header를 넣지 않아 자격 증명 노출을 줄입니다. 상세 이력/API에는 실제 header가 있으므로 데이터 디렉터리와 콘솔 접근을 관리하세요.
 
@@ -242,7 +242,7 @@ Invoke-RestMethod "$base/runs/$($run.id)" -WebSession $callerSession
 | GET /runs?title=&from=&to=&status=&scenarioId= | 제목/시간/상태 검색 |
 | GET /runs/{id}, /runs/{id}/events | 집계 조회·1초 snapshot SSE |
 | POST /runs/{id}/cancel | 취소. 종료 실행에는 상태 변경 없음 |
-| GET /runs/{id}/requests?pathId=&success= | 요청 결과 pagination |
+| GET /runs/{id}/requests?pathId=&success=&status=&workerIndex=&minElapsedMillis=&maxElapsedMillis= | 조건 검색 후 요청 결과 pagination (소요시간 ms, 양쪽 경계 포함) |
 | GET /runs/{id}/requests/{requestId} | 단위 요청 상세 |
 | GET /runs/{id}/artifacts/{artifactId} | 해당 실행 소유 본문 다운로드 |
 | GET /runs/{id}/logs?workerIndex= | control 또는 worker 로그 |

@@ -21,6 +21,14 @@ HTTP/HTTPS·HTTP/2·SSE·WebSocket과 별도 mock 엔진을 같은 JVM에서 제
 
 ## Caller 이관 파일 구성
 
+### Caller 실행 상세 조회 구성 (2026-11-15)
+
+- `caller-ui/index.html`, `app.js`, `app.css`: 상태코드·오류, 지연·처리량, Path별 집계를 테두리 있는 grid table로 표시한다. Path 이름과 URL은 실행 snapshot에 저장된 설정으로 해석한다.
+- 단위 요청은 접이식 조회 영역으로 분리한다. 실행 선택이나 SSE 종료만으로 요청을 조회하지 않으며, 사용자가 조회한 이후의 갱신·페이지 이동에는 적용된 조건을 유지한다. 요청 조회가 진행되는 동안 실행·조건·페이지가 바뀌면 이전 응답을 무시한다.
+- `CallerController.requests`: 선택 조건 `status`, `workerIndex`, `minElapsedMillis`, `maxElapsedMillis`를 전달한다. `CallerStore.results`는 범위를 검증하고 기존 `pathId`·`success`와 AND로 결합한 parameterized SQL에 limit/offset을 적용한다. 소요시간 입력은 ms이고 저장·비교는 nanos 기준이다.
+- Liquibase `caller-3-result-search`: `status_code`, `worker_index`, `elapsed_nanos`, `search_ready`와 검색 인덱스를 추가한다. 기존 changeSet은 유지한다. 시작 시 미보완 행을 500개씩 읽어 JSON의 검색값을 보완하며, 신규 저장은 검색값을 함께 기록한다. 이전 데이터의 누락값은 null로 유지한다.
+- 회귀 검증: `RequestSearchTest`는 조건 조합·시간 경계·검색 후 페이지 분할·기존 JSON 보완·잘못된 조건 거부를 검증한다. `execution-ui.test.cjs`는 집계 표·지연 조회·적용 조건 유지·빈 결과를 검증한다.
+
 | 경로 | 역할 |
 | --- | --- |
 | `src/main/java/com/inzent/apim/utilities/http/caller/` | 시나리오, payload, Netty transport, 실행·취소, JEXL, 저장·복구, 로그, REST/SSE·보고서 |

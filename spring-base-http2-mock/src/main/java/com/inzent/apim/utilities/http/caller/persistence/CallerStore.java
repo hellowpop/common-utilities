@@ -21,6 +21,16 @@ public class CallerStore {
     public void initialize(){
         try{Files.createDirectories(data);SpringLiquibase migration=new SpringLiquibase();migration.setDataSource(jdbc.getDataSource());migration.setChangeLog("classpath:db/changelog/master.xml");migration.afterPropertiesSet();}
         catch(Exception e){throw new IllegalStateException("Database migration failed",e);}
+        backfillResultSearch();
+    }
+    private void backfillResultSearch(){
+        while(true){
+            List<Map<String,Object>> rows=jdbc.query("select document from caller_result where search_ready=false order by id limit 500",(rs,n)->decode(rs.getString(1)));
+            if(rows.isEmpty())return;
+            List<Object[]> updates=new ArrayList<>();
+            for(Map<String,Object> row:rows)updates.add(new Object[]{row.get("status"),row.get("workerIndex"),row.get("elapsedNanos"),row.get("id")});
+            jdbc.batchUpdate("update caller_result set status_code=?,worker_index=?,elapsed_nanos=?,search_ready=true where id=?",updates);
+        }
     }
     public String encode(Object value){try{return json.writeValueAsString(value);}catch(Exception e){throw new IllegalArgumentException("Invalid JSON",e);}}
     public Map<String,Object> decode(String value){try{return json.readValue(value,MAP);}catch(Exception e){throw new IllegalStateException("Invalid stored JSON",e);}}
@@ -62,7 +72,7 @@ public class CallerStore {
         return jdbc.query(sql.toString(),(rs,n)->decode(rs.getString(1)),args.toArray());
     }
     public synchronized void saveResult(Map<String,Object> result){
-        try{jdbc.update("insert into caller_result(id,run_id,path_id,success,document) values(?,?,?,?,?)",result.get("id"),result.get("runId"),result.get("pathId"),result.get("success"),encode(result));}
+        try{jdbc.update("insert into caller_result(id,run_id,path_id,success,document,status_code,worker_index,elapsed_nanos,search_ready) values(?,?,?,?,?,?,?,?,true)",result.get("id"),result.get("runId"),result.get("pathId"),result.get("success"),encode(result),result.get("status"),result.get("workerIndex"),result.get("elapsedNanos"));}
         catch(DuplicateKeyException ignored){/* request id is a stable idempotency key */}
     }
     public Map<String,Object> result(String runId,String requestId){
@@ -70,9 +80,20 @@ public class CallerStore {
         if(rows.isEmpty())throw new Missing("Request not found");return rows.get(0);
     }
     public List<Map<String,Object>> results(String runId,String pathId,Boolean success,int page,int size){
+        return results(runId,pathId,success,null,null,null,null,page,size);
+    }
+    public List<Map<String,Object>> results(String runId,String pathId,Boolean success,Integer status,Integer workerIndex,Double minElapsedMillis,Double maxElapsedMillis,int page,int size){
+        if(status!=null&&(status<100||status>599))throw new IllegalArgumentException("status must be 100..599");
+        if(workerIndex!=null&&(workerIndex<1||workerIndex>32))throw new IllegalArgumentException("workerIndex must be 1..32");
+        for(Double millis:new Double[]{minElapsedMillis,maxElapsedMillis})if(millis!=null&&(!Double.isFinite(millis)||millis<0||millis>Long.MAX_VALUE/1e6))throw new IllegalArgumentException("elapsed milliseconds must be finite and nonnegative");
+        if(minElapsedMillis!=null&&maxElapsedMillis!=null&&minElapsedMillis>maxElapsedMillis)throw new IllegalArgumentException("minElapsedMillis must be <= maxElapsedMillis");
         StringBuilder sql=new StringBuilder("select document from caller_result where run_id=?");List<Object> args=new ArrayList<>(List.of(runId));
         if(pathId!=null&&!pathId.isBlank()){sql.append(" and path_id=?");args.add(pathId);}
         if(success!=null){sql.append(" and success=?");args.add(success);}
+        if(status!=null){sql.append(" and status_code=?");args.add(status);}
+        if(workerIndex!=null){sql.append(" and worker_index=?");args.add(workerIndex);}
+        if(minElapsedMillis!=null){sql.append(" and elapsed_nanos>=?");args.add(java.math.BigDecimal.valueOf(minElapsedMillis).movePointRight(6));}
+        if(maxElapsedMillis!=null){sql.append(" and elapsed_nanos<=?");args.add(java.math.BigDecimal.valueOf(maxElapsedMillis).movePointRight(6));}
         sql.append(" order by id limit ? offset ?");args.add(size);args.add((long)page*size);
         return jdbc.query(sql.toString(),(rs,n)->decode(rs.getString(1)),args.toArray());
     }

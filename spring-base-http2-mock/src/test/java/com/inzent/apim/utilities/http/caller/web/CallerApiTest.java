@@ -17,6 +17,25 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest(classes=MockApplication.class,webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties={"server.ssl.enabled=false", "mock.http.port=0", "mock.services.netty.enabled=false", "mock.services.response.enabled=false"})
 class CallerApiTest {
+    @org.springframework.beans.factory.annotation.Autowired
+    com.inzent.apim.utilities.http.caller.persistence.CallerStore store;
+
+    @Test void requestSearchFiltersPersistedResultsAndRejectsInvalidConditions() throws Exception {
+        String runId="search-"+UUID.randomUUID();
+        store.saveRun(Map.of("id",runId,"scenarioId","search-scenario","title","search","status","COMPLETED","startedAt","2026-11-15T00:00:00Z"));
+        for(int index=1;index<=3;index++){
+            store.saveResult(Map.of("id",runId+"-"+index,"runId",runId,"pathId","p","success",false,"status",503,"workerIndex",index,"elapsedNanos",index*1000000L));
+        }
+        String path="/api/runs/"+runId+"/requests";
+        HttpResponse<String> response=send(path+"?status=503&workerIndex=2&minElapsedMillis=2&maxElapsedMillis=2","GET",null,null);
+        org.junit.jupiter.api.Assertions.assertEquals(200,response.statusCode(),response.body());
+        org.junit.jupiter.api.Assertions.assertEquals(1,json.readTree(response.body()).size());
+        org.junit.jupiter.api.Assertions.assertEquals(2,json.readTree(response.body()).get(0).path("workerIndex").asInt());
+        for(String query:List.of("status=abc","workerIndex=1.5","minElapsedMillis=abc","status=600","workerIndex=0","minElapsedMillis=-1","minElapsedMillis=3&maxElapsedMillis=2")){
+            HttpResponse<String> invalid=send(path+"?"+query,"GET",null,null);
+            org.junit.jupiter.api.Assertions.assertEquals(400,invalid.statusCode(),query+": "+invalid.body());
+        }
+    }
     @Test void callerConsoleRetainsSecurityHeadersAndHostRootIsPreserved() throws Exception {
         for (String path : List.of("/caller/", "/caller/app.js")) {
             var response = send(path, "GET", null, null);

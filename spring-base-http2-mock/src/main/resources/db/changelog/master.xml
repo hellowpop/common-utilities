@@ -23,4 +23,24 @@
     <addUniqueConstraint tableName="caller_run" columnNames="scenario_id,idempotency_key" constraintName="caller_run_idempotency"/>
     <createTable tableName="caller_cleanup"><column name="run_id" type="varchar(64)"><constraints primaryKey="true" nullable="false"/></column></createTable>
   </changeSet>
+  <changeSet id="caller-3-result-search" author="common-utilities">
+    <addColumn tableName="caller_result">
+      <column name="status_code" type="integer"/>
+      <column name="worker_index" type="integer"/>
+      <column name="elapsed_nanos" type="bigint"/>
+      <column name="search_ready" type="boolean" defaultValueBoolean="false">
+        <constraints nullable="false"/>
+      </column>
+    </addColumn>
+    <createIndex tableName="caller_result" indexName="caller_result_status">
+      <column name="run_id"/>
+      <column name="status_code"/>
+      <column name="id"/>
+    </createIndex>
+    <createIndex tableName="caller_result" indexName="caller_result_worker_time">
+      <column name="run_id"/>
+      <column name="worker_index"/>
+      <column name="elapsed_nanos"/>
+    </createIndex>
+  </changeSet>
 </databaseChangeLog>
