@@ -1,6 +1,6 @@
 # spring-base-http2-mock 프로젝트 구성
 
-최종 정리: 2026-11-11. 이 문서는 현재 구성과 실행 계약을 설명한다. 실행 예제와 옵션 사용법은 [README.md](README.md)를 참고한다.
+최종 정리: 2026-11-15. 이 문서는 현재 구성과 실행 계약을 설명한다. 실행 예제와 옵션 사용법은 [README.md](README.md)를 참고한다.
 
 ## 목적과 모듈 구성
 
@@ -13,7 +13,26 @@ HTTP/HTTPS·HTTP/2·SSE·WebSocket과 별도 mock 엔진을 같은 JVM에서 제
 | `netty-http-mock-server` | `library` classifier로 기존 Netty action 서버를 임베딩 |
 | `http-mock-response-server` | named scenario와 다중 바인딩 응답 서버를 임베딩 |
 
-소스를 복사하거나 별도 JVM을 띄우지 않는다. `scripts/Build-WithMockServers.ps1`는 payload → Netty → response → Spring 순으로 모듈을 설치한다.
+`scripts/Build-WithMockServers.ps1`는 payload → Netty → response → Spring 순으로 모듈을 설치한다. Request Caller는 외부 모듈 없이 이 프로젝트 소스로 빌드한다.
+
+`MockApplication`은 `CallerConfiguration`을 import한다. 이 설정은 `com.inzent.apim.utilities.http.caller`의 bean·properties·JDBC store와 `/caller/**` 정적 자원 handler를 등록한다. `src/main/resources/caller-ui/`에 UI를 두고 기존 root static 콘솔과 분리한다. 이전 caller main 클래스는 `MockApplication.main`으로 위임하는 호환 진입점으로만 남으며 별도 Boot application이나 ObjectMapper를 등록하지 않는다.
+
+단일 Boot 3 POM에서 JDBC/H2/PostgreSQL/Liquibase/Netty/JEXL/YAML 의존성을 관리한다. `CallerStore.initialize()`가 migration 후 복구를 시작하므로 Liquibase 자동 실행은 끈다. 저장 기본 경로는 `./data/caller`다. 기존 caller 데이터도 이 경로로 복사했다. 테스트는 임시 데이터 디렉터리와 context별 H2 메모리 DB로 격리하며 이전 caller의 Java/Node 테스트를 모두 이 프로젝트에서 실행한다.
+
+## Caller 이관 파일 구성
+
+| 경로 | 역할 |
+| --- | --- |
+| `src/main/java/com/inzent/apim/utilities/http/caller/` | 시나리오, payload, Netty transport, 실행·취소, JEXL, 저장·복구, 로그, REST/SSE·보고서 |
+| `src/main/resources/caller-ui/` | 시나리오 UI와 JavaScript/CSS |
+| `src/main/resources/db/changelog/master.xml` | caller 스키마·인덱스·migration |
+| `src/test/java/com/inzent/apim/utilities/http/caller/`, `src/test/js/` | 이전 caller의 Java/Node 전체 회귀 테스트 |
+| `caller-README.md` | 현재 통합 앱의 caller 사용법 |
+| `caller-project.md`, `caller-command.md` | 이전 개발내역·상세 설계·원래 요구사항 보존 |
+| `caller-implementation-contract.md`, `caller-implementation-plan.md` | 이전 구현 계약·단계별 기록 보존 |
+| `caller-migration.md` | 현재 배치와 원본 보존·검증·삭제 기록 |
+
+과거 설계의 독립 Boot 4/POM/8085/library 관련 내용은 당시 이력이다. 현재 구성은 이 문서와 README를 우선한다. 모든 루트 `caller-*.md`도 실행 JAR의 `META-INF/docs/spring-base-http2-mock/`에 포함한다.
 
 ## 리스너와 프로토콜
 
@@ -24,7 +43,7 @@ HTTP/HTTPS·HTTP/2·SSE·WebSocket과 별도 mock 엔진을 같은 JVM에서 제
 | Netty mock | `127.0.0.1:28080` | `mock.services.netty` |
 | Response REPLY / WAIT / SLOW | `127.0.0.1:28081` / `28082` / `28083` | `mock.services.response.bindings` |
 
-`ProtocolFilter`가 정규화된 servlet path로 경로별 TLS/버전을 검사한다. HTTP의 `/http2/*`는 403, HTTPS에서 HTTP/1.1의 `/http2/*`와 HTTP/2의 `/api/*`는 505를 반환한다.
+`ProtocolFilter`가 정규화된 servlet path로 경로별 TLS/버전을 검사한다. HTTP의 `/http2/*`는 403, HTTPS에서 HTTP/1.1의 `/http2/*`와 HTTP/2의 mock `/api/*`는 505를 반환한다. caller 소유 API는 `CallerRoutes.isApi`로 구분해 HTTP/1.1과 HTTPS HTTP/2를 허용한다.
 SSE는 HTTP/1.1과 HTTPS HTTP/2를 허용한다. WebSocket은 HTTP/1.1 Upgrade 방식이며 WS/WSS를 제공한다. 자동 HTTPS redirect, h2c, HTTP/2 WebSocket은 제공하지 않는다.
 
 ## 엔드포인트
@@ -41,6 +60,9 @@ SSE는 HTTP/1.1과 HTTPS HTTP/2를 허용한다. WebSocket은 HTTP/1.1 Upgrade �
 | `/test/service-engines` | GET | 엔진 설정·상태·바인딩·오류 |
 | `/test/services/{netty\|response}/{start\|stop}` | POST JSON | 엔진별 시작·중지; Origin이 있으면 동일 출처 검사 |
 | `/` | GET | 외부 의존성 없는 브라우저 테스트 콘솔 |
+| `/caller/` | GET | 시나리오 편집·실행·이력 caller 콘솔 |
+| `/api/csrf`, `/api/example`, `/api/status` | GET | caller 세션 토큰·예제·상태 |
+| `/api/scenarios/**`, `/api/runs/**` | REST/SSE | caller 정의·실행·취소·이력·본문·로그·보고서 |
 
 ## Payload 배열 조합 실행
 
@@ -104,11 +126,19 @@ package 단계에 maven-source-plugin의 jar-no-fork를 연결해 sources JAR을
 
 ## 검증과 변경 이력
 
+2026-11-15 푸시 전 재검증: 단일 프로젝트 JDK 17 `verify` 111개 및 Node 26개가 실패·오류·건너뜀 없이 통과했다. 이전 프로젝트 삭제·파일 이관·문서 갱신만 `develop`에 반영하며 데이터·보존본·target 산출물은 제외한다.
+
+2026-11-15 전체 이관 완료: caller Java 30개·Java 테스트 14개·UI 6개·Node 테스트 6개·DB schema·5개 원문 문서를 이 프로젝트로 이관했다. caller POM/library 의존성과 별도 빌드를 제거했다. 단일 프로젝트 JDK 17 verify 111개, Node 26개 통과. 기존 H2 데이터 복사본으로 실행 JAR을 검증했으며 1,052개 전체 원본을 `.migration-archive/caller-original/`에 해시 검증 후 보존하고 이전 프로젝트 디렉터리를 삭제했다. 현재 배치·데이터·문서 대응은 [전체 이관 기록](caller-migration.md)에 정리한다.
+
+2026-11-15 caller 통합 검증: JDK 17에서 caller 전체 55개와 Spring 전체 56개가 실패·오류·건너뜀 없이 통과했다. 최종 라이브러리 재설치 후 화면·CSRF·저장·mock 호출·보고서 및 HTTPS HTTP/2의 caller API 통합 테스트 3개를 재실행해 통과했다. 기존 SSE/WebSocket ISO 시각과 mock 프로토콜 제한을 유지한다. 두 모듈의 Node 회귀 테스트는 26개 통과했다. 실제 executable JAR을 별도 프로세스로 실행해 root 콘솔, caller 화면·자원·CSP, echo, 세션/CSRF와 YAML export/import를 확인했다. library의 독립 서버 설정/root static 제외 및 Markdown 포함을 확인했다.
+
 2026-11-11 푸시 전 재검증: Spring `mvn test -DskipTests=false` 53개, payload PARANOID `verify` 74개, Node 콘솔/decoder 7개 테스트 모두 통과했다. 실패·오류·건너뜀은 없었다. 독립 코드 리뷰에서 중요 정확성 문제는 발견되지 않았다.
 Edge에서 HTTP/HTTPS 프로토콜, SSE/WS 10회 송신, 엔진 제어를 확인했다. 최신 실행 API는 32조합 × 2 threads × 2 loops의 128건 성공, endpointUrl/status만 전송, responseSummaries 제외, 빈 배열 400, 모바일 화면과 JavaScript 오류 없음을 검증했다.
 
 | 날짜 | 완료 내용 |
 | --- | --- |
+| 2026-11-15 | caller 개발내역·설계·소스·테스트·자원·데이터 전체 이관, 별도 모듈 의존성 제거 및 원래 프로젝트 삭제 |
+| 2026-11-15 | request caller를 library로 통합, `/caller/` UI·기존 API·JDBC 저장·보고서, 보안/JSON 설정 격리 및 HTTP/2 caller API 지원 |
 | 2026-11-10 | Spring HTTP/HTTPS·TLS HTTP/2, 시간 SSE/WS, self-signed 인증서, 콘솔, Netty/response 동시 서비스 및 엔진 제어 |
 | 2026-11-10 | payload 생성 기반 백그라운드 POST, SSE 집계, 제한·timeout·취소 |
 | 2026-11-11 | 5개 payload 배열의 전체 조합 실행, SSE 개별 응답 간소화, summary 응답 목록 제거 |

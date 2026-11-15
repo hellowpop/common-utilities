@@ -5,6 +5,14 @@
   <groupId>com.inzent.apim.utilities</groupId><artifactId>spring-base-http2-mock</artifactId><version>1.0.0-SNAPSHOT</version>
   <properties><java.version>17</java.version><netty.version>4.1.139.Final</netty.version><skipTests>true</skipTests><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
   <dependencies>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-jdbc</artifactId></dependency>
+    <dependency><groupId>org.liquibase</groupId><artifactId>liquibase-core</artifactId></dependency>
+    <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-handler</artifactId></dependency>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-transport</artifactId></dependency>
+    <dependency><groupId>org.apache.commons</groupId><artifactId>commons-jexl3</artifactId><version>3.7.1</version></dependency>
+    <dependency><groupId>org.yaml</groupId><artifactId>snakeyaml</artifactId></dependency>
     <dependency><groupId>com.inzent.apim.utilities</groupId><artifactId>http-payload-generator</artifactId><version>1.0.0-SNAPSHOT</version></dependency>
     <dependency><groupId>com.inzent.apim.utilities</groupId><artifactId>netty-http-mock-server</artifactId><version>1.0.0-SNAPSHOT</version><classifier>library</classifier></dependency>
     <dependency><groupId>com.inzent.apim.utilities</groupId><artifactId>http-mock-response-server</artifactId><version>1.0.0-SNAPSHOT</version></dependency>
@@ -17,7 +25,8 @@
       <resource><directory>${project.basedir}</directory><targetPath>META-INF/docs/${project.artifactId}</targetPath><includes><include>*.md</include></includes><filtering>false</filtering></resource>
     </resources>
     <plugins>
-      <plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin>
+      <plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId><configuration><mainClass>com.inzent.apim.utilities.http2mock.MockApplication</mainClass></configuration></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><configuration><argLine>-XX:ActiveProcessorCount=4 -Dio.netty.leakDetection.level=paranoid</argLine></configuration></plugin>
       <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-source-plugin</artifactId><version>3.4.0</version><executions><execution><id>attach-sources</id><phase>package</phase><goals><goal>jar-no-fork</goal></goals></execution></executions></plugin>
     </plugins>
   </build>

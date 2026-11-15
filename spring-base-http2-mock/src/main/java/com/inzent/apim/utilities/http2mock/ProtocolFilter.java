@@ -1,6 +1,7 @@
 package com.inzent.apim.utilities.http2mock;
 
 import java.io.IOException;
+import com.inzent.apim.utilities.http.caller.web.CallerRoutes;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -20,7 +21,7 @@ public class ProtocolFilter
 		String path = request.getServletPath();
 		if (path.startsWith("/http2/") && !request.isSecure()) {
 			reject(response, 403, "HTTPS required for /http2/*");
-		} else if (path.startsWith("/api/") && !"HTTP/1.1".equals(request.getProtocol())) {
+		} else if (path.startsWith("/api/") && !CallerRoutes.isApi(path) && !"HTTP/1.1".equals(request.getProtocol())) {
 			reject(response,
 			       505,
 			       "HTTP/1.1 required");

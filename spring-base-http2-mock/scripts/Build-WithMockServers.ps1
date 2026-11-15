@@ -13,8 +13,7 @@ foreach ($moduleName in @('http-payload-generator', 'netty-http-mock-server', 'h
     if ($LASTEXITCODE -ne 0) { throw "$moduleName installation failed" }
 }
 if ($RunTests -and (Get-Command node -ErrorAction SilentlyContinue)) {
-    & node --test (Join-Path $moduleDirectory 'src/test/js/test-console.test.cjs')
-    if ($LASTEXITCODE -ne 0) { throw 'Browser console lifecycle tests failed' }
-    & node --test (Join-Path $moduleDirectory 'src/test/js/execute-console.test.cjs')
-    if ($LASTEXITCODE -ne 0) { throw 'Execution SSE decoder tests failed' }
+    $frontendTests = @(Get-ChildItem -LiteralPath (Join-Path $moduleDirectory 'src/test/js') -Filter '*.test.cjs' | Sort-Object Name | ForEach-Object FullName)
+    & node --test @frontendTests
+    if ($LASTEXITCODE -ne 0) { throw 'Mock and caller frontend tests failed' }
 }

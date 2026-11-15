@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HTTP Mock Request Caller</title><link rel="stylesheet" href="/caller/app.css"><script src="/caller/json-view.js" defer></script><script src="/caller/path-model.js" defer></script><script src="/caller/path-ui.js" defer></script><script src="/caller/app.js" defer></script></head>
+<body>
+<header class="top"><a class="brand" href="/"><span class="mark">↗</span><span>REQUEST CALLER<small>HTTP MOCK · SCENARIO WORKBENCH</small></span></a><span id="connection" class="pill">연결 중</span></header>
+<div class="workspace">
+<aside><div class="aside-head"><h2>시나리오</h2><button id="new" class="icon" title="새 시나리오">＋</button></div><button id="yaml-open" class="subtle" aria-haspopup="dialog">YAML로 시나리오 추가</button><input id="scenario-search" placeholder="제목으로 검색" aria-label="시나리오 제목 검색"><div id="scenarios" class="scenario-list"></div><button id="scenario-more" class="subtle">다음 페이지</button><div class="aside-note">독립 실행 · HTTP/1.1 / HTTPS<br>Netty 전송 · JEXL hooks</div></aside>
+<main>
+<div class="intro"><div><span class="eyebrow">BUILD. EXECUTE. INSPECT.</span><h1>요청을 설계하고,<br>결과를 확인하세요.</h1><p>시나리오와 payload 조합을 관리하고 worker별 실행을 추적합니다.</p></div><div class="intro-icon" aria-hidden="true">{↗}</div></div>
+<div id="message" role="status" hidden></div>
+<nav class="tabs"><button id="edit-tab" class="selected">시나리오 편집</button><button id="history-tab">실행 이력</button><button id="detail-tab">실행 상세</button></nav>
+<section id="editor" class="panel">
+<div class="section-title"><div><span class="eyebrow">SCENARIO CONFIGURATION</span><h2 id="editor-title">새 시나리오</h2></div><span id="version" class="muted">저장 전</span></div>
+<div class="fields"><label>제목<input id="title" maxlength="200"></label><label>Endpoint base URL<input id="base" type="url"></label><label>Max workers<input id="workers" type="number" min="1" max="32"></label><label>Ramp-up (초)<input id="ramp" type="number" min="0" step="0.1"></label><label>실행 기준<select id="execution-mode"><option value="LOOPS">반복 횟수</option><option value="DURATION">실행 시간</option></select></label><label>Loop count<input id="loops" type="number" min="1" step="1"></label><label>실행 시간 (초)<input id="duration" type="number" min="1" max="86400" step="1"></label><label>본문 보관<select id="retention"><option value="FAILURES">실패 요청만</option><option value="NONE">보관 안 함</option><option value="ALL">전체 요청</option></select></label></div>
+<input id="definition" type="hidden">
+<section class="path-section" aria-labelledby="path-grid-title">
+  <div class="path-section-title"><div><h3 id="path-grid-title">요청 Path 목록</h3><p class="hint">행 또는 조회 / 편집 버튼을 누르면 등록된 내용을 확인할 수 있습니다. 표 순서대로 요청을 실행합니다.</p></div><span id="path-count" class="pill">0 / 100</span></div>
+  <div class="table-wrap path-grid"><table aria-label="시나리오 요청 Path 목록"><thead><tr><th scope="col">순서</th><th scope="col">이름</th><th scope="col">메서드</th><th scope="col">요청 Base URL</th><th scope="col">요청 Path</th><th scope="col">조합 수</th><th scope="col">요청 간격</th><th scope="col">상세</th></tr></thead><tbody id="path-rows"></tbody></table></div>
+  <div class="path-grid-footer"><button id="path-add" type="button" aria-haspopup="dialog">추가</button><span class="muted">추가·수정 후 시나리오 저장을 눌러 서버에 반영하세요.</span></div>
+</section>
+<p class="hint scenario-json-hint">전체 설정과 시나리오/worker 스크립트·로그 설정은 하단의 전문보기에서도 편집할 수 있습니다.</p>
+<details><summary>스크립트와 payload 설정 도움말</summary><p>각 path의 chunked, contentType, contentEncoding, contentLength, blockSize는 배열입니다. 각 worker가 전체 조합을 반복합니다. scenarioHooks / workerHooks / pathHooks / requestHooks에 pre, post를 지정하세요.</p><pre>worker.vars.put('token', 'test');
+exchange.request.setHeader('X-Token', worker.vars.get('token'));
+exchange.request.body = 'replacement text';
+exchange.assertSuccess(exchange.response.status == 200, 'expected 200');</pre><p>GET/HEAD는 contentLength:[0], contentEncoding:["IDENTITY"], chunked:[false]를 사용합니다. 본문은 작은 UTF-8 텍스트만 script에 노출되며 큰 본문은 artifact로 조회합니다. 실제 응답은 post 수정 전 원본으로 저장됩니다.</p></details>
+<div class="actions"><button id="save" class="primary">시나리오 저장</button><button id="validate">저장본 검증</button><button id="start" class="execute">▶ 실행</button><button id="delete" class="danger">삭제</button><button id="json-open" aria-haspopup="dialog">전문보기</button><button id="yaml-download">전문 다운로드</button><span id="estimate" class="muted"></span></div>
+</section>
+<section id="history" class="panel" hidden><div class="section-title"><div><span class="eyebrow">EXECUTION HISTORY</span><h2>실행 이력</h2></div><button id="refresh-history">새로고침</button></div><div class="filters"><label>실행 제목<input id="history-title" placeholder="실행 당시 제목"></label><label>시작 (현지 시간)<input id="from" type="datetime-local"></label><label>종료<input id="to" type="datetime-local"></label><label>상태<select id="history-status"><option value="">전체</option><option>RUNNING</option><option>COMPLETED</option><option>FAILED</option><option>CANCELLED</option><option>INTERRUPTED</option></select></label></div><div class="table-wrap"><table><thead><tr><th>제목 / 실행 ID</th><th>시작 시간</th><th>상태</th><th>완료 / 계획</th><th>실패</th></tr></thead><tbody id="history-rows"></tbody></table></div><div class="pager"><button id="history-prev">이전</button><span id="history-page">1</span><button id="history-next">다음</button></div></section>
+<section id="detail" class="panel" hidden><div class="section-title"><div><span class="eyebrow">LIVE EXECUTION</span><h2 id="run-title">실행을 선택하세요</h2></div><span id="run-status" class="pill">—</span></div><div id="run-meta" class="muted"></div><div class="progress"><div id="progress-bar"></div></div><p id="run-duration" class="hint" hidden></p><div class="metrics" id="metrics"></div><div class="actions"><button id="cancel" class="danger">실행 취소</button><a id="report" class="button" hidden>HTML 보고서 다운로드</a><button id="refresh-results">결과 새로고침</button></div><p id="run-error" class="error"></p><h3>Worker 타임라인</h3><div id="worker-cards" class="worker-cards"></div><div class="summary-grid"><div><h3>상태 코드 · 오류</h3><pre id="run-stats"></pre></div><div><h3>지연 · 처리량</h3><pre id="latency"></pre></div></div><h3>Path별 결과</h3><pre id="path-stats"></pre><h3>단위 요청</h3><label class="check"><input id="fail-only" type="checkbox"> 실패 요청만 보기</label><div class="table-wrap"><table><thead><tr><th>Path / 요청 ID</th><th>Worker</th><th>HTTP</th><th>결과</th><th>소요 시간</th></tr></thead><tbody id="request-rows"></tbody></table></div><div class="pager"><button id="request-prev">이전</button><span id="request-page">1</span><button id="request-next">다음</button></div><div id="request-artifacts" class="actions"></div><pre id="request-detail"></pre><details><summary>Hook 실행 기록과 생략 정보</summary><pre id="hook-detail"></pre></details><details><summary>실행 로그</summary><div class="actions"><label>Worker (빈 값은 control)<input id="log-worker" type="number" min="1" max="32"></label><button id="load-logs">조회</button></div><pre id="log-content"></pre></details></section>
+<footer>HTTP Mock Request Caller · 시나리오 정의와 실행 이력은 서버에 저장됩니다.</footer>
+</main></div>
+<dialog id="json-dialog" class="json-modal" aria-labelledby="json-dialog-title" aria-describedby="json-dialog-hint">
+  <div class="json-dialog-header"><div><span class="eyebrow">SCENARIO JSON</span><h2 id="json-dialog-title">시나리오 전문보기</h2></div><button id="json-close" class="icon" aria-label="전문보기 닫기">×</button></div>
+  <div class="json-dialog-intro"><p id="json-dialog-hint" class="hint">수정 후 적용하면 편집창에 반영됩니다. 서버 저장은 시나리오 저장 버튼을 사용하세요.</p><div class="json-legend" aria-label="JSON 색상 안내"><span class="json-brace">{ } [ ] 괄호</span><span class="json-key">키</span><span class="json-string">문자열 값</span><span class="json-number">숫자 값</span><span class="json-literal">boolean · null</span></div></div>
+  <div class="json-editor"><pre id="json-highlight" class="json-highlight" aria-hidden="true"><code id="json-code"></code></pre><textarea id="json-draft" aria-label="전체 시나리오 JSON" spellcheck="false" wrap="off" autocapitalize="off" autocomplete="off"></textarea></div>
+  <p id="json-error" class="error json-dialog-error" role="alert" hidden></p>
+  <div class="json-dialog-footer"><button id="format">JSON 정렬</button><span class="muted">Esc 닫기 · Ctrl/⌘ + Enter 적용</span><div class="json-dialog-buttons"><button id="json-cancel">취소</button><button id="json-apply" class="primary">적용</button></div></div>
+</dialog>
+<dialog id="path-dialog" class="json-modal path-modal" aria-labelledby="path-dialog-title" aria-describedby="path-dialog-hint">
+  <div class="json-dialog-header"><div><span class="eyebrow">REQUEST PATH</span><h2 id="path-dialog-title">Path 추가</h2></div><button id="path-close" class="icon" type="button" aria-label="Path 편집 닫기">×</button></div>
+  <div class="path-dialog-intro"><p id="path-dialog-hint" class="hint">기본 정보와 payload 조합을 입력하세요. 이 레이어의 추가/적용은 편집 중인 시나리오에 반영되며, 서버 저장은 별도입니다.</p><span id="path-record-id" class="muted"></span></div>
+  <form id="path-form" class="path-form">
+    <div id="path-form-body" class="path-form-body">
+      <section class="path-form-section"><h3>기본 요청 정보</h3><div class="path-fields">
+        <label>Path 이름<input id="path-name" maxlength="200" required></label>
+        <label>HTTP 메서드<select id="path-method"></select></label>
+        <label class="path-wide">요청 Base URL (선택)<input id="path-url" type="url" maxlength="8192"><span class="hint">비워 두면 시나리오의 endpoint base URL을 사용합니다.</span></label>
+        <label class="path-wide">요청 Path<input id="path-request-path" maxlength="8192" placeholder="/orders?test=true"><span class="hint">/로 시작하는 경로와 query를 입력합니다. base URL의 prefix는 유지됩니다.</span></label>
+        <label>성공 상태 코드 시작<input id="path-status-min" type="number" min="100" max="599" required></label>
+        <label>성공 상태 코드 종료<input id="path-status-max" type="number" min="100" max="599" required></label>
+      </div></section>
+      <section class="path-form-section"><div class="path-section-title"><h3>Payload 조합</h3><span id="path-combinations" class="pill"></span></div><p class="hint">각 항목을 복수 선택하면 모든 조합을 실행합니다. GET/HEAD는 길이 0 · IDENTITY · fixed-length만 허용합니다.</p>
+        <fieldset><legend>전송 방식</legend><div id="path-framing" class="path-options"></div></fieldset>
+        <fieldset><legend>Content-Type</legend><div id="path-types" class="path-options"></div></fieldset>
+        <fieldset><legend>Content-Encoding</legend><div id="path-encodings" class="path-options"></div></fieldset>
+        <div class="path-fields"><label>Content length (bytes, 쉼표로 구분)<input id="path-lengths" required maxlength="32768" placeholder="4096, 8192"></label><label>Block size (bytes, 쉼표로 구분)<input id="path-blocks" required maxlength="32768" placeholder="128, 256"></label></div>
+      </section>
+      <section class="path-form-section"><h3>동일 Path 요청 간격</h3><p class="hint">Worker별 이전 요청의 후처리 완료 후부터 다음 동일 Path 요청까지 적용합니다. 첫 요청은 즉시 전송하며, 다른 Path 실행 시간도 간격에 포함됩니다.</p><div class="path-fields">
+        <label>간격 모드<select id="path-delay-mode"><option value="NONE">없음</option><option value="FIXED">고정</option><option value="RANDOM">랜덤 (양 끝 포함)</option></select></label>
+        <label>고정 간격 (ms)<input id="path-delay-fixed" type="number" min="0" max="600000" step="1" required></label>
+        <label>최소 간격 (ms)<input id="path-delay-min" type="number" min="0" max="600000" step="1" required></label>
+        <label>최대 간격 (ms)<input id="path-delay-max" type="number" min="0" max="600000" step="1" required></label>
+      </div></section>
+      <section class="path-form-section"><h3>추가 요청 헤더</h3><p class="hint">이름: 값 형식으로 한 줄씩 입력합니다. 같은 이름을 여러 줄 입력하면 다중 값으로 보존합니다. Content-Type과 전송 길이 등은 엔진이 관리합니다.</p><textarea id="path-headers" class="path-textarea path-header-input" aria-label="추가 요청 헤더" spellcheck="false" maxlength="32768" placeholder="X-Test: mock&#10;X-Tag: first&#10;X-Tag: second"></textarea></section>
+      <details id="path-hook-section" class="path-form-section"><summary>Path / Request 전·후처리 스크립트</summary><p class="hint">Path는 해당 path의 전체 조합 전후, Request는 각 단위 요청 전후에 실행합니다.</p><div class="path-fields">
+        <label>Path pre<textarea id="path-pre" class="path-textarea" spellcheck="false" maxlength="32768"></textarea></label><label>Path post<textarea id="path-post" class="path-textarea" spellcheck="false" maxlength="32768"></textarea></label>
+        <label>Request pre<textarea id="path-request-pre" class="path-textarea" spellcheck="false" maxlength="32768"></textarea></label><label>Request post<textarea id="path-request-post" class="path-textarea" spellcheck="false" maxlength="32768"></textarea></label>
+      </div></details>
+    </div>
+    <p id="path-error" class="error json-dialog-error" role="alert" hidden></p>
+    <div class="json-dialog-footer path-dialog-footer"><span class="muted">취소·닫기·Esc는 변경 내용을 반영하지 않습니다.</span><div class="json-dialog-buttons"><button id="path-copy" type="button">복사</button><button id="path-cancel" type="button">취소</button><button id="path-apply" type="submit" class="primary">추가</button></div></div>
+  </form>
+</dialog>
+<dialog id="yaml-dialog" class="json-modal yaml-modal" aria-labelledby="yaml-dialog-title">
+  <div class="json-dialog-header"><div><span class="eyebrow">SCENARIO IMPORT</span><h2 id="yaml-dialog-title">YAML로 시나리오 추가</h2></div><button id="yaml-close" type="button" class="icon" aria-label="YAML 가져오기 닫기">×</button></div>
+  <div class="yaml-body"><p class="hint">다운로드한 .yml 파일을 선택하거나 YAML 전문을 붙여넣으세요. 기존 시나리오를 변경하지 않고 새 시나리오의 입력값으로 불러옵니다.</p>
+    <label>YAML 파일<input id="yaml-file" type="file" accept=".yml,.yaml,application/yaml,text/yaml"></label>
+    <label>YAML 전문<textarea id="yaml-input" class="path-textarea" spellcheck="false" maxlength="1048576" placeholder="title: HTTP scenario&#10;endpointBaseUrl: http://localhost:8080&#10;paths: ..."></textarea></label>
+    <p id="yaml-error" class="error" role="alert"></p>
+  </div>
+  <div class="json-dialog-footer"><span class="muted">검증 후 편집창에 반영됩니다. 저장은 별도로 진행하세요.</span><div class="json-dialog-buttons"><button id="yaml-cancel" type="button">취소</button><button id="yaml-import" type="button" class="primary">불러오기</button></div></div>
+</dialog>
+</body></html>

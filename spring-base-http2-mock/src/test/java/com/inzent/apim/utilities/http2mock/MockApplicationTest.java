@@ -33,6 +33,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest(classes = MockApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"mock.http.port=0", "mock.services.netty.enabled=false", "mock.services.response.enabled=false"})
 class MockApplicationTest {
+    @Test void callerApiWorksFromHttpsHttp2Console() throws Exception {
+        var response = request("/api/example", HttpClient.Version.HTTP_2, "GET");
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.version()).isEqualTo(HttpClient.Version.HTTP_2);
+        assertThat(json.readTree(response.body()).path("paths").isArray()).isTrue();
+    }
     @LocalServerPort int port;
     @Autowired ServletWebServerApplicationContext serverContext;
     final ObjectMapper json = new ObjectMapper();

@@ -9,12 +9,12 @@ Java 17 이상에서 실행하는 Spring Boot 3.5.16 기반 HTTP/1.1 · HTTP/2(T
 프로젝트 디렉터리에서 실행한다.
 
 ```powershell
-# 최초 빌드: payload generator와 두 mock 모듈을 먼저 설치하고 Spring 앱을 빌드한다(테스트 실행 생략).
+# 최초 빌드: payload와 두 mock 서버를 먼저 설치하고 caller를 포함한 Spring 앱을 빌드한다.
 ./scripts/Build-WithMockServers.ps1
 java -jar target/spring-base-http2-mock-1.0.0-SNAPSHOT.jar
 ```
 
-네 모듈의 테스트까지 실행하려면 `./scripts/Build-WithMockServers.ps1 -RunTests`를 사용한다. Node.js가 설치되어 있으면 콘솔 JavaScript 테스트도 실행한다.
+네 모듈의 테스트까지 실행하려면 `./scripts/Build-WithMockServers.ps1 -RunTests`를 사용한다. Node.js가 설치되어 있으면 caller와 mock 콘솔 JavaScript 테스트도 실행한다.
 의존 모듈이 설치된 이후에는 이 모듈에서 일반 `mvn package`를 사용할 수 있다. 실행 중 JAR을 Windows에서 다시 빌드하려면 해당 서버를 먼저 종료한다.
 
 기본 주소는 HTTP `http://localhost:8080`, HTTPS `https://localhost:8443`이다.
@@ -34,6 +34,18 @@ node --test src/test/js/execute-console.test.cjs
 
 `skipTests=true`가 기본값이므로 package도 테스트 실행을 생략한다. 테스트 컴파일은 수행한다.
 package는 실행 JAR과 `*-sources.jar`를 만든다. 루트의 `README.md`, `project.md` 등 `*.md`는 JAR의 `META-INF/docs/spring-base-http2-mock/`에 포함된다.
+
+## Request Caller 통합 사용
+
+Spring 앱 하나만 실행하고 [Request Caller](http://localhost:8080/caller/)를 열거나 기존 콘솔 상단의 **Request Caller 열기**를 누른다. caller는 이 프로젝트에 소스·테스트·UI·DB 스키마까지 모두 내장되어 별도 프로젝트·library JAR·8085 프로세스가 필요 없다. HTTPS `https://localhost:8443/caller/`에서도 사용할 수 있다.
+
+시나리오 편집·YAML 가져오기/다운로드·반복/시간 기준 실행·취소·진행 SSE·이력·요청 본문·로그·HTML 보고서를 제공한다. 세부 사용법과 JSON 예제는 [caller 사용법](caller-README.md), 설계·개발내역은 [caller 설계](caller-project.md), 전체 파일 이관은 [이관 기록](caller-migration.md)을 참고한다. 테스트 대상으로 `http://127.0.0.1:8080` + `/api/echo`, Netty `http://127.0.0.1:28080`, response `http://127.0.0.1:28081`를 지정할 수 있다.
+
+API는 기존 caller의 `/api/csrf`, `/api/example`, `/api/status`, `/api/scenarios/**`, `/api/runs/**`를 유지한다. 변경 요청은 `/api/csrf`에서 받은 세션 쿠키와 `X-CSRF-Token`을 함께 전달한다. caller 화면/API에만 보안 필터를 적용하며 기존 mock 요청은 종전대로 호출한다. caller API는 HTTP/1.1과 HTTPS HTTP/2를 지원하고 기존 mock `/api/*`의 HTTP/1.1 제한은 유지한다.
+
+기본 저장 위치는 **실행 디렉터리의 `data/caller/`**다. DB는 `data/caller/db/caller`, 본문·journal·로그는 같은 데이터 디렉터리 아래에 저장한다. `--caller.data-directory=D:/mock-data/caller`로 변경하면 기본 H2 URL도 해당 경로를 따른다. 외부 DB는 `spring.datasource.*`, DB 암호는 `CALLER_DB_PASSWORD`, 실행 한도는 `caller.*`로 설정한다. 스키마는 CallerStore가 Liquibase로 초기화하므로 `spring.liquibase.enabled=false`를 유지한다.
+
+기존 caller의 로컬 데이터는 이 프로젝트의 `data/caller/`로 복사했다. 기존 프로젝트 디렉터리 전체의 검증된 보존본은 `.migration-archive/caller-original/`에 있으며 Git과 빌드 산출물에서 제외한다. `mvn clean`으로 이 보존본이나 runtime data가 삭제되지 않는다. 두 프로세스가 같은 H2 파일/데이터 디렉터리를 동시에 열지 않도록 한다. Spring 앱 종료 시 caller 실행과 전송·스크립트·SSE 자원도 정리한다.
 
 ## 여러 Mock 서버 동시 서비스
 

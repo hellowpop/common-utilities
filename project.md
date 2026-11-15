@@ -1,5 +1,11 @@
 # Common Utilities
 
+2026-11-15 사용자 푸시 요청: caller 전체 이관 및 독립 프로젝트 삭제 변경을 `develop`에서 `origin/develop`으로 반영한다. 푸시 전 JDK 17 Java 111개와 Node 26개 재검증 통과. 관련 소스·테스트·문서만 커밋하며 로컬 데이터·로그·원본 보존본·빌드 산출물은 제외한다.
+
+2026-11-15 최종 이관: `http-mock-request-caller`의 모든 소스·테스트·UI·DB schema·설계·개발내역을 `spring-base-http2-mock` 내부로 이전하고 이전 프로젝트 디렉터리와 Maven 의존성을 제거했다. 단일 프로젝트 Java 111개·Node 26개와 기존 데이터 복사본의 실제 JAR 기동을 검증했다. 기존 runtime 데이터는 `spring-base-http2-mock/data/caller/`, 원본 1,052개 파일 전체는 `.migration-archive/caller-original/`에 검증 후 보존했다. [현재 구성](spring-base-http2-mock/project.md), [상세 이관 기록](spring-base-http2-mock/caller-migration.md), [caller 사용법](spring-base-http2-mock/caller-README.md). 아래의 독립 프로젝트/library 관련 내용은 이전 단계 이력이다.
+
+2026-11-15: `http-mock-request-caller`를 `spring-base-http2-mock`에 library classifier로 통합했다. 단일 JVM에서 `/caller/` 시나리오 콘솔과 저장·실행·취소·SSE·보고서를 제공한다. 기존 root mock 콘솔·API·ISO 시각 및 standalone caller를 유지하며 두 모듈 README/project 문서를 갱신했다. JDK 17 Java 111개와 Node 26개, 최종 통합 재검증 3개 및 executable JAR의 UI/CSRF/YAML 확인을 통과했다. commit/push는 수행하지 않았다.
+
 ## 프로젝트 기준 경로
 
 - 프로젝트 루트: `C:\Develop\codex-project\common-utilities`
@@ -25,9 +31,9 @@
 
 - 2026-11-15: 사용자 요청에 따라 HTTP Mock Request Caller의 구현·테스트·문서를 develop에 커밋하여 origin/develop에 반영한다. 좌측 메뉴 독립 스크롤, 가변 본문 너비와 전문보기 JSON 레이어·색상 구분을 포함한다. 푸시 전 기술문서를 갱신하고 Java 17 verify 및 JSON 테스트를 재검증하며 빌드 산출물·실행 데이터는 제외한다.
 
-- 2026-11-12: `http-mock-request-caller` 독립 Spring Boot/Java 17 앱을 구현했다. Netty HTTP/HTTPS, payload 조합, worker/ramp-up·취소, JEXL hooks, JDBC/Liquibase 이력, 실행별 rolling 로그, 진행 SSE와 정적 콘솔 및 offline HTML 보고서를 제공한다. [구성/검증](http-mock-request-caller/project.md), [사용법](http-mock-request-caller/README.md). Java 17 clean verify 36개 테스트 통과, 실제 JAR의 브라우저 저장·실행·보고서 다운로드와 sources/Markdown 패키징 및 install 테스트 생략을 확인했다. 커밋/push는 수행하지 않았다.
+- 2026-11-12: `http-mock-request-caller` 독립 Spring Boot/Java 17 앱을 구현했다. Netty HTTP/HTTPS, payload 조합, worker/ramp-up·취소, JEXL hooks, JDBC/Liquibase 이력, 실행별 rolling 로그, 진행 SSE와 정적 콘솔 및 offline HTML 보고서를 제공한다. [구성/검증](spring-base-http2-mock/caller-project.md), [사용법](spring-base-http2-mock/caller-README.md). Java 17 clean verify 36개 테스트 통과, 실제 JAR의 브라우저 저장·실행·보고서 다운로드와 sources/Markdown 패키징 및 install 테스트 생략을 확인했다. 커밋/push는 수행하지 않았다.
 
-- 2026-11-12: `http-mock-request-caller/command.md`를 기준으로 [구현 설계](http-mock-request-caller/project.md)를 작성했다. 독립 Spring Boot 웹 앱, Netty 전송과 payload 배열 조합, worker/ramp-up, 네 레벨 JEXL hook, 실행 이력·진행 집계, 개별 rolling 로그 및 HTML 보고서의 계약과 검증 계획을 정리했다. 구현 전 문서 작업이며 소스·POM 생성, 빌드·기능 테스트, 커밋/push는 수행하지 않았다.
+- 2026-11-12: `http-mock-request-caller/command.md`를 기준으로 [구현 설계](spring-base-http2-mock/caller-project.md)를 작성했다. 독립 Spring Boot 웹 앱, Netty 전송과 payload 배열 조합, worker/ramp-up, 네 레벨 JEXL hook, 실행 이력·진행 집계, 개별 rolling 로그 및 HTML 보고서의 계약과 검증 계획을 정리했다. 구현 전 문서 작업이며 소스·POM 생성, 빌드·기능 테스트, 커밋/push는 수행하지 않았다.
 
 - 2026-11-11: [spring-base-http2-mock 구성](spring-base-http2-mock/project.md)과 [사용법](spring-base-http2-mock/README.md)을 현재 기능 중심으로 정리했다. HTTP/HTTPS·TLS HTTP/2·SSE·WebSocket, Netty/response 엔진 동시 서비스·제어와 payload 배열 조합 백그라운드 요청을 제공한다. `/api/execute-mock-request`의 개별 SSE는 endpointUrl/status만 전달하며 최종 summary는 responseSummaries를 제외한다. [http-payload-generator](http-payload-generator/project.md)에 압축 생성 interrupt 취소를 추가했다.
 
