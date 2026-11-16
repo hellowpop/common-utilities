@@ -1,5 +1,7 @@
 # MockClientContext 개선 설계 및 구현 계획
 
+이 문서는 이전 response 모듈의 설계·분석 이력이다. 현재 소유 프로젝트는 `spring-base-http2-mock`이며 별도 response Maven 모듈을 사용하지 않는다. 현재 빌드·설정은 [통합 사용법](README.md), [response 사용법](response-README.md), [이관 기록](response-migration.md)을 따른다. 아래의 이전 경로·좌표·검증 수치는 당시 기록이다.
+
 - 날짜: 2026-10-23
 - Java 17, 외부 런타임 의존성 추가 없음. 기존 develop 작업과 분석 문서 보존.
 - 사용자 지시대로 확인 질문 없이 구현한다. writing-plans/TDD 흐름으로 현재 세션에서 직접 수행하며 커밋/push는 하지 않는다.

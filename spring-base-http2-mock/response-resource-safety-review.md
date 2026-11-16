@@ -1,5 +1,7 @@
 # HTTP Mock Response Server 자원 누수 / NPE 분석
 
+이 문서는 이전 response 모듈의 설계·분석 이력이다. 현재 소유 프로젝트는 `spring-base-http2-mock`이며 별도 response Maven 모듈을 사용하지 않는다. 현재 빌드·설정은 [통합 사용법](README.md), [response 사용법](response-README.md), [이관 기록](response-migration.md)을 따른다. 아래의 이전 경로·좌표·검증 수치는 당시 기록이다.
+
 - 분석일: 2026-10-22
 - 대상: 커밋 a6bf160의 http-mock-response-server
 - 환경: Windows, JDK 17.0.10, Maven 3.9.11
@@ -163,7 +165,7 @@ PowerShell에서 실행한다.
 
 ### 독립 probe
 
-소스: [analysis/SafetyProbe.java](analysis/SafetyProbe.java)
+소스: [analysis/SafetyProbe.java](analysis/response-server/SafetyProbe.java)
 
     New-Item -ItemType Directory -Force http-mock-response-server/target/safety-probe | Out-Null
     & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp http-mock-response-server/target/classes -d http-mock-response-server/target/safety-probe http-mock-response-server/analysis/SafetyProbe.java

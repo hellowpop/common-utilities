@@ -9,7 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import static com.inzent.apim.utilities.http.mockserver.HttpReceiveState.*;
+
 
 /** Connection-local, incremental HTTP/1 request decoder. Never owns a socket or stream. */
 final class HttpRequestDecoder {
@@ -31,10 +31,10 @@ final class HttpRequestDecoder {
     private Map<String, List<String>> frozenHeaders = Map.of();
     private Map<String, List<String>> frozenTrailers = Map.of();
     private HttpContentBuffer content = new HttpContentBuffer();
-    private HttpReceiveState initialState = NOT_REACHED;
-    private HttpReceiveState headerState = NOT_REACHED;
-    private HttpReceiveState contentState = NOT_REACHED;
-    private HttpReceiveState trailerState = NOT_REACHED;
+    private HttpReceiveState initialState = HttpReceiveState.NOT_REACHED;
+    private HttpReceiveState headerState = HttpReceiveState.NOT_REACHED;
+    private HttpReceiveState contentState = HttpReceiveState.NOT_REACHED;
+    private HttpReceiveState trailerState = HttpReceiveState.NOT_REACHED;
     private HttpProtocolResult result = HttpProtocolResult.empty();
     private boolean failed;
 
@@ -44,23 +44,23 @@ final class HttpRequestDecoder {
     HttpProtocolResult feed(ByteBuffer input) throws IOException {
         Objects.requireNonNull(input);
         requireOpen();
-        var completed = new ArrayList<HttpRequestSnapshot>();
+        java.util.ArrayList<com.inzent.apim.utilities.http.mockserver.HttpRequestSnapshot> completed = new ArrayList<HttpRequestSnapshot>();
         try {
             while (input.hasRemaining()) {
                 if (phase == Phase.DONE) resetRequest();
                 int value = input.get() & 0xff;
                 switch (phase) {
                     case INITIAL -> {
-                        initialState = RECEIVING;
+                        initialState = HttpReceiveState.RECEIVING;
                         String text = readLine(value);
                         if (text != null) {
                             parseInitialLine(text);
-                            initialState = COMPLETE;
+                            initialState = HttpReceiveState.COMPLETE;
                             phase = Phase.HEADERS;
                         }
                     }
                     case HEADERS -> {
-                        headerState = RECEIVING;
+                        headerState = HttpReceiveState.RECEIVING;
                         if (headerBytes == limits.headerBytes()) throw invalid("Header section exceeds byte limit");
                         headerBytes++;
                         String text = readLine(value);
@@ -70,12 +70,12 @@ final class HttpRequestDecoder {
                         }
                     }
                     case FIXED -> {
-                        contentState = RECEIVING;
+                        contentState = HttpReceiveState.RECEIVING;
                         content.write(value);
-                        if (--remaining == 0) { contentState = COMPLETE; phase = Phase.DONE; }
+                        if (--remaining == 0) { contentState = HttpReceiveState.COMPLETE; phase = Phase.DONE; }
                     }
                     case CHUNK_SIZE -> {
-                        contentState = RECEIVING;
+                        contentState = HttpReceiveState.RECEIVING;
                         countChunkFraming();
                         String text = readLine(value);
                         if (text != null) readChunkSize(text);
@@ -95,12 +95,12 @@ final class HttpRequestDecoder {
                         phase = Phase.CHUNK_SIZE;
                     }
                     case TRAILERS -> {
-                        trailerState = RECEIVING;
+                        trailerState = HttpReceiveState.RECEIVING;
                         if (trailerBytes == limits.headerBytes()) throw invalid("Trailer section exceeds byte limit");
                         trailerBytes++;
                         String text = readLine(value);
                         if (text != null) {
-                            if (text.isEmpty()) { trailerState = COMPLETE; phase = Phase.DONE; }
+                            if (text.isEmpty()) { trailerState = HttpReceiveState.COMPLETE; phase = Phase.DONE; }
                             else parseField(text, trailers, true);
                         }
                     }
@@ -162,7 +162,7 @@ final class HttpRequestDecoder {
         else frozenHeaders = null;
     }
     private void finishHeaders() throws IOException {
-        headerState = COMPLETE;
+        headerState = HttpReceiveState.COMPLETE;
         List<String> host = headers.get("host");
         if ((host != null && (host.size() != 1 || host.get(0).isEmpty()))
                 || (initialLine.endsWith("HTTP/1.1") && host == null))
@@ -188,8 +188,8 @@ final class HttpRequestDecoder {
             }
         }
         remaining = count == null ? 0 : count;
-        trailerState = NOT_APPLICABLE;
-        if (remaining == 0) { contentState = NOT_APPLICABLE; phase = Phase.DONE; }
+        trailerState = HttpReceiveState.NOT_APPLICABLE;
+        if (remaining == 0) { contentState = HttpReceiveState.NOT_APPLICABLE; phase = Phase.DONE; }
         else phase = Phase.FIXED;
     }
     private void readChunkSize(String text) throws IOException {
@@ -197,7 +197,7 @@ final class HttpRequestDecoder {
         while (index < text.length() && hex(text.charAt(index)) >= 0) index++;
         remaining = number(text.substring(0, index), 16, limits.contentBytes() - content.size());
         validateExtensions(text, index);
-        if (remaining == 0) { contentState = COMPLETE; phase = Phase.TRAILERS; }
+        if (remaining == 0) { contentState = HttpReceiveState.COMPLETE; phase = Phase.TRAILERS; }
         else phase = Phase.CHUNK_DATA;
     }
     private static void validateExtensions(String text, int index) throws IOException {
@@ -278,7 +278,7 @@ final class HttpRequestDecoder {
     private void resetRequest() {
         phase = Phase.INITIAL;
         initialLine = "";
-        initialState = headerState = contentState = trailerState = NOT_REACHED;
+        initialState = headerState = contentState = trailerState = HttpReceiveState.NOT_REACHED;
         headers = new LinkedHashMap<>();
         trailers = new LinkedHashMap<>();
         frozenHeaders = frozenTrailers = Map.of();

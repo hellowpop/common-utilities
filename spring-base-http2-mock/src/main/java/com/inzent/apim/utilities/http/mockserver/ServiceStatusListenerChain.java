@@ -22,7 +22,7 @@ public final class ServiceStatusListenerChain implements ServiceStatusListener {
     public static ServiceStatusListenerChain of(ServiceStatusListener... listeners) {
         Objects.requireNonNull(listeners, "listeners");
         List<ServiceStatusListener> flattened = new ArrayList<>();
-        for (var listener : listeners) append(flattened, listener);
+        for (com.inzent.apim.utilities.http.mockserver.ServiceStatusListener listener : listeners) append(flattened, listener);
         return new ServiceStatusListenerChain(flattened, (index, event, failure) ->
             LOGGER.log(System.Logger.Level.WARNING,
                 "Listener " + index + " failed: event=" + event.type()

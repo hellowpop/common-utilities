@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import static com.inzent.apim.utilities.http.mockserver.HttpReceiveState.*;
+
 
 /** Immutable request data. Header/trailer names are lower-case; content is dechunked bytes. */
 public final class HttpRequestSnapshot {
@@ -37,7 +37,7 @@ public final class HttpRequestSnapshot {
         this.trailersState = Objects.requireNonNull(trailersState);
     }
     static Map<String, List<String>> copyFields(Map<String, List<String>> source) {
-        var copy = new LinkedHashMap<String, List<String>>();
+        java.util.LinkedHashMap<java.lang.String,java.util.List<java.lang.String>> copy = new LinkedHashMap<String, List<String>>();
         source.forEach((name, values) -> copy.put(name, List.copyOf(values)));
         return java.util.Collections.unmodifiableMap(copy);
     }
@@ -52,12 +52,12 @@ public final class HttpRequestSnapshot {
     public HttpReceiveState contentState() { return contentState; }
     public HttpReceiveState trailersState() { return trailersState; }
     public boolean complete() {
-        return initialLineState == COMPLETE && headerState == COMPLETE
-            && (contentState == COMPLETE || contentState == NOT_APPLICABLE)
-            && (trailersState == COMPLETE || trailersState == NOT_APPLICABLE);
+        return initialLineState == HttpReceiveState.COMPLETE && headerState == HttpReceiveState.COMPLETE
+            && (contentState == HttpReceiveState.COMPLETE || contentState == HttpReceiveState.NOT_APPLICABLE)
+            && (trailersState == HttpReceiveState.COMPLETE || trailersState == HttpReceiveState.NOT_APPLICABLE);
     }
     static HttpRequestSnapshot empty() {
         return new HttpRequestSnapshot("", Map.of(), new byte[0], Map.of(),
-            NOT_REACHED, NOT_REACHED, NOT_REACHED, NOT_REACHED);
+            HttpReceiveState.NOT_REACHED, HttpReceiveState.NOT_REACHED, HttpReceiveState.NOT_REACHED, HttpReceiveState.NOT_REACHED);
     }
 }

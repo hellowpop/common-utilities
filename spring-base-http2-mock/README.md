@@ -9,12 +9,12 @@ Java 17 이상에서 실행하는 Spring Boot 3.5.16 기반 HTTP/1.1 · HTTP/2(T
 프로젝트 디렉터리에서 실행한다.
 
 ```powershell
-# 최초 빌드: payload와 두 mock 서버를 먼저 설치하고 caller를 포함한 Spring 앱을 빌드한다.
+# 최초 빌드: payload와 Netty mock 서버를 먼저 설치하고 response·caller가 내장된 Spring 앱을 빌드한다.
 ./scripts/Build-WithMockServers.ps1
 java -jar target/spring-mock.jar
 ```
 
-네 모듈의 테스트까지 실행하려면 `./scripts/Build-WithMockServers.ps1 -RunTests`를 사용한다. Node.js가 설치되어 있으면 caller와 mock 콘솔 JavaScript 테스트도 실행한다.
+세 모듈의 테스트까지 실행하려면 `./scripts/Build-WithMockServers.ps1 -RunTests`를 사용한다. Node.js가 설치되어 있으면 caller와 mock 콘솔 JavaScript 테스트도 실행한다.
 의존 모듈이 설치된 이후에는 이 모듈에서 일반 `mvn package`를 사용할 수 있다. 실행 중 JAR을 Windows에서 다시 빌드하려면 해당 서버를 먼저 종료한다.
 
 기본 주소는 HTTP `http://localhost:8080`, HTTPS `https://localhost:8443`이다.
@@ -70,6 +70,8 @@ GET /api/runs/{id}/requests?status=200&workerIndex=1&minElapsedMillis=0.5&maxEla
 기존 caller의 로컬 데이터는 이 프로젝트의 `data/caller/`로 복사했다. 기존 프로젝트 디렉터리 전체의 검증된 보존본은 `.migration-archive/caller-original/`에 있으며 Git과 빌드 산출물에서 제외한다. `mvn clean`으로 이 보존본이나 runtime data가 삭제되지 않는다. 두 프로세스가 같은 H2 파일/데이터 디렉터리를 동시에 열지 않도록 한다. Spring 앱 종료 시 caller 실행과 전송·스크립트·SSE 자원도 정리한다.
 
 ## 여러 Mock 서버 동시 서비스
+
+Response 서버는 `src/main/java/com/inzent/apim/utilities/http/mockserver/`의 내장 소스로 빌드한다. 이전 `http-mock-response-server` 모듈의 별도 빌드·설치·JAR 의존성은 제거했다. 상세 API 사용법은 [response 사용법](response-README.md), 원본 보존과 이관 범위는 [response 이관 기록](response-migration.md)을 참고한다.
 
 단일 Spring Boot JAR을 실행하면 다음 서비스를 같은 JVM에서 시작한다. 기존 HTTP/HTTPS, HTTP/2, SSE 및 WS/WSS 경로와 동작은 유지된다.
 
@@ -207,7 +209,7 @@ mock:
 `delay`는 REPLY의 요청 수신 후 응답 전 지연 또는 CLOSE의 close 전 지연이다. wait/slow에는 적용하지 않으며 느린 읽기는 `options.read-interval`을 사용한다.
 REPLY는 완전한 HTTP 요청을 받은 뒤 응답한다. `reply.max-*`는 요청 파서 한도이며 응답 본문 크기 제한이 아니다.
 포트는 response 모듈에서 0~65535이며 0은 OS가 배정한다. 실제 주소는 `/test/services`에서 확인한다. Netty 포트는 1~65535다.
-`max-clients`는 모든 response 바인딩이 공유하는 최대 연결 수다. 소켓 옵션의 기본값·범위와 종료 계약은 [response 서버 사용법](../http-mock-response-server/README.md)을 따른다.
+`max-clients`는 모든 response 바인딩이 공유하는 최대 연결 수다. 소켓 옵션의 기본값·범위와 종료 계약은 [response 서버 사용법](response-README.md)을 따른다.
 
 각 엔진을 끄려면 `--mock.services.netty.enabled=false`, `--mock.services.response.enabled=false`를 사용한다. 환경변수는 `NETTY_MOCK_ENABLED`, `RESPONSE_MOCK_ENABLED`다.
 기본 response 포트 환경변수는 `RESPONSE_MOCK_PORT`, `RESPONSE_WAIT_PORT`, `RESPONSE_SLOW_PORT`, 바인딩 주소는 `RESPONSE_MOCK_HOST`다.

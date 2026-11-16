@@ -59,7 +59,7 @@ public final class MockServerExecutor implements Closeable {
         try {
             synchronized (registryLock) {
                 if (state != State.NEW) throw new IllegalStateException("Registration requires NEW state");
-                var endpoint = new InetSocketAddress(address, port);
+                java.net.InetSocketAddress endpoint = new InetSocketAddress(address, port);
                 if (port != 0 && bindings.stream().anyMatch(b -> b.address.equals(endpoint)))
                     throw new IllegalArgumentException("Duplicate bind address: " + endpoint);
                 bindings.add(new MockBinding(bindings.size() + 1L, scenario, name, endpoint, options, listener));

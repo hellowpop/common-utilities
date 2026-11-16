@@ -1,5 +1,7 @@
 # Common Utilities
 
+2026-11-16: response 서버 구현·테스트·진단 도구·기술 문서를 `spring-base-http2-mock`에 통합하고 기존 모듈 디렉터리를 활성 프로젝트에서 제거했다. 기존 `com.inzent.apim.utilities.http.mockserver` 패키지와 Spring 엔진 설정·수명주기를 유지하고, 별도 response Maven 의존성과 선행 설치를 제거했다. Java 17 통합 테스트 176개·Node 31개·자원 진단 14개 및 실행 JAR의 response 응답·중지·재시작을 검증했다. [현재 구성](spring-base-http2-mock/project.md), [response 사용법](spring-base-http2-mock/response-README.md), [이관 기록](spring-base-http2-mock/response-migration.md)을 따른다. 아래의 독립 response 모듈 경로·좌표는 이전 이력이다.
+
 2026-11-15 사용자 푸시 요청: caller 전체 이관 및 독립 프로젝트 삭제 변경을 `develop`에서 `origin/develop`으로 반영한다. 푸시 전 JDK 17 Java 111개와 Node 26개 재검증 통과. 관련 소스·테스트·문서만 커밋하며 로컬 데이터·로그·원본 보존본·빌드 산출물은 제외한다.
 
 2026-11-15 최종 이관: `http-mock-request-caller`의 모든 소스·테스트·UI·DB schema·설계·개발내역을 `spring-base-http2-mock` 내부로 이전하고 이전 프로젝트 디렉터리와 Maven 의존성을 제거했다. 단일 프로젝트 Java 111개·Node 26개와 기존 데이터 복사본의 실제 JAR 기동을 검증했다. 기존 runtime 데이터는 `spring-base-http2-mock/data/caller/`, 원본 1,052개 파일 전체는 `.migration-archive/caller-original/`에 검증 후 보존했다. [현재 구성](spring-base-http2-mock/project.md), [상세 이관 기록](spring-base-http2-mock/caller-migration.md), [caller 사용법](spring-base-http2-mock/caller-README.md). 아래의 독립 프로젝트/library 관련 내용은 이전 단계 이력이다.
@@ -95,13 +97,13 @@
 - 2026-10-23: HTTP mock response server의 MockClientContext 개선. point 식별자를 enum으로 통일하고 AtomicReference로 중첩 진입/복원을 관리한다. HTTP/1.0·1.1 요청의 initial line/header/content/trailers incremental 해석과 단계별 상태, 고정 길이·chunked·복수 요청·EOF·크기 제한을 추가했다. 불변 snapshot은 본문 블록과 필드 맵을 공유하며 raw read 및 기존 자원 회수 계약을 유지한다. 사용법·호환성 변경과 구성은 모듈 README/project 문서에 정리한다. 커밋/push는 수행하지 않는다.
 - 위 개선 검증: 실제 JDK 17 clean verify 51개, SafetyProbe 14개 통과. README 예제 컴파일·main/HTTP 예제 실행 확인. 별도 리뷰의 본문/헤더 반복 복사와 실패 후 재읽기를 회귀 검증·수정했으며 최종 리뷰 추가 중요 지적 없음.
 
-- 2026-10-23: `http-mock-response-server` 기능 추가 사전 분석. 현재 구현 구조, enum/context 확장점, 기능 유형별 변경 파일, 자원 회수·이벤트·호환성 제약을 `http-mock-response-server/feature-extension-analysis.md`에 정리했다. 실제 JDK 17.0.10 clean verify 32개 통과. 운영 소스 수정·커밋·push는 수행하지 않았다.
+- 2026-10-23: `http-mock-response-server` 기능 추가 사전 분석. 현재 구현 구조, enum/context 확장점, 기능 유형별 변경 파일, 자원 회수·이벤트·호환성 제약을 `spring-base-http2-mock/response-feature-extension-analysis.md`에 정리했다. 실제 JDK 17.0.10 clean verify 32개 통과. 운영 소스 수정·커밋·push는 수행하지 않았다.
 
 - 2026-10-22 후속 push 요청: 자원 안전성 수정 R1/R2/R3와 관련 문서를 develop에 커밋하여 origin/develop에 반영한다. 테스트 32개와 안전성 프로브 14개를 확인했으며 다른 모듈의 미커밋 변경은 제외한다.
 
 
 - 2026-10-22: HTTP mock response server 분석 R1/R2/R3 적용. 미실행 세션/permit 반환, close fallback, 종료 단계 예외 격리·재시도, 본문 참조 없는 ThrowableSnapshot 추가. 테스트 32개 및 SafetyProbe 14개 통과, 독립 리뷰 중요 지적 없음. 커밋/push 미수행.
-- 2026-10-22: HTTP mock response server 자원 누수/NPE 분석서를 작성했다. 기존 테스트 27개 및 독립 probe 14개 진단을 확인하고, worker 제출 실패의 세션/permit 잔존과 close worker 생성 실패의 종료 중단·socket 잔존을 장애 주입으로 재현했다. 이벤트 보관에 따른 응답 body 간접 보존도 확인했다. 정상 입력의 내부 NPE는 미확인. 운영 소스 수정·커밋·push는 수행하지 않았다. 상세는 http-mock-response-server/resource-safety-review.md.
+- 2026-10-22: HTTP mock response server 자원 누수/NPE 분석서를 작성했다. 기존 테스트 27개 및 독립 probe 14개 진단을 확인하고, worker 제출 실패의 세션/permit 잔존과 close worker 생성 실패의 종료 중단·socket 잔존을 장애 주입으로 재현했다. 이벤트 보관에 따른 응답 body 간접 보존도 확인했다. 정상 입력의 내부 NPE는 미확인. 운영 소스 수정·커밋·push는 수행하지 않았다. 상세는 spring-base-http2-mock/response-resource-safety-review.md.
 
 - 2026-10-22: 사용자 push 요청에 따라 HTTP mock response server 모듈과 관련 문서를 develop에 커밋하고 origin/develop에 반영하도록 준비했다. push 전 실제 JDK 17 clean verify 27개 통과와 원격 동기 상태를 확인했다. 기존 Object Pool 및 Object Recycle Container 미커밋 변경은 제외한다.
 
@@ -111,7 +113,7 @@
 
 - 2026-10-22: HTTP mock response server의 listener 설계를 불변 체인으로 변경했다. of/andThen 구성, 등록 순서 전달, 중간 listener 실패 후 후속 호출 및 실패 집계, 기존 종료 정책 적용 시점을 명시했다. 설계 검토 단계로 구현은 시작하지 않았다.
 
-- 2026-10-22: `http-mock-response-server/project.md`에 Java 17 HTTP mock response server 설계 검토안을 작성했다. enum별 point 절차, disconnect 대기·지연 읽기, NextActionException, 소켓 옵션, listener, 실행기 수명과 종료·실패 계약을 정리했다. 설계 확정 전이며 구현은 시작하지 않았다.
+- 2026-10-22: `spring-base-http2-mock/response-project.md`에 Java 17 HTTP mock response server 설계 검토안을 작성했다. enum별 point 절차, disconnect 대기·지연 읽기, NextActionException, 소켓 옵션, listener, 실행기 수명과 종료·실패 계약을 정리했다. 설계 확정 전이며 구현은 시작하지 않았다.
 
 - 2026-10-20: Object Pool 메모리 계측의 JDK 모듈 접근 예외를 재현하고 검사 전용 자식 JVM 자동 실행으로 수정했다. 부모 VM 옵션 없이 Java 17 clean verify 65개와 fork 없는 메모리 검사 7개, 독립 계측 프로그램을 확인했다. 운영 구현 변경 없이 README·분석서·모듈 구성 문서를 갱신했다. 커밋·push는 수행하지 않았다.
 

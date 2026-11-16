@@ -1,5 +1,7 @@
 # HTTP Mock Response Server Implementation Plan
 
+이 문서는 이전 response 모듈의 설계·분석 이력이다. 현재 소유 프로젝트는 `spring-base-http2-mock`이며 별도 response Maven 모듈을 사용하지 않는다. 현재 빌드·설정은 [통합 사용법](README.md), [response 사용법](response-README.md), [이관 기록](response-migration.md)을 따른다. 아래의 이전 경로·좌표·검증 수치는 당시 기록이다.
+
 > 실행 방식: 이 세션에서 executing-plans와 TDD를 적용해 직접 구현한다. 사용자 개발 지시 및 확인 질문 금지 규칙에 따라 추가 승인 단계 없이 진행한다.
 
 **Goal:** Java 17에서 enum별 TCP mock 절차와 실패 격리 listener 체인을 제공한다.
@@ -8,7 +10,7 @@
 
 **Tech Stack:** Java 17, Maven, JUnit Jupiter. 런타임 외부 의존성 없음.
 
-**Spec:** [project.md](project.md)
+**Spec:** [project.md](response-project.md)
 
 ## 공통 제약 및 판단
 

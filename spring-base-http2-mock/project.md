@@ -1,6 +1,6 @@
 # spring-base-http2-mock 프로젝트 구성
 
-최종 정리: 2026-11-15. 이 문서는 현재 구성과 실행 계약을 설명한다. 실행 예제와 옵션 사용법은 [README.md](README.md)를 참고한다.
+최종 정리: 2026-11-16. 이 문서는 현재 구성과 실행 계약을 설명한다. 실행 예제와 옵션 사용법은 [README.md](README.md)를 참고한다.
 
 ## 목적과 모듈 구성
 
@@ -11,13 +11,19 @@ HTTP/HTTPS·HTTP/2·SSE·WebSocket과 별도 mock 엔진을 같은 JVM에서 제
 | --- | --- |
 | `http-payload-generator` | 원문 생성, ContentType/Encoding, chunked/fixed-length 헤더 및 압축 |
 | `netty-http-mock-server` | `library` classifier로 기존 Netty action 서버를 임베딩 |
-| `http-mock-response-server` | named scenario와 다중 바인딩 응답 서버를 임베딩 |
+| response 엔진 (내장 소스) | `com.inzent.apim.utilities.http.mockserver`에서 named scenario와 다중 바인딩 응답 제공 |
 
-`scripts/Build-WithMockServers.ps1`는 payload → Netty → response → Spring 순으로 모듈을 설치한다. Request Caller는 외부 모듈 없이 이 프로젝트 소스로 빌드한다.
+`scripts/Build-WithMockServers.ps1`는 payload → Netty → Spring 순으로 모듈을 설치한다. Response 서버와 Request Caller는 외부 모듈 없이 이 프로젝트 소스로 빌드한다.
 
 `MockApplication`은 `CallerConfiguration`을 import한다. 이 설정은 `com.inzent.apim.utilities.http.caller`의 bean·properties·JDBC store와 `/caller/**` 정적 자원 handler를 등록한다. `src/main/resources/caller-ui/`에 UI를 두고 기존 root static 콘솔과 분리한다. 이전 caller main 클래스는 `MockApplication.main`으로 위임하는 호환 진입점으로만 남으며 별도 Boot application이나 ObjectMapper를 등록하지 않는다.
 
 단일 Boot 3 POM에서 JDBC/H2/PostgreSQL/Liquibase/Netty/JEXL/YAML 의존성을 관리한다. `CallerStore.initialize()`가 migration 후 복구를 시작하므로 Liquibase 자동 실행은 끈다. 저장 기본 경로는 `./data/caller`다. 기존 caller 데이터도 이 경로로 복사했다. 테스트는 임시 데이터 디렉터리와 context별 H2 메모리 DB로 격리하며 이전 caller의 Java/Node 테스트를 모두 이 프로젝트에서 실행한다.
+
+## Response 서버 소스 통합 구성
+
+`http-mock-response-server`의 31개 구현 클래스와 7개 테스트 클래스를 동일한 `com.inzent.apim.utilities.http.mockserver` 패키지로 통합했다. 기존 `MockServicesLifecycle`과 `MockServicesProperties`가 엔진의 바인딩·설정·시작·종료·재시작을 계속 담당한다. Response 엔진은 JDK 소켓 기반이며 별도 runtime 의존성을 추가하지 않는다. `pom.xml`의 이전 artifact 의존성과 통합 빌드 스크립트의 response 선행 설치 단계는 제거했다.
+
+사용법은 `response-README.md`, 기존 설계·분석 기록은 `response-*.md`, 진단 도구는 `analysis/response-server/SafetyProbe.java`에 둔다. 원본 150개 파일은 `.migration-archive/response-original/`에 보존하고 SHA-256을 검증했다. 이관 중 `var`와 static import는 명시적 타입·클래스 참조로 바꾸되 공개 API와 실행 계약은 유지한다. 전체 이관·검증 기록은 [response-migration.md](response-migration.md)를 따른다.
 
 ## Caller 이관 파일 구성
 

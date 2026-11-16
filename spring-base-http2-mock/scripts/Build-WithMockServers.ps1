@@ -2,7 +2,7 @@ param([switch]$RunTests)
 $ErrorActionPreference = 'Stop'
 $moduleDirectory = Split-Path -Parent $PSScriptRoot
 $workspaceDirectory = Split-Path -Parent $moduleDirectory
-foreach ($moduleName in @('http-payload-generator', 'netty-http-mock-server', 'http-mock-response-server', 'spring-base-http2-mock')) {
+foreach ($moduleName in @('http-payload-generator', 'netty-http-mock-server', 'spring-base-http2-mock')) {
     $modulePom = Join-Path $workspaceDirectory "$moduleName/pom.xml"
     if (-not (Test-Path -LiteralPath $modulePom)) { throw "Module POM not found: $modulePom" }
     if ($RunTests) {

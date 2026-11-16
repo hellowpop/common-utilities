@@ -31,7 +31,7 @@ public final class ThrowableSnapshot extends Exception {
         try { message = source.getMessage(); }
         catch (Exception unavailable) { message = "Diagnostic message unavailable"; }
         if (message != null && message.length() > 4096) message = message.substring(0, 4096);
-        var result = new ThrowableSnapshot(source, message);
+        com.inzent.apim.utilities.http.mockserver.ThrowableSnapshot result = new ThrowableSnapshot(source, message);
         try {
             StackTraceElement[] frames = source.getStackTrace();
             result.setStackTrace(Arrays.copyOf(frames, Math.min(frames.length, 64)));

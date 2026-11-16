@@ -1,28 +1,34 @@
 # HTTP Mock Response Server
 
-Java 17용 독립 유틸리티 모듈이다. enum으로 TCP 연결의 mock 절차를 정의하고 HTTP 형식의 응답, 느린 읽기, 연결 종료를 재현한다. 외부 런타임 의존성은 없다.
+Java 17 기반 response 엔진은 Spring HTTP/2 mock 서버의 내장 기능이다. enum으로 TCP 연결의 mock 절차를 정의하고 HTTP 형식의 응답, 느린 읽기, 연결 종료를 재현한다. 별도 `http-mock-response-server` JAR이나 Maven 설치는 필요하지 않다.
 
-## 빌드 및 의존성
+## 빌드 및 실행
 
 저장소 루트에서 실행한다.
 
 ```powershell
-$env:JAVA_HOME = 'D:\01.app\java\jdk-17.0.10'
-mvn -f http-mock-response-server/pom.xml clean verify
-mvn -f http-mock-response-server/pom.xml install
+./spring-base-http2-mock/scripts/Build-WithMockServers.ps1
+java -jar spring-base-http2-mock/target/spring-mock.jar
+# 의존 모듈 설치 후 통합 Java 테스트
+mvn -f spring-base-http2-mock/pom.xml test -DskipTests=false
 ```
 
-호출 프로젝트:
+response 설정은 [Spring 통합 설정](README.md)의 `mock.services.response.*`를 사용한다. 기본 REPLY/WAIT/SLOW_READ 포트는 28081/28082/28083이며 [mock 콘솔](http://localhost:8080/)에서 엔진을 중지·재시작할 수 있다. 이관 대응은 [이관 기록](response-migration.md)을 참고한다.
 
-```xml
-<dependency>
-  <groupId>com.inzent.apim.utilities</groupId>
-  <artifactId>http-mock-response-server</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
-</dependency>
-```
+아래 Java 예제는 같은 프로젝트 안에서 엔진 API를 직접 사용하는 방법이다. 실행 JAR은 Spring Boot 형식이므로 예제 컴파일 시 `spring-base-http2-mock/target/classes`를 classpath로 사용한다. 공개 패키지와 API는 유지한다.
 
 모든 공개 타입은 `com.inzent.apim.utilities.http.mockserver` 패키지에 있다.
+
+### 자원 회수 진단
+
+통합 프로젝트를 빌드한 뒤 저장소 루트에서 실행한다. JDK 17 이상이 필요하다.
+
+```powershell
+javac --release 17 -encoding UTF-8 -cp spring-base-http2-mock/target/classes -d spring-base-http2-mock/target/response-probe spring-base-http2-mock/analysis/response-server/SafetyProbe.java
+java -cp 'spring-base-http2-mock/target/classes;spring-base-http2-mock/target/response-probe' com.inzent.apim.utilities.http.mockserver.SafetyProbe
+```
+
+현재 probe는 14개 진단을 실행한다. 과거 분석 문서의 이전 모듈 경로·실행 명령·테스트 수는 당시 검증 기록이며, 현재 실행에는 위 명령과 통합 Maven 명령을 사용한다.
 
 ## 전체 실행 예제
 
@@ -102,7 +108,7 @@ server.addMock("configured-reply", context -> {
 
 scenario는 여러 클라이언트가 공유한다. 캡처하는 설정은 불변으로 유지하고 연결별 상태는 호출 내부에 둔다. 이름은 비어 있을 수 없으며 이벤트의 `mockCase()`로 전달된다.
 
-Spring Boot HTTP/HTTPS·Netty 서버와 함께 실행하려면 [spring-base-http2-mock](../spring-base-http2-mock/README.md)의 통합 설정을 사용한다.
+Spring Boot HTTP/HTTPS·Netty 서버와 함께 실행하려면 [spring-base-http2-mock](README.md)의 통합 설정을 사용한다.
 
 | enum | 동작 |
 | --- | --- |
@@ -285,9 +291,9 @@ URL 라우팅, TLS, keep-alive 응답 처리, HTTP/2, HEAD 등 메서드별 응�
 
 ## 구성 문서
 
-- [설계와 구현 구성](project.md)
-- [구현 계획 및 검증 기록](implementation-plan.md)
-- [메모리 누수 / NPE 재분석과 보완](resource-safety-review.md)
+- [설계와 구현 구성](response-project.md)
+- [구현 계획 및 검증 기록](response-implementation-plan.md)
+- [메모리 누수 / NPE 재분석과 보완](response-resource-safety-review.md)
 
 ## 장애 처리와 이벤트 예외 조회
 

@@ -1,6 +1,8 @@
 # HTTP Mock Response Server 기능 추가를 위한 프로젝트 분석
 
-> 이 문서는 개선 전 사전 분석이다. 이후 MockClientContext에 enum/AtomicReference point 관리와 HTTP 요청 incremental parser가 추가되었다. 현재 API·구성·수신 상태는 [project.md](project.md)의 개선 구성 절 및 [README.md](README.md)를 따른다. 아래 parser 미제공·확장 필요 설명은 분석 시점의 이력이다.
+이 문서는 이전 response 모듈의 설계·분석 이력이다. 현재 소유 프로젝트는 `spring-base-http2-mock`이며 별도 response Maven 모듈을 사용하지 않는다. 현재 빌드·설정은 [통합 사용법](README.md), [response 사용법](response-README.md), [이관 기록](response-migration.md)을 따른다. 아래의 이전 경로·좌표·검증 수치는 당시 기록이다.
+
+> 이 문서는 개선 전 사전 분석이다. 이후 MockClientContext에 enum/AtomicReference point 관리와 HTTP 요청 incremental parser가 추가되었다. 현재 API·구성·수신 상태는 [project.md](response-project.md)의 개선 구성 절 및 [README.md](response-README.md)를 따른다. 아래 parser 미제공·확장 필요 설명은 분석 시점의 이력이다.
 
 - 분석일: 2026-10-23
 - 대상: 현재 `develop`의 소스, Maven 설정, 테스트 및 기존 설계/안전성 문서
@@ -95,4 +97,4 @@ mvn -f http-mock-response-server/pom.xml clean verify
 
 절차 조합으로 표현되는 기능은 기존 enum/context 확장점이 우선 적용 위치다. 응답 형식·본문 저장 방식은 response/writer/send 경로, 요청 의미 해석은 읽기·parser 경로, 수명 변경은 executor/session 경로에서 영향을 평가한다. 구체 추가 기능은 아직 지정되지 않았으므로 구현 범위와 새 공개 API는 확정하지 않았다.
 
-실제 구현 시 구성과 계약은 [project.md](project.md), 사용법은 [README.md](README.md)에 반영한다. 기존 안전성 수정 이력은 [resource-safety-review.md](resource-safety-review.md)의 적용 절을 기준으로 확인한다.
+실제 구현 시 구성과 계약은 [project.md](response-project.md), 사용법은 [README.md](response-README.md)에 반영한다. 기존 안전성 수정 이력은 [resource-safety-review.md](response-resource-safety-review.md)의 적용 절을 기준으로 확인한다.

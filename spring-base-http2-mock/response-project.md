@@ -1,5 +1,7 @@
 # HTTP Mock Response Server 설계
 
+이 문서는 이전 response 모듈의 설계·분석 이력이다. 현재 소유 프로젝트는 `spring-base-http2-mock`이며 별도 response Maven 모듈을 사용하지 않는다. 현재 빌드·설정은 [통합 사용법](README.md), [response 사용법](response-README.md), [이관 기록](response-migration.md)을 따른다. 아래의 이전 경로·좌표·검증 수치는 당시 기록이다.
+
 ## Git 반영 준비 (2026-10-23)
 
 - 사용자 push 요청에 따라 enum/AtomicReference point·readMode, context 내 기본 point 실행, HTTP 요청 단계별 해석과 메모리/NPE 보완을 관련 테스트·문서와 함께 develop에 커밋하고 origin/develop에 반영한다.
@@ -11,7 +13,7 @@
 - 종료 후 외부에서 보관한 MockClientContext가 session/executor/listener/worker/read buffer/HTTP decoder·본문을 붙잡는 경로를 정상 완료·파싱 오류·stop에서 재현했다. 세 회귀 테스트가 수정 전 실패했다.
 - 마지막 이벤트/callback 후 context.release로 강한 참조를 해제한다. 완료 상태를 먼저 검사하여 종료 후 연산은 내부 NPE 대신 IllegalStateException으로 거부하며, 최종 정리·permit 반환·ThreadLocal 제거를 중첩 finally로 보장한다. 별도 보관한 request snapshot의 사용 수명은 유지한다.
 - 신규 안전성 테스트 7개 추가. 실제 JDK 17 clean verify **58개 테스트 통과**, SafetyProbe **14개 진단 통과**. 필수 null/방어 복사/terminal listener NPE 및 5개 parser 상태의 2,000개 잘못된 입력을 확인했다. 유효 경로 내부 NPE와 정상 서버의 지속적인 세션 누적은 미확인이다.
-- 별도 리뷰에서 추가 중요 지적 없음. 상세 원인·범위·한계는 [resource-safety-review.md](resource-safety-review.md) 마지막 재분석 절에 기록했다. 커밋/push는 수행하지 않았다.
+- 별도 리뷰에서 추가 중요 지적 없음. 상세 원인·범위·한계는 [resource-safety-review.md](response-resource-safety-review.md) 마지막 재분석 절에 기록했다. 커밋/push는 수행하지 않았다.
 
 ## MockClientContext 개선 구성 (2026-10-23)
 
@@ -27,14 +29,14 @@
 - `MockClientContext.readHttpProtocol()` 및 limits overload는 한 번 읽은 모든 bytes를 해석하고 결과를 반환한다. `httpProtocol()`은 추가 I/O 없이 조회한다. context는 worker 전용이며 반환 snapshot은 스레드 간 전달할 수 있다. `context.runPoint(MockPoint.READ_HTTP_PROTOCOL)`로 실행한 결과도 context.httpProtocol()로 조회한다.
 - Content-Length 0/없는 요청은 content·trailers 해당없음, 양수 고정 길이는 trailers 해당없음이다. chunked는 0 chunk 후 content 완료, 최종 빈 줄 후 trailers 완료다. EOF의 미완료 상태는 그대로 반환한다. raw와 HTTP 읽기는 연결 내 혼용을 거부한다.
 - TE+CL/상충 CL/unsupported transfer coding/잘못된 framing/크기 초과는 IOException이며 이후 parser read는 I/O 전에 거부한다. 이벤트에 request snapshot이나 본문을 추가하지 않는다. 기본 raw case, 연결당 응답 후 close, 기존 취소/회수 계약은 유지한다.
-- 세부 설계·작업 및 검증 기록: [context-improvement-plan.md](context-improvement-plan.md). 사용법과 migration: [README.md](README.md). HTTP framing 기준: [RFC 9112 §6.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3), [§7.1](https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1).
+- 세부 설계·작업 및 검증 기록: [context-improvement-plan.md](response-context-improvement-plan.md). 사용법과 migration: [README.md](response-README.md). HTTP framing 기준: [RFC 9112 §6.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3), [§7.1](https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1).
 - 최종 Windows JDK 17.0.10 / Maven 3.9.11 clean verify 51개 테스트 통과(실패/오류/건너뜀 0), SafetyProbe 14개 통과, README Java 예제의 JAR 단독 컴파일 및 main/HTTP 요청·응답 실행을 확인했다. 본문·헤더 반복 복사와 실패 후 재읽기를 회귀 테스트로 재현·보완했고 최종 별도 리뷰에서 추가 중요 지적 없음. 커밋/push는 수행하지 않았다.
 
 아래 최초 설계/이력의 String point 및 HTTP parser 미제공 설명은 개선 전 기준이다. 현재 구성은 이 절과 README를 따른다.
 
 ## 기능 추가 사전 분석 (2026-10-23)
 
-- 현재 구현의 구조, 공개 확장 API, 기능별 변경 지점과 자원·종료·이벤트 계약을 [기능 확장 분석서](feature-extension-analysis.md)에 정리했다.
+- 현재 구현의 구조, 공개 확장 API, 기능별 변경 지점과 자원·종료·이벤트 계약을 [기능 확장 분석서](response-feature-extension-analysis.md)에 정리했다.
 - 실제 JDK 17.0.10 / Maven 3.9.11 `clean verify`: 테스트 32개, 실패/오류/건너뜀 0, BUILD SUCCESS.
 - 이번 작업은 분석 문서 갱신이며 운영 코드·공개 API 변경, 커밋 및 push는 수행하지 않았다. 구체 추가 기능은 아직 확정하지 않았다.
 
@@ -274,7 +276,7 @@ listener callback은 NextActionException을 처리하는 point가 아니다. cal
 
 ## 11. caller 사용 시나리오
 
-다음은 API 사용 형태 요약이다. [README.md](README.md)에 외부 패키지에서 컴파일·실행하는 전체 예제를 제공한다.
+다음은 API 사용 형태 요약이다. [README.md](response-README.md)에 외부 패키지에서 컴파일·실행하는 전체 예제를 제공한다.
 
 ```java
 ServiceStatusListenerChain listeners = ServiceStatusListenerChain
@@ -313,7 +315,7 @@ try (MockServerExecutor server = new MockServerExecutor()) {
 11. 연결 상한 초과, accept/stop 경합, blocking read/write 중 stop, 중복 start/stop, 종료 제한 초과·interrupt 복원.
 12. 요청을 장기간 읽어도 누적 body 저장 없음, 종료 후 socket/session/task 참조 및 취소된 deadline task 회수.
 
-공개 API/설정, 실행기와 수명, case와 point, 후속 예외/응답, listener 체인 및 통합 테스트를 구현했다. 설정, 실행 예제, enum 추가법, 이벤트 및 종료 의미는 [README.md](README.md)에 정리한다.
+공개 API/설정, 실행기와 수명, case와 point, 후속 예외/응답, listener 체인 및 통합 테스트를 구현했다. 설정, 실행 예제, enum 추가법, 이벤트 및 종료 의미는 [README.md](response-README.md)에 정리한다.
 
 ## 13. 구현과 검토 기록 (2026-10-22)
 
@@ -329,7 +331,7 @@ try (MockServerExecutor server = new MockServerExecutor()) {
 
 ## 14. 자원 누수 / NPE 분석 (2026-10-22)
 
-- 상세: [resource-safety-review.md](resource-safety-review.md), 재현 코드: [analysis/SafetyProbe.java](analysis/SafetyProbe.java).
+- 상세: [resource-safety-review.md](response-resource-safety-review.md), 재현 코드: [analysis/SafetyProbe.java](analysis/response-server/SafetyProbe.java).
 - 기존 27개 테스트를 재실행해 통과했고 JDK 17 독립 probe 14개 진단 항목을 확인했다. 정상 100응답 후 세션/예약 큐는 비었고 permit 64개 및 전체 executor 종료를 확인했다.
 - 장애 주입으로 close worker 생성 실패 시 종료 coordinator 중단·정리 재시도 불가·열린 socket 잔존, client worker 생성 실패 시 미실행 세션/permit 잔존을 재현했다.
 - 공개 API로 이벤트를 보관할 때 SendResponseException을 통해 응답 body가 보존되는 것도 확인했다. 1 MiB 응답 4건 후 세션은 0이나 이벤트가 body 4 MiB를 참조했다.
