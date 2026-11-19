@@ -71,15 +71,15 @@ public final class CompiledCodec {
 					return new Candidate(null,
 					                     null);
 				}
-				engine.prepare(type);
+				CompiledCodec.this.engine.prepare(type);
 			}
 			catch (IOException exception) {
 				return new Candidate(null,
 				                     exception);
 			}
 			try {
-				ValuePlan plan = compile(type,
-				                         new HashSet<>());
+				ValuePlan plan = CompiledCodec.this.compile(type,
+				                                            new HashSet<>());
 				return new Candidate(plan != null && plan.kind == 18
 				                     ? plan
 				                     : null,
@@ -101,7 +101,7 @@ public final class CompiledCodec {
 	}
 
 	private ValuePlan plan(Class<?> type) throws IOException {
-		Candidate candidate = plans.get(type);
+		Candidate candidate = this.plans.get(type);
 		if (candidate.error() != null) {
 			throw candidate.error();
 		}
@@ -109,7 +109,7 @@ public final class CompiledCodec {
 	}
 
 	public boolean supports(Class<?> type) throws IOException {
-		return plan(type) != null;
+		return this.plan(type) != null;
 	}
 
 	private ValuePlan compile(Type type,
@@ -135,15 +135,15 @@ public final class CompiledCodec {
 		                        .isPrimitive()) {
 			ValuePlan value = new ValuePlan(type,
 			                                15);
-			value.element = compile(raw.getComponentType(),
-			                        active);
-			value.prefix = id(engine.typeId(raw));
+			value.element = this.compile(raw.getComponentType(),
+			                             active);
+			value.prefix = this.id(this.engine.typeId(raw));
 			return value;
 		}
 		if ((raw == List.class || raw == ArrayList.class) && type instanceof ParameterizedType) {
-			ValuePlan element = compile(GenericTypeResolver.argument(type,
-			                                                         0),
-			                            active);
+			ValuePlan element = this.compile(GenericTypeResolver.argument(type,
+			                                                              0),
+			                                 active);
 			if (element == null) {
 				return null;
 			}
@@ -160,7 +160,7 @@ public final class CompiledCodec {
 			                    "",
 			                    "",
 			                    Map.of()).write(bytes,
-			                                    new Session(engine.limits));
+			                                    new Session(this.engine.limits));
 			value.prefix = bytes.toByteArray();
 			return value;
 		}
@@ -169,7 +169,7 @@ public final class CompiledCodec {
 			return null;
 		}
 		try {
-			if (!engine.defaultPojo(raw)) {
+			if (!this.engine.defaultPojo(raw)) {
 				return null;
 			}
 			ClassMetadata metadata = MetadataResolver.resolve(raw);
@@ -181,9 +181,9 @@ public final class CompiledCodec {
 			                                18);
 			value.constructor = metadata.constructor();
 			value.options = CodecOptions.forClass(raw,
-			                                      engine.options);
-			value.prefix = concat(id(engine.typeId(raw)),
-			                      id("default-pojo"),
+			                                      this.engine.options);
+			value.prefix = concat(this.id(this.engine.typeId(raw)),
+			                      this.id("default-pojo"),
 			                      intBytes(1));
 			List<FieldPlan> fields = new ArrayList<>();
 			for (FieldMetadata entry : metadata.fields()) {
@@ -192,16 +192,16 @@ public final class CompiledCodec {
 				if (annotation != null && annotation.fieldCodec() != DefaultFieldCodec.class) {
 					return null;
 				}
-				ValuePlan member = compile(GenericTypeResolver.resolve(field.getGenericType(),
-				                                                       type),
-				                           active);
+				ValuePlan member = this.compile(GenericTypeResolver.resolve(field.getGenericType(),
+				                                                            type),
+				                                active);
 				if (member == null) {
 					return null;
 				}
-				byte[] name = id(field.getName());
+				byte[] name = this.id(field.getName());
 				byte[] header = concat(name,
 				                       new byte[]{2},
-				                       id("default-field"),
+				                       this.id("default-field"),
 				                       intBytes(1));
 				int scalarWidth = width(member.kind);
 				byte[] inline = member.kind <= 9
@@ -242,7 +242,7 @@ public final class CompiledCodec {
 		catch (IOException invalidUtf16) {
 			throw UNSUPPORTED;
 		}
-		if (encoded.size() - 4 > engine.limits.identifierBytes()) {
+		if (encoded.size() - 4 > this.engine.limits.identifierBytes()) {
 			throw UNSUPPORTED;
 		}
 		return encoded.toByteArray();
@@ -274,13 +274,13 @@ public final class CompiledCodec {
 	}
 
 	private Scratch borrow() throws IOException {
-		Scratch cached = scratch.get();
+		Scratch cached = this.scratch.get();
 		if (cached == null) {
-			cached = new Scratch(engine.limits);
-			scratch.set(cached);
+			cached = new Scratch(this.engine.limits);
+			this.scratch.set(cached);
 		}
 		Scratch result = cached.busy
-		                 ? new Scratch(engine.limits)
+		                 ? new Scratch(this.engine.limits)
 		                 : cached;
 		result.busy = true;
 		result.session.reset();
@@ -296,41 +296,41 @@ public final class CompiledCodec {
 		boolean busy;
 
 		Scratch(CodecLimits limits) {
-			session = new Session(limits);
-			buffer = new Buffer(session);
+			this.session = new Session(limits);
+			this.buffer = new Buffer(this.session);
 		}
 
 		void release() {
-			session.release(buffer.bytes.length);
-			if (buffer.bytes.length > RETAINED_BYTES) {
-				buffer.bytes = new byte[0];
+			this.session.release(this.buffer.bytes.length);
+			if (this.buffer.bytes.length > RETAINED_BYTES) {
+				this.buffer.bytes = new byte[0];
 			}
-			busy = false;
+			this.busy = false;
 		}
 	}
 
 	public boolean write(OutputStream stream,
 	                     Class<?> type,
 	                     Object bean) throws IOException {
-		ValuePlan plan = plan(type);
+		ValuePlan plan = this.plan(type);
 		if (plan == null) {
 			return false;
 		}
 		if (bean != null && !type.isInstance(bean)) {
 			throw new PojoCodecException("Root value is not assignable to " + type.getName());
 		}
-		Scratch state = borrow();
+		Scratch state = this.borrow();
 		Buffer buffer = state.buffer;
 		try {
 			buffer.putInt(0x504a4344);
 			buffer.putInt(0x00010000);
 			buffer.putInt(0);
-			writeValue(plan,
-			           bean,
-			           null,
-			           null,
-			           buffer,
-			           true);
+			this.writeValue(plan,
+			                bean,
+			                null,
+			                null,
+			                buffer,
+			                true);
 			buffer.patch(8,
 			             buffer.size - 12);
 			stream.write(buffer.bytes,
@@ -369,19 +369,19 @@ public final class CompiledCodec {
 			out.put(plan.kind);
 			out.putInt(0);
 			if (plan.kind <= 9) {
-				writeScalar(plan.kind,
-				            value,
-				            primitive
-				            ? field
-				            : null,
-				            bean,
-				            out);
+				this.writeScalar(plan.kind,
+				                 value,
+				                 primitive
+				                 ? field
+				                 : null,
+				                 bean,
+				                 out);
 			} else if (plan.kind == 14) {
 				out.putBytes((byte[]) value);
 			} else if (plan.kind == 15) {
-				writeArray(plan,
-				           value,
-				           out);
+				this.writeArray(plan,
+				                value,
+				                out);
 			} else if (plan.kind == 16) {
 				if (value.getClass() != ArrayList.class) {
 					throw UNSUPPORTED;
@@ -392,12 +392,12 @@ public final class CompiledCodec {
 				out.putBytes(plan.prefix);
 				out.putInt(count);
 				for (int index = 0; index < count; index++) {
-					writeValue(plan.element,
-					           items.get(index),
-					           null,
-					           null,
-					           out,
-					           false);
+					this.writeValue(plan.element,
+					                items.get(index),
+					                null,
+					                null,
+					                out,
+					                false);
 				}
 			} else {
 				if (!root && value.getClass() != plan.raw) {
@@ -439,14 +439,14 @@ public final class CompiledCodec {
 						int fieldStart = out.size;
 						out.putBytes(member.inlineHeader());
 						int payloadStart = out.size;
-						writeScalar(member.value().kind,
-						            item,
-						            target.getType()
-						                  .isPrimitive()
-						            ? target
-						            : null,
-						            value,
-						            out);
+						this.writeScalar(member.value().kind,
+						                 item,
+						                 target.getType()
+						                       .isPrimitive()
+						                 ? target
+						                 : null,
+						                 value,
+						                 out);
 						if (member.value().kind == 9) {
 							int length = out.size - payloadStart;
 							out.patch(fieldStart + member.valueHeader().length,
@@ -461,12 +461,12 @@ public final class CompiledCodec {
 					int fieldBody = out.size;
 					out.putInt(0);
 					try {
-						writeValue(member.value(),
-						           item,
-						           target,
-						           value,
-						           out,
-						           false);
+						this.writeValue(member.value(),
+						                item,
+						                target,
+						                value,
+						                out,
+						                false);
 					}
 					catch (IOException exception) {
 						throw out.session.error("field ." + target.getName(),
@@ -475,7 +475,7 @@ public final class CompiledCodec {
 					out.finishBody(fieldBody);
 					count++;
 				}
-				if (count > engine.limits.fields()) {
+				if (count > this.engine.limits.fields()) {
 					throw out.session.error("Too many fields");
 				}
 				out.session.items(count);
@@ -626,8 +626,8 @@ public final class CompiledCodec {
 
 	public Object read(InputStream stream,
 	                   Class<?> type) throws IOException {
-		ValuePlan plan = plan(type);
-		Scratch state = borrow();
+		ValuePlan plan = this.plan(type);
+		Scratch state = this.borrow();
 		Buffer buffer = state.buffer;
 		try {
 			buffer.ensure(12);
@@ -642,7 +642,7 @@ public final class CompiledCodec {
 				throw state.session.error("Invalid document header/version/flags");
 			}
 			int length = buffer.getInt();
-			if (length < 5 || length > engine.limits.documentBytes() - 12 || length - 5 > engine.limits.frameBytes()) {
+			if (length < 5 || length > this.engine.limits.documentBytes() - 12 || length - 5 > this.engine.limits.frameBytes()) {
 				throw state.session.error("Invalid root length");
 			}
 			buffer.ensure(length);
@@ -652,9 +652,9 @@ public final class CompiledCodec {
 			         length);
 			buffer.size += length;
 			buffer.limit = buffer.size;
-			Object value = readValue(plan,
-			                         buffer,
-			                         true);
+			Object value = this.readValue(plan,
+			                              buffer,
+			                              true);
 			buffer.exact(buffer.limit);
 			return value;
 		}
@@ -694,21 +694,21 @@ public final class CompiledCodec {
 	private Object readValue(ValuePlan plan,
 	                         Buffer in,
 	                         boolean root) throws IOException, ReflectiveOperationException {
-		int start = in.position, kind = in.get(), length = in.length(engine.limits.frameBytes()), end = in.end(length);
+		int start = in.position, kind = in.get(), length = in.length(this.engine.limits.frameBytes()), end = in.end(length);
 		if (kind != 0 && (kind != plan.kind || (plan.prefix != null && !in.matchesAt(in.position,
 		                                                                             plan.prefix)))) {
 			// Schema evolution, immutable containers, polymorphism and custom wire data use the full engine.
 			in.position = end;
-			return engine.readValue(new ByteArrayInputStream(in.bytes,
-			                                                 start,
-			                                                 end - start),
-			                        plan.type,
-			                        new DecodeContext(engine,
-			                                          in.session,
-			                                          plan.type,
-			                                          engine.options,
-			                                          1),
-			                        root);
+			return this.engine.readValue(new ByteArrayInputStream(in.bytes,
+			                                                      start,
+			                                                      end - start),
+			                             plan.type,
+			                             new DecodeContext(this.engine,
+			                                               in.session,
+			                                               plan.type,
+			                                               this.engine.options,
+			                                               1),
+			                             root);
 		}
 		int parent = in.limit;
 		in.limit = end;
@@ -731,25 +731,25 @@ public final class CompiledCodec {
 				in.position = end;
 			} else if (kind == 15) {
 				in.position += plan.prefix.length;
-				value = readArray(plan,
-				                  in);
+				value = this.readArray(plan,
+				                       in);
 			} else if (kind == 16) {
 				in.position += plan.prefix.length;
-				int count = in.length(engine.limits.containerItems());
+				int count = in.length(this.engine.limits.containerItems());
 				in.session.items(count);
 				ArrayList<Object> list = new ArrayList<>(count);
 				for (int index = 0; index < count; index++) {
-					list.add(readValue(plan.element,
-					                   in,
-					                   false));
+					list.add(this.readValue(plan.element,
+					                        in,
+					                        false));
 				}
 				value = list;
 			} else {
 				in.position += plan.prefix.length;
-				int bodySize = in.length(engine.limits.frameBytes()), bodyEnd = in.end(bodySize);
+				int bodySize = in.length(this.engine.limits.frameBytes()), bodyEnd = in.end(bodySize);
 				int payloadEnd = in.limit;
 				in.limit = bodyEnd;
-				int count = in.length(engine.limits.fields());
+				int count = in.length(this.engine.limits.fields());
 				in.session.items(count);
 				Object bean = plan.constructor.newInstance(NO_ARGS);
 				long seen = 0;
@@ -777,7 +777,7 @@ public final class CompiledCodec {
 						if (!unknown.add(name)) {
 							throw in.session.error("Duplicate field: " + name);
 						}
-						skipField(in);
+						this.skipField(in);
 						continue;
 					}
 					if ((seen & (1L << found)) != 0) {
@@ -788,9 +788,9 @@ public final class CompiledCodec {
 					next = found + 1;
 					FieldPlan member = plan.fields[found];
 					try {
-						readField(member,
-						          bean,
-						          in);
+						this.readField(member,
+						               bean,
+						               in);
 					}
 					catch (IOException exception) {
 						throw in.session.error("field ." + member.field()
@@ -814,7 +814,7 @@ public final class CompiledCodec {
 	private void skipField(Buffer in) throws IOException {
 		int state = in.get();
 		String codecId = in.readId();
-		int version = in.getInt(), size = in.length(engine.limits.frameBytes());
+		int version = in.getInt(), size = in.length(this.engine.limits.frameBytes());
 		if (state < 1 || state > 2 || (state == 1 && (!codecId.isEmpty() || version != 0 || size != 0))) {
 			throw in.session.error("Invalid unknown field record");
 		}
@@ -868,7 +868,7 @@ public final class CompiledCodec {
 			throw in.session.error("Invalid Field Codec/state");
 		}
 		in.position = start + member.valueHeader().length;
-		int end = in.end(in.length(engine.limits.frameBytes())), parent = in.limit;
+		int end = in.end(in.length(this.engine.limits.frameBytes())), parent = in.limit;
 		in.limit = end;
 		try {
 			ValuePlan value = member.value();
@@ -892,9 +892,9 @@ public final class CompiledCodec {
 				}
 			} else {
 				field.set(bean,
-				          readValue(value,
-				                    in,
-				                    false));
+				          this.readValue(value,
+				                         in,
+				                         false));
 			}
 			in.exact(end);
 		}
@@ -905,7 +905,7 @@ public final class CompiledCodec {
 
 	private Object readArray(ValuePlan plan,
 	                         Buffer in) throws IOException {
-		int count = in.length(engine.limits.containerItems());
+		int count = in.length(this.engine.limits.containerItems());
 		in.session.items(count);
 		Object result = Array.newInstance(plan.raw.getComponentType(),
 		                                  count);
@@ -990,222 +990,222 @@ public final class CompiledCodec {
 		Buffer(Session session) {
 			this.session = session;
 			this.limits = session.limits;
-			this.maximum = (int) Math.min(limits.documentBytes(),
-			                              (long) limits.frameBytes() + 17);
+			this.maximum = (int) Math.min(this.limits.documentBytes(),
+			                              (long) this.limits.frameBytes() + 17);
 		}
 
 		void ensure(int additional) throws IOException {
-			if (additional < 0 || additional > maximum - size) {
-				throw session.error("Document/frame size exceeded");
+			if (additional < 0 || additional > this.maximum - this.size) {
+				throw this.session.error("Document/frame size exceeded");
 			}
-			int required = size + additional;
-			if (required > bytes.length) {
-				int capacity = (int) Math.min(maximum,
+			int required = this.size + additional;
+			if (required > this.bytes.length) {
+				int capacity = (int) Math.min(this.maximum,
 				                              Math.max(required,
 				                                       Math.max(512L,
-				                                                (long) bytes.length * 2)));
+				                                                (long) this.bytes.length * 2)));
 				capacity = (int) Math.max(required,
 				                          Math.min(capacity,
-				                                   session.limits.bufferBytes()));
-				session.reserve(capacity);
+				                                   this.session.limits.bufferBytes()));
+				this.session.reserve(capacity);
 				try {
-					byte[] replacement = Arrays.copyOf(bytes,
+					byte[] replacement = Arrays.copyOf(this.bytes,
 					                                   capacity);
-					session.release(bytes.length);
-					bytes = replacement;
+					this.session.release(this.bytes.length);
+					this.bytes = replacement;
 				}
 				catch (Throwable failure) {
-					session.release(capacity);
+					this.session.release(capacity);
 					throw failure;
 				}
 			}
 		}
 
 		void put(int value) throws IOException {
-			ensure(1);
-			bytes[size++] = (byte) value;
+			this.ensure(1);
+			this.bytes[this.size++] = (byte) value;
 		}
 
 		void putShort(int value) throws IOException {
-			ensure(2);
-			bytes[size++] = (byte) (value >>> 8);
-			bytes[size++] = (byte) value;
+			this.ensure(2);
+			this.bytes[this.size++] = (byte) (value >>> 8);
+			this.bytes[this.size++] = (byte) value;
 		}
 
 		void putInt(int value) throws IOException {
-			ensure(4);
-			patch(size,
-			      value);
-			size += 4;
+			this.ensure(4);
+			this.patch(this.size,
+			           value);
+			this.size += 4;
 		}
 
 		void putLong(long value) throws IOException {
-			putInt((int) (value >>> 32));
-			putInt((int) value);
+			this.putInt((int) (value >>> 32));
+			this.putInt((int) value);
 		}
 
 		void patch(int at,
 		           int value) {
-			bytes[at] = (byte) (value >>> 24);
-			bytes[at + 1] = (byte) (value >>> 16);
-			bytes[at + 2] = (byte) (value >>> 8);
-			bytes[at + 3] = (byte) value;
+			this.bytes[at] = (byte) (value >>> 24);
+			this.bytes[at + 1] = (byte) (value >>> 16);
+			this.bytes[at + 2] = (byte) (value >>> 8);
+			this.bytes[at + 3] = (byte) value;
 		}
 
 		void putBytes(byte[] value) throws IOException {
-			ensure(value.length);
+			this.ensure(value.length);
 			System.arraycopy(value,
 			                 0,
-			                 bytes,
-			                 size,
+			                 this.bytes,
+			                 this.size,
 			                 value.length);
-			size += value.length;
+			this.size += value.length;
 		}
 
 		void finishBody(int at) throws IOException {
-			int length = size - at - 4;
-			if (length > limits.frameBytes()) {
-				throw session.error("Body too large");
+			int length = this.size - at - 4;
+			if (length > this.limits.frameBytes()) {
+				throw this.session.error("Body too large");
 			}
-			patch(at,
-			      length);
+			this.patch(at,
+			           length);
 		}
 
 		void finishFrame(int at) throws IOException {
-			int length = size - at - 5;
-			if (length > limits.frameBytes()) {
-				throw session.error("Frame too large");
+			int length = this.size - at - 5;
+			if (length > this.limits.frameBytes()) {
+				throw this.session.error("Frame too large");
 			}
-			patch(at + 1,
-			      length);
+			this.patch(at + 1,
+			           length);
 		}
 
 		void putUtf8(String text) throws IOException {
-			if (text.length() > limits.stringBytes()) {
-				throw session.error("String too long");
+			if (text.length() > this.limits.stringBytes()) {
+				throw this.session.error("String too long");
 			}
-			int start = size;
-			ensure(text.length());
+			int start = this.size;
+			this.ensure(text.length());
 			for (int index = 0; index < text.length(); index++) {
 				char ch = text.charAt(index);
 				if (ch < 0x80) {
-					bytes[size++] = (byte) ch;
+					this.bytes[this.size++] = (byte) ch;
 				} else if (ch < 0x800) {
-					ensure(text.length() - index + 1);
-					bytes[size++] = (byte) (0xc0 | ch >>> 6);
-					bytes[size++] = (byte) (0x80 | ch & 0x3f);
+					this.ensure(text.length() - index + 1);
+					this.bytes[this.size++] = (byte) (0xc0 | ch >>> 6);
+					this.bytes[this.size++] = (byte) (0x80 | ch & 0x3f);
 				} else if (Character.isSurrogate(ch)) {
 					if (!Character.isHighSurrogate(ch) || index + 1 == text.length() || !Character.isLowSurrogate(text.charAt(index + 1))) {
-						throw session.error("Invalid UTF-16");
+						throw this.session.error("Invalid UTF-16");
 					}
 					int point = Character.toCodePoint(ch,
 					                                  text.charAt(++index));
-					ensure(text.length() - index + 3);
-					bytes[size++] = (byte) (0xf0 | point >>> 18);
-					bytes[size++] = (byte) (0x80 | point >>> 12 & 0x3f);
-					bytes[size++] = (byte) (0x80 | point >>> 6 & 0x3f);
-					bytes[size++] = (byte) (0x80 | point & 0x3f);
+					this.ensure(text.length() - index + 3);
+					this.bytes[this.size++] = (byte) (0xf0 | point >>> 18);
+					this.bytes[this.size++] = (byte) (0x80 | point >>> 12 & 0x3f);
+					this.bytes[this.size++] = (byte) (0x80 | point >>> 6 & 0x3f);
+					this.bytes[this.size++] = (byte) (0x80 | point & 0x3f);
 				} else {
-					ensure(text.length() - index + 2);
-					bytes[size++] = (byte) (0xe0 | ch >>> 12);
-					bytes[size++] = (byte) (0x80 | ch >>> 6 & 0x3f);
-					bytes[size++] = (byte) (0x80 | ch & 0x3f);
+					this.ensure(text.length() - index + 2);
+					this.bytes[this.size++] = (byte) (0xe0 | ch >>> 12);
+					this.bytes[this.size++] = (byte) (0x80 | ch >>> 6 & 0x3f);
+					this.bytes[this.size++] = (byte) (0x80 | ch & 0x3f);
 				}
-				if (size - start > limits.stringBytes()) {
-					throw session.error("String too long");
+				if (this.size - start > this.limits.stringBytes()) {
+					throw this.session.error("String too long");
 				}
 			}
 		}
 
 		void require(int count) throws IOException {
-			if (count < 0 || position > limit - count) {
-				throw session.error("Truncated frame");
+			if (count < 0 || this.position > this.limit - count) {
+				throw this.session.error("Truncated frame");
 			}
 		}
 
 		int get() throws IOException {
-			require(1);
-			return bytes[position++] & 255;
+			this.require(1);
+			return this.bytes[this.position++] & 255;
 		}
 
 		int getShort() throws IOException {
-			require(2);
-			int value = (bytes[position] & 255) << 8 | bytes[position + 1] & 255;
-			position += 2;
+			this.require(2);
+			int value = (this.bytes[this.position] & 255) << 8 | this.bytes[this.position + 1] & 255;
+			this.position += 2;
 			return value;
 		}
 
 		int getInt() throws IOException {
-			require(4);
-			int value = bytes[position] << 24 | (bytes[position + 1] & 255) << 16 | (bytes[position + 2] & 255) << 8 | bytes[position + 3] & 255;
-			position += 4;
+			this.require(4);
+			int value = this.bytes[this.position] << 24 | (this.bytes[this.position + 1] & 255) << 16 | (this.bytes[this.position + 2] & 255) << 8 | this.bytes[this.position + 3] & 255;
+			this.position += 4;
 			return value;
 		}
 
 		long getLong() throws IOException {
-			return (long) getInt() << 32 | getInt() & 0xffffffffL;
+			return (long) this.getInt() << 32 | this.getInt() & 0xffffffffL;
 		}
 
 		boolean booleanValue() throws IOException {
-			int value = get();
+			int value = this.get();
 			if (value > 1) {
-				throw session.error("Invalid boolean");
+				throw this.session.error("Invalid boolean");
 			}
 			return value == 1;
 		}
 
 		int length(int maximum) throws IOException {
-			int value = getInt();
+			int value = this.getInt();
 			if (value < 0 || value > maximum) {
-				throw session.error("Invalid length: " + value);
+				throw this.session.error("Invalid length: " + value);
 			}
 			return value;
 		}
 
 		int end(int length) throws IOException {
-			require(length);
-			return position + length;
+			this.require(length);
+			return this.position + length;
 		}
 
 		void exact(int end) throws IOException {
-			if (position != end) {
-				throw session.error("Unconsumed frame bytes");
+			if (this.position != end) {
+				throw this.session.error("Unconsumed frame bytes");
 			}
 		}
 
 		boolean matchesAt(int at,
 		                  byte[] expected) {
-			return at >= 0 && expected.length <= limit - at && Arrays.equals(bytes,
-			                                                                 at,
-			                                                                 at + expected.length,
-			                                                                 expected,
-			                                                                 0,
-			                                                                 expected.length);
+			return at >= 0 && expected.length <= this.limit - at && Arrays.equals(this.bytes,
+			                                                                      at,
+			                                                                      at + expected.length,
+			                                                                      expected,
+			                                                                      0,
+			                                                                      expected.length);
 		}
 
 		boolean matchesScalar(int kind) {
-			return position < limit && (bytes[position] & 255) == kind;
+			return this.position < this.limit && (this.bytes[this.position] & 255) == kind;
 		}
 
 		String readId() throws IOException {
-			return readUtf8(length(limits.identifierBytes()),
-			                limits.identifierBytes());
+			return this.readUtf8(this.length(this.limits.identifierBytes()),
+			                     this.limits.identifierBytes());
 		}
 
 		String readUtf8(int length) throws IOException {
-			return readUtf8(length,
-			                limits.stringBytes());
+			return this.readUtf8(length,
+			                     this.limits.stringBytes());
 		}
 
 		String readUtf8(int length,
 		                int maximum) throws IOException {
-			require(length);
+			this.require(length);
 			if (length > maximum) {
-				throw session.error("String too long");
+				throw this.session.error("String too long");
 			}
-			int end = position + length;
-			for (int index = position; index < end; ) {
-				int first = bytes[index++] & 255;
+			int end = this.position + length;
+			for (int index = this.position; index < end; ) {
+				int first = this.bytes[index++] & 255;
 				if (first < 128) {
 					continue;
 				}
@@ -1220,27 +1220,27 @@ public final class CompiledCodec {
 					extra = 3;
 					point = first & 7;
 				} else {
-					throw session.error("Invalid UTF-8");
+					throw this.session.error("Invalid UTF-8");
 				}
 				if (extra > end - index) {
-					throw session.error("Invalid UTF-8");
+					throw this.session.error("Invalid UTF-8");
 				}
 				for (int n = 0; n < extra; n++) {
-					int part = bytes[index++] & 255;
+					int part = this.bytes[index++] & 255;
 					if ((part & 0xc0) != 0x80) {
-						throw session.error("Invalid UTF-8");
+						throw this.session.error("Invalid UTF-8");
 					}
 					point = point << 6 | part & 63;
 				}
 				if ((extra == 2 && point < 0x800) || (extra == 3 && point < 0x10000) || point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff)) {
-					throw session.error("Invalid UTF-8");
+					throw this.session.error("Invalid UTF-8");
 				}
 			}
-			String result = new String(bytes,
-			                           position,
+			String result = new String(this.bytes,
+			                           this.position,
 			                           length,
 			                           StandardCharsets.UTF_8);
-			position = end;
+			this.position = end;
 			return result;
 		}
 	}

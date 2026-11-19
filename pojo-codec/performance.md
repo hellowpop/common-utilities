@@ -93,3 +93,5 @@ java -cp $benchmarkClasspath org.openjdk.jmh.Main CodecBenchmark -prof gc -f 2 -
 ```
 
 이후 code_formatter.xml 적용으로 소스의 공백·줄바꿈과 주석 배치가 변경됐다. 포맷 전후 Java 구문 트리 및 POM XML 구조의 동일성을 확인했고 테스트 78개를 다시 통과했다. 위 원본 결과와 SHA-256은 포맷 적용 전 측정 소스의 기록으로 보존하며, 포맷만을 이유로 JMH를 재측정하지는 않았다.
+
+같은 날 this/Outer.this 명시 규칙도 적용했다. 운영 클래스 50개와 테스트/JMH 클래스 96개를 재컴파일해 디버그 정보를 제외한 바이트코드가 같음을 확인했다. 이 변경도 실행 코드에는 차이가 없으며, 측정 당시 소스 SHA-256은 원본 기록으로 유지한다.

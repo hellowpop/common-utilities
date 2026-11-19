@@ -23,26 +23,26 @@ public final class BudgetedBuffer
 	}
 
 	private void grow(int count) throws IOException {
-		if (closed || count < 0 || count > maximum - size) {
-			throw session.error("Buffer/frame size exceeded");
+		if (this.closed || count < 0 || count > this.maximum - this.size) {
+			throw this.session.error("Buffer/frame size exceeded");
 		}
-		int required = size + count;
-		if (required > bytes.length) {
-			int capacity = Math.min(maximum,
+		int required = this.size + count;
+		if (required > this.bytes.length) {
+			int capacity = Math.min(this.maximum,
 			                        Math.max(required,
 			                                 (int) Math.min(Integer.MAX_VALUE,
 			                                                Math.max(32L,
-			                                                         bytes.length * 2L))));
+			                                                         this.bytes.length * 2L))));
 			// Transient old+new storage is charged while copying.
-			session.reserve(capacity);
+			this.session.reserve(capacity);
 			try {
-				byte[] replacement = java.util.Arrays.copyOf(bytes,
+				byte[] replacement = java.util.Arrays.copyOf(this.bytes,
 				                                             capacity);
-				session.release(bytes.length);
-				bytes = replacement;
+				this.session.release(this.bytes.length);
+				this.bytes = replacement;
 			}
 			catch (Throwable failure) {
-				session.release(capacity);
+				this.session.release(capacity);
 				throw failure;
 			}
 		}
@@ -50,8 +50,8 @@ public final class BudgetedBuffer
 
 	@Override
 	public void write(int value) throws IOException {
-		grow(1);
-		bytes[size++] = (byte) value;
+		this.grow(1);
+		this.bytes[this.size++] = (byte) value;
 	}
 
 	@Override
@@ -61,38 +61,38 @@ public final class BudgetedBuffer
 		Objects.checkFromIndexSize(off,
 		                           count,
 		                           value.length);
-		grow(count);
+		this.grow(count);
 		System.arraycopy(value,
 		                 off,
-		                 bytes,
-		                 size,
+		                 this.bytes,
+		                 this.size,
 		                 count);
-		size += count;
+		this.size += count;
 	}
 
 	public int size() {
-		return size;
+		return this.size;
 	}
 
 	public void writeTo(OutputStream out) throws IOException {
-		out.write(bytes,
+		out.write(this.bytes,
 		          0,
-		          size);
+		          this.size);
 	}
 
 	public java.io.InputStream input() {
-		return new java.io.ByteArrayInputStream(bytes,
+		return new java.io.ByteArrayInputStream(this.bytes,
 		                                        0,
-		                                        size);
+		                                        this.size);
 	}
 
 	@Override
 	public void close() {
-		if (!closed) {
-			session.release(bytes.length);
-			bytes = new byte[0];
-			size = 0;
-			closed = true;
+		if (!this.closed) {
+			this.session.release(this.bytes.length);
+			this.bytes = new byte[0];
+			this.size = 0;
+			this.closed = true;
 		}
 	}
 }

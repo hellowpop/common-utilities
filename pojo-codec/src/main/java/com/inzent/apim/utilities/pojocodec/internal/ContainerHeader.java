@@ -22,7 +22,7 @@ public record ContainerHeader(String kind,
 	public void write(OutputStream stream,
 	                  Session session) throws IOException {
 		writeId(stream,
-		        kind,
+		        this.kind,
 		        session);
 		DataOutputStream out = new DataOutputStream(stream);
 		out.writeInt(1);
@@ -30,22 +30,22 @@ public record ContainerHeader(String kind,
 		                                                  session.limits.frameBytes())) {
 			DataOutputStream data = new DataOutputStream(metadata);
 			writeId(data,
-			        comparator,
+			        this.comparator,
 			        session);
 			writeId(data,
-			        enumType,
+			        this.enumType,
 			        session);
-			data.writeInt(capacity);
-			data.writeBoolean(fair);
-			data.writeBoolean(accessOrder);
+			data.writeInt(this.capacity);
+			data.writeBoolean(this.fair);
+			data.writeBoolean(this.accessOrder);
 			writeId(data,
-			        checkedKey,
+			        this.checkedKey,
 			        session);
 			writeId(data,
-			        checkedValue,
+			        this.checkedValue,
 			        session);
-			data.writeInt(defaults.size());
-			for (Map.Entry<String, String> entry : new TreeMap<>(defaults).entrySet()) {
+			data.writeInt(this.defaults.size());
+			for (Map.Entry<String, String> entry : new TreeMap<>(this.defaults).entrySet()) {
 				writeText(data,
 				          entry.getKey(),
 				          session);

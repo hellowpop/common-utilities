@@ -134,7 +134,7 @@ public final class JdkContainers {
 		                                                                               .getModifiers())) {
 			return base;
 		}
-		return "custom:" + types.id(value.getClass());
+		return "custom:" + this.types.id(value.getClass());
 	}
 
 	private static String shape(Object value) {
@@ -168,19 +168,19 @@ public final class JdkContainers {
 	public Snapshot snapshot(Object value,
 	                         Type declared,
 	                         Session session) throws java.io.IOException {
-		String kind = kind(value);
+		String kind = this.kind(value);
 		if (kind.startsWith("synchronized:") || value instanceof Properties || value instanceof Hashtable<?, ?> || value instanceof Vector<?>) {
 			synchronized (value) {
-				return capture(value,
-				               declared,
-				               kind,
-				               session);
+				return this.capture(value,
+				                    declared,
+				                    kind,
+				                    session);
 			}
 		}
-		return capture(value,
-		               declared,
-		               kind,
-		               session);
+		return this.capture(value,
+		                    declared,
+		                    kind,
+		                    session);
 	}
 
 	private Snapshot capture(Object value,
@@ -215,7 +215,7 @@ public final class JdkContainers {
 		if (value instanceof PriorityBlockingQueue<?> queue) {
 			comparator = queue.comparator();
 		}
-		ContainerPolicyRegistry.Policy policy = policies.get(value.getClass());
+		ContainerPolicyRegistry.Policy policy = this.policies.get(value.getClass());
 		String enumId = "", checkedKey = "", checkedValue = "";
 		if (kind.equals("enum-set") || kind.equals("enum-map")) {
 			Class<?> enumeration = policy.enumType();
@@ -235,7 +235,7 @@ public final class JdkContainers {
 			if (enumeration == null || !enumeration.isEnum()) {
 				throw session.error("Empty enum container needs enum type registration or generic declaration");
 			}
-			enumId = types.declare(enumeration);
+			enumId = this.types.declare(enumeration);
 		}
 		if (kind.startsWith("checked:")) {
 			Class<?> key = policy.checkedKeyType() == null
@@ -253,9 +253,9 @@ public final class JdkContainers {
 			                                                                                               policy.checkedValueType()))) {
 				throw session.error("Checked wrapper needs explicit element/key/value types");
 			}
-			checkedKey = types.declare(key);
+			checkedKey = this.types.declare(key);
 			if (value instanceof Map<?, ?>) {
-				checkedValue = types.declare(val);
+				checkedValue = this.types.declare(val);
 			}
 		}
 		int capacity = 0;
@@ -278,7 +278,7 @@ public final class JdkContainers {
 			session.items(defaults.size());
 		}
 		return new Snapshot(new ContainerHeader(kind,
-		                                        comparators.id(comparator),
+		                                        this.comparators.id(comparator),
 		                                        enumId,
 		                                        capacity,
 		                                        policy.fair(),
@@ -319,11 +319,11 @@ public final class JdkContainers {
 	                      List<Object> items,
 	                      Type declared,
 	                      Session session) throws java.io.IOException {
-		return restore(header,
-		               items,
-		               declared,
-		               session,
-		               null);
+		return this.restore(header,
+		                    items,
+		                    declared,
+		                    session,
+		                    null);
 	}
 
 	public Object createInjectable(ContainerHeader header,
@@ -333,8 +333,8 @@ public final class JdkContainers {
 		           .startsWith("custom:")) {
 			return null;
 		}
-		Class<?> type = types.resolve(header.kind()
-		                                    .substring("custom:".length()));
+		Class<?> type = this.types.resolve(header.kind()
+		                                         .substring("custom:".length()));
 		if (!PojoInjectable.class.isAssignableFrom(type)) {
 			return null;
 		}
@@ -360,7 +360,7 @@ public final class JdkContainers {
 	                      Session session,
 	                      Object existing) throws java.io.IOException {
 		try {
-			Comparator comparator = comparators.resolve(header.comparator());
+			Comparator comparator = this.comparators.resolve(header.comparator());
 			String kind = header.kind();
 			String base = kind.contains(":")
 			              ? kind.substring(kind.indexOf(':') + 1)
@@ -368,7 +368,7 @@ public final class JdkContainers {
 			boolean wrapper = kind.startsWith("immutable:") || kind.startsWith("unmodifiable:") || kind.startsWith("checked:") || kind.startsWith("synchronized:");
 			Object container;
 			if (kind.startsWith("custom:")) {
-				Class<?> type = types.resolve(base);
+				Class<?> type = this.types.resolve(base);
 				if (!Collection.class.isAssignableFrom(type) && !Map.class.isAssignableFrom(type)) {
 					throw session.error("Invalid custom container type");
 				}
@@ -416,14 +416,14 @@ public final class JdkContainers {
 					                                                      items.size()),
 					                                             comparator);
 					case "enum-set" -> {
-						Class<?> type = types.resolve(header.enumType());
+						Class<?> type = this.types.resolve(header.enumType());
 						if (!type.isEnum()) {
 							throw session.error("Expected enum type");
 						}
 						yield EnumSet.noneOf((Class) type);
 					}
 					case "enum-map" -> {
-						Class<?> type = types.resolve(header.enumType());
+						Class<?> type = this.types.resolve(header.enumType());
 						if (!type.isEnum()) {
 							throw session.error("Expected enum type");
 						}
@@ -482,9 +482,9 @@ public final class JdkContainers {
 				container = Arrays.asList(((List) container).toArray());
 			}
 			if (wrapper) {
-				container = wrap(kind,
-				                 container,
-				                 header);
+				container = this.wrap(kind,
+				                      container,
+				                      header);
 			}
 			Class<?> target = GenericTypeResolver.raw(declared);
 			if (!target.isInstance(container)) {
@@ -578,12 +578,12 @@ public final class JdkContainers {
 			}
 			return Collections.synchronizedCollection((Collection) container);
 		}
-		Class key = types.resolve(header.checkedKey());
+		Class key = this.types.resolve(header.checkedKey());
 		if (key.isPrimitive()) {
 			throw new PojoCodecException("Checked type must be a reference type");
 		}
 		if (container instanceof Map map) {
-			Class value = types.resolve(header.checkedValue());
+			Class value = this.types.resolve(header.checkedValue());
 			for (Object item : map.entrySet()) {
 				Map.Entry entry = (Map.Entry) item;
 				check(key,

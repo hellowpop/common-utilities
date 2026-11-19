@@ -42,8 +42,8 @@ class CompiledCodecTest {
 
 	@Test
 	void inlinePrimitiveFieldsStillConsumeAValueDepthLevel() throws Exception {
-		byte[] bytes = encode(new PojoCodecController(),
-		                      new PrimitiveOnly());
+		byte[] bytes = this.encode(new PojoCodecController(),
+		                           new PrimitiveOnly());
 		CodecLimits defaults = CodecLimits.defaults();
 		CodecLimits limits = new CodecLimits(defaults.documentBytes(),
 		                                     defaults.frameBytes(),
@@ -129,8 +129,8 @@ class CompiledCodecTest {
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		codec.serialize(out,
 		                bean);
-		Assertions.assertArrayEquals(referenceBytes(ArraysBean.class,
-		                                            bean),
+		Assertions.assertArrayEquals(this.referenceBytes(ArraysBean.class,
+		                                                 bean),
 		                             out.toByteArray());
 		ArraysBean result = codec.deserialize(new ByteArrayInputStream(out.toByteArray()),
 		                                      ArraysBean.class);
@@ -152,10 +152,10 @@ class CompiledCodecTest {
 		                             result.h);
 		Assertions.assertEquals(bean.text,
 		                        result.text);
-		Assertions.assertArrayEquals(referenceBytes(Nested.class,
-		                                            new Nested()),
-		                             encode(codec,
-		                                    new Nested()));
+		Assertions.assertArrayEquals(this.referenceBytes(Nested.class,
+		                                                 new Nested()),
+		                             this.encode(codec,
+		                                         new Nested()));
 	}
 
 	private byte[] encode(PojoCodecController codec,

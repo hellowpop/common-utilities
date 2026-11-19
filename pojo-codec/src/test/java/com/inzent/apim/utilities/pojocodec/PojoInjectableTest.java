@@ -25,11 +25,11 @@ class PojoInjectableTest {
 
 		@Override
 		public void beforeSerialize() {
-			EVENTS.add("beforeS:" + value);
+			EVENTS.add("beforeS:" + this.value);
 			if (beforeWriteFailure != null) {
 				throw beforeWriteFailure;
 			}
-			value = "prepared";
+			this.value = "prepared";
 		}
 
 		@Override
@@ -38,7 +38,7 @@ class PojoInjectableTest {
 			if (afterWriteFailure != null) {
 				throw afterWriteFailure;
 			}
-			value = "after-write";
+			this.value = "after-write";
 		}
 
 		@Override
@@ -52,20 +52,20 @@ class PojoInjectableTest {
 
 		@Override
 		public void beforeDeserialize() {
-			EVENTS.add("beforeD:" + value);
+			EVENTS.add("beforeD:" + this.value);
 			if (beforeReadFailure != null) {
 				throw beforeReadFailure;
 			}
-			value = "before-read";
+			this.value = "before-read";
 		}
 
 		@Override
 		public void afterDeserialize() {
-			EVENTS.add("afterD:" + value);
+			EVENTS.add("afterD:" + this.value);
 			if (afterReadFailure != null) {
 				throw afterReadFailure;
 			}
-			value += ":after-read";
+			this.value += ":after-read";
 		}
 
 		@Override
@@ -169,7 +169,7 @@ class PojoInjectableTest {
 		@Override
 		public void beforeSerialize() {
 			EVENTS.add("project.before");
-			value = "prepared-base";
+			this.value = "prepared-base";
 		}
 
 		@Override
@@ -239,7 +239,7 @@ class PojoInjectableTest {
 		@Override
 		public void beforeSerialize() {
 			EVENTS.add("list.beforeS");
-			add("prepared");
+			this.add("prepared");
 		}
 
 		@Override
@@ -249,12 +249,12 @@ class PojoInjectableTest {
 
 		@Override
 		public void beforeDeserialize() {
-			EVENTS.add("list.beforeD:" + size());
+			EVENTS.add("list.beforeD:" + this.size());
 		}
 
 		@Override
 		public void afterDeserialize() {
-			EVENTS.add("list.afterD:" + size());
+			EVENTS.add("list.afterD:" + this.size());
 		}
 	}
 
@@ -285,7 +285,7 @@ class PojoInjectableTest {
 	void successHooksSurroundFieldAccessAndCreation() throws Exception {
 		Bean bean = new Bean();
 		EVENTS.clear();
-		byte[] bytes = bytes(bean);
+		byte[] bytes = this.bytes(bean);
 		Assertions.assertEquals(List.of("beforeS:seed",
 		                                "afterS"),
 		                        EVENTS);
@@ -337,7 +337,7 @@ class PojoInjectableTest {
 		beforeWriteFailure = primary;
 		Assertions.assertSame(primary,
 		                      Assertions.assertThrows(RuntimeException.class,
-		                                              () -> bytes(bean)));
+		                                              () -> this.bytes(bean)));
 		Assertions.assertEquals(List.of("beforeS:seed",
 		                                "failS"),
 		                        EVENTS);
@@ -346,7 +346,7 @@ class PojoInjectableTest {
 		EVENTS.clear();
 		Assertions.assertSame(primary,
 		                      Assertions.assertThrows(RuntimeException.class,
-		                                              () -> bytes(bean)));
+		                                              () -> this.bytes(bean)));
 		Assertions.assertEquals(List.of("beforeS:seed",
 		                                "afterS",
 		                                "failS"),
@@ -357,7 +357,7 @@ class PojoInjectableTest {
 	void nestedPojoAndCollectionElementsHaveTheirOwnLifecycles() throws Exception {
 		Parent parent = new Parent();
 		EVENTS.clear();
-		byte[] encoded = bytes(parent);
+		byte[] encoded = this.bytes(parent);
 		Assertions.assertEquals(List.of("parent.beforeS",
 		                                "beforeS:seed",
 		                                "afterS",
@@ -376,7 +376,7 @@ class PojoInjectableTest {
 		PlainParent plain = new PlainParent();
 		plain.items.add(new Bean());
 		EVENTS.clear();
-		encoded = bytes(plain);
+		encoded = this.bytes(plain);
 		Assertions.assertEquals(List.of("beforeS:seed",
 		                                "afterS"),
 		                        EVENTS);
@@ -391,7 +391,7 @@ class PojoInjectableTest {
 
 	@Test
 	void rootFailureAfterInstanceCreationAndStrictTrailingInputDoNotComplete() throws Exception {
-		byte[] encoded = bytes(new Bean());
+		byte[] encoded = this.bytes(new Bean());
 		EVENTS.clear();
 		byte[] trailing = Arrays.copyOf(encoded,
 		                                encoded.length + 1);
@@ -417,7 +417,7 @@ class PojoInjectableTest {
 
 	@Test
 	void afterDeserializeErrorIsReportedAndFailureHookErrorIsSuppressed() throws Exception {
-		byte[] encoded = bytes(new Bean());
+		byte[] encoded = this.bytes(new Bean());
 		EVENTS.clear();
 		afterReadFailure = new RuntimeException("after read");
 		failureHookFailure = new RuntimeException("secondary");
@@ -491,7 +491,7 @@ class PojoInjectableTest {
 
 	@Test
 	void customTypeCodecCreatesBeforeHookAndPopulatesTheSameInstance() throws Exception {
-		byte[] encoded = bytes(new CustomBean());
+		byte[] encoded = this.bytes(new CustomBean());
 		EVENTS.clear();
 		CustomBean result = new PojoCodecController().deserialize(new ByteArrayInputStream(encoded),
 		                                                          CustomBean.class);
@@ -506,7 +506,7 @@ class PojoInjectableTest {
 
 	@Test
 	void legacyDefaultCodecSubclassMustExplicitlyProvideItsInjectableReader() throws Exception {
-		byte[] encoded = bytes(new LegacyBean());
+		byte[] encoded = this.bytes(new LegacyBean());
 		EVENTS.clear();
 		Assertions.assertThrows(PojoCodecException.class,
 		                        () -> new PojoCodecController().deserialize(new ByteArrayInputStream(encoded),
@@ -521,7 +521,7 @@ class PojoInjectableTest {
 	void injectableContainerSubclassesAreCreatedBeforePopulation() throws Exception {
 		InjectableList list = new InjectableList();
 		EVENTS.clear();
-		byte[] encoded = bytes(list);
+		byte[] encoded = this.bytes(list);
 		Assertions.assertEquals(List.of("list.beforeS",
 		                                "list.afterS"),
 		                        EVENTS);
@@ -537,7 +537,7 @@ class PojoInjectableTest {
 		ListOwner owner = new ListOwner();
 		owner.list = new InjectableList();
 		EVENTS.clear();
-		encoded = bytes(owner);
+		encoded = this.bytes(owner);
 		Assertions.assertEquals(List.of("list.beforeS",
 		                                "list.afterS"),
 		                        EVENTS);
@@ -556,7 +556,7 @@ class PojoInjectableTest {
 		EVENTS.clear();
 		beforeWriteFailure = new RuntimeException("nested before");
 		Assertions.assertThrows(IOException.class,
-		                        () -> bytes(parent));
+		                        () -> this.bytes(parent));
 		Assertions.assertEquals(List.of("parent.beforeS",
 		                                "beforeS:seed",
 		                                "failS",
@@ -573,7 +573,7 @@ class PojoInjectableTest {
 		EVENTS.clear();
 		Assertions.assertSame(error,
 		                      Assertions.assertThrows(AssertionError.class,
-		                                              () -> bytes(bean)));
+		                                              () -> this.bytes(bean)));
 		Assertions.assertSame(error,
 		                      failure);
 		Assertions.assertEquals(List.of("failS"),
@@ -582,7 +582,7 @@ class PojoInjectableTest {
 
 	@Test
 	void truncatedBodyNotifiesCreatedInstanceOnce() throws Exception {
-		byte[] encoded = bytes(new Bean());
+		byte[] encoded = this.bytes(new Bean());
 		EVENTS.clear();
 		Assertions.assertThrows(IOException.class,
 		                        () -> new PojoCodecController().deserialize(new ByteArrayInputStream(Arrays.copyOf(encoded,
@@ -596,7 +596,7 @@ class PojoInjectableTest {
 
 	@Test
 	void nestedValueBoundaryFailureDoesNotRunCompletionBeforeFailure() throws Exception {
-		byte[] original = bytes(new Parent());
+		byte[] original = this.bytes(new Parent());
 		ByteArrayInputStream cursor = new ByteArrayInputStream(original);
 		DataInputStream in = new DataInputStream(cursor);
 		in.skipNBytes(17);
@@ -639,7 +639,7 @@ class PojoInjectableTest {
 
 	@Test
 	void injectableEnumsUseTheResolvedConstantForRootAndNestedHooks() throws Exception {
-		byte[] encoded = bytes(InjectableEnum.VALUE);
+		byte[] encoded = this.bytes(InjectableEnum.VALUE);
 		Assertions.assertEquals(List.of("enum.beforeS",
 		                                "enum.afterS"),
 		                        EVENTS);
@@ -651,7 +651,7 @@ class PojoInjectableTest {
 		                                "enum.afterD"),
 		                        EVENTS);
 		EVENTS.clear();
-		encoded = bytes(new EnumOwner());
+		encoded = this.bytes(new EnumOwner());
 		EVENTS.clear();
 		new PojoCodecController().deserialize(new ByteArrayInputStream(encoded),
 		                                      EnumOwner.class);
@@ -662,7 +662,7 @@ class PojoInjectableTest {
 
 	@Test
 	void injectableEnumHookFailureIsReportedOnce() throws Exception {
-		byte[] encoded = bytes(InjectableEnum.VALUE);
+		byte[] encoded = this.bytes(InjectableEnum.VALUE);
 		EVENTS.clear();
 		beforeReadFailure = new RuntimeException("enum before");
 		Assertions.assertThrows(IOException.class,

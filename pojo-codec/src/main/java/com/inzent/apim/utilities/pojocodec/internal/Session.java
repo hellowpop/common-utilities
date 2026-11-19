@@ -24,72 +24,72 @@ public final class Session {
 	}
 
 	public void reset() {
-		active.clear();
-		depth = 0;
-		items = 0;
-		buffers = 0;
-		path = "root";
-		rootDeserializedBean = null;
-		rootDeserializeFailed = false;
-		currentDeserializingBean = null;
+		this.active.clear();
+		this.depth = 0;
+		this.items = 0;
+		this.buffers = 0;
+		this.path = "root";
+		this.rootDeserializedBean = null;
+		this.rootDeserializeFailed = false;
+		this.currentDeserializingBean = null;
 	}
 
 	public void enter(Object value) throws PojoCodecException {
-		if (depth >= limits.depth()) {
-			throw error("Maximum depth exceeded");
+		if (this.depth >= this.limits.depth()) {
+			throw this.error("Maximum depth exceeded");
 		}
-		if (value != null && active.containsKey(value)) {
-			throw error("Cyclic object graph");
+		if (value != null && this.active.containsKey(value)) {
+			throw this.error("Cyclic object graph");
 		}
-		depth++;
+		this.depth++;
 		if (value != null) {
-			active.put(value,
-			           Boolean.TRUE);
+			this.active.put(value,
+			                Boolean.TRUE);
 		}
 	}
 
 	public void leave(Object value) {
-		depth--;
+		this.depth--;
 		if (value != null) {
-			active.remove(value);
+			this.active.remove(value);
 		}
 	}
 
 	public void items(int count) throws PojoCodecException {
-		if (count < 0 || count > limits.containerItems() || items > limits.totalItems() - count) {
-			throw error("Item budget exceeded");
+		if (count < 0 || count > this.limits.containerItems() || this.items > this.limits.totalItems() - count) {
+			throw this.error("Item budget exceeded");
 		}
-		items += count;
+		this.items += count;
 	}
 
 	public void reserve(int bytes) throws PojoCodecException {
-		if (bytes < 0 || buffers > limits.bufferBytes() - bytes) {
-			throw error("Active buffer budget exceeded");
+		if (bytes < 0 || this.buffers > this.limits.bufferBytes() - bytes) {
+			throw this.error("Active buffer budget exceeded");
 		}
-		buffers += bytes;
+		this.buffers += bytes;
 	}
 
 	public void release(int bytes) {
-		buffers -= bytes;
+		this.buffers -= bytes;
 	}
 
 	public String push(String segment) {
-		String previous = path;
-		path += segment;
+		String previous = this.path;
+		this.path += segment;
 		return previous;
 	}
 
 	public void restore(String previous) {
-		path = previous;
+		this.path = previous;
 	}
 
 	public PojoCodecException error(String message) {
-		return new PojoCodecException(path + ": " + message);
+		return new PojoCodecException(this.path + ": " + message);
 	}
 
 	public PojoCodecException error(String message,
 	                                Throwable cause) {
-		return new PojoCodecException(path + ": " + message,
+		return new PojoCodecException(this.path + ": " + message,
 		                              cause);
 	}
 }

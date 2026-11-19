@@ -20,14 +20,14 @@ public final class BoundedInputStream
 
 	@Override
 	public int read() throws IOException {
-		if (remaining == 0) {
+		if (this.remaining == 0) {
 			return -1;
 		}
-		int value = parent.read();
+		int value = this.parent.read();
 		if (value < 0) {
 			throw new IOException("Truncated frame");
 		}
-		remaining--;
+		this.remaining--;
 		return value;
 	}
 
@@ -41,30 +41,30 @@ public final class BoundedInputStream
 		if (len == 0) {
 			return 0;
 		}
-		if (remaining == 0) {
+		if (this.remaining == 0) {
 			return -1;
 		}
-		int count = parent.read(bytes,
-		                        off,
-		                        Math.min(remaining,
-		                                 len));
+		int count = this.parent.read(bytes,
+		                             off,
+		                             Math.min(this.remaining,
+		                                      len));
 		if (count < 0) {
 			throw new IOException("Truncated frame");
 		}
 		if (count == 0) {
-			bytes[off] = (byte) read();
+			bytes[off] = (byte) this.read();
 			return 1;
 		}
-		remaining -= count;
+		this.remaining -= count;
 		return count;
 	}
 
 	@Override
 	public long skip(long size) throws IOException {
-		long skipped = parent.skip(Math.min(remaining,
-		                                    Math.max(0,
-		                                             size)));
-		remaining -= (int) skipped;
+		long skipped = this.parent.skip(Math.min(this.remaining,
+		                                         Math.max(0,
+		                                                  size)));
+		this.remaining -= (int) skipped;
 		return skipped;
 	}
 

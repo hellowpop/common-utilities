@@ -47,15 +47,15 @@ public final class CodecRegistry {
 				throw new IllegalArgumentException("Duplicate Codec ID/class");
 			}
 		}
-		registered = Map.copyOf(classes);
+		this.registered = Map.copyOf(classes);
 	}
 
 	public Registration get(Class<?> codecClass) throws PojoCodecException {
-		Registration registration = registered.get(codecClass);
+		Registration registration = this.registered.get(codecClass);
 		if (registration != null) {
 			return registration;
 		}
-		registration = implicit.get(codecClass);
+		registration = this.implicit.get(codecClass);
 		if (registration != null) {
 			return registration;
 		}
@@ -64,14 +64,14 @@ public final class CodecRegistry {
 			                                        1,
 			                                        codecClass.getConstructor()
 			                                                  .newInstance());
-			for (Registration known : registered.values()) {
+			for (Registration known : this.registered.values()) {
 				if (known.id()
 				         .equals(created.id())) {
 					throw new PojoCodecException("Implicit Codec ID collision");
 				}
 			}
-			Registration previous = implicit.putIfAbsent(codecClass,
-			                                             created);
+			Registration previous = this.implicit.putIfAbsent(codecClass,
+			                                                  created);
 			return previous == null
 			       ? created
 			       : previous;

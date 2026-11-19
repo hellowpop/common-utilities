@@ -24,9 +24,9 @@ class ContainerPolicyRegressionTest {
 	private Object copySeparate(Object source,
 	                            Class<?> target,
 	                            ContainerPolicyRegistry.Policy policy) throws Exception {
-		PojoCodecController writer = controller(source.getClass(),
-		                                        policy), reader = controller(source.getClass(),
-		                                                                     policy);
+		PojoCodecController writer = this.controller(source.getClass(),
+		                                             policy), reader = this.controller(source.getClass(),
+		                                                                               policy);
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		writer.serialize(out,
 		                 source);
@@ -37,15 +37,15 @@ class ContainerPolicyRegressionTest {
 	@SuppressWarnings("unchecked")
 	@Test
 	void freshEnumPolicyReaderCanResolveRawEmptyEnumContainers() throws Exception {
-		EnumSet<Key> set = (EnumSet<Key>) copySeparate(EnumSet.noneOf(Key.class),
-		                                               EnumSet.class,
-		                                               ContainerPolicyRegistry.Policy.enumType(Key.class));
+		EnumSet<Key> set = (EnumSet<Key>) this.copySeparate(EnumSet.noneOf(Key.class),
+		                                                    EnumSet.class,
+		                                                    ContainerPolicyRegistry.Policy.enumType(Key.class));
 		set.add(Key.B);
 		Assertions.assertEquals(EnumSet.of(Key.B),
 		                        set);
-		EnumMap<Key, Object> map = (EnumMap<Key, Object>) copySeparate(new EnumMap<Key, Object>(Key.class),
-		                                                               EnumMap.class,
-		                                                               ContainerPolicyRegistry.Policy.enumType(Key.class));
+		EnumMap<Key, Object> map = (EnumMap<Key, Object>) this.copySeparate(new EnumMap<Key, Object>(Key.class),
+		                                                                    EnumMap.class,
+		                                                                    ContainerPolicyRegistry.Policy.enumType(Key.class));
 		map.put(Key.A,
 		        "x");
 		Assertions.assertEquals("x",
@@ -56,18 +56,18 @@ class ContainerPolicyRegressionTest {
 	                   "unchecked"})
 	@Test
 	void freshCheckedPolicyReaderRegistersElementAndMapValueTypes() throws Exception {
-		List<?> result = (List<?>) copySeparate(Collections.checkedList(new ArrayList<>(),
-		                                                                Integer.class),
-		                                        List.class,
-		                                        ContainerPolicyRegistry.Policy.checked(Integer.class));
+		List<?> result = (List<?>) this.copySeparate(Collections.checkedList(new ArrayList<>(),
+		                                                                     Integer.class),
+		                                             List.class,
+		                                             ContainerPolicyRegistry.Policy.checked(Integer.class));
 		Assertions.assertThrows(ClassCastException.class,
 		                        () -> ((List) result).add("wrong"));
-		Map<?, ?> map = (Map<?, ?>) copySeparate(Collections.checkedMap(new HashMap<>(),
-		                                                                Integer.class,
-		                                                                Long.class),
-		                                         Map.class,
-		                                         ContainerPolicyRegistry.Policy.checkedMap(Integer.class,
-		                                                                                   Long.class));
+		Map<?, ?> map = (Map<?, ?>) this.copySeparate(Collections.checkedMap(new HashMap<>(),
+		                                                                     Integer.class,
+		                                                                     Long.class),
+		                                              Map.class,
+		                                              ContainerPolicyRegistry.Policy.checkedMap(Integer.class,
+		                                                                                        Long.class));
 		((Map) map).put(1,
 		                2L);
 		Assertions.assertEquals(2L,
@@ -83,9 +83,9 @@ class ContainerPolicyRegressionTest {
 		                                                String.class);
 		source.add(null);
 		source.add("next");
-		Queue<?> result = (Queue<?>) copySeparate(source,
-		                                          Queue.class,
-		                                          ContainerPolicyRegistry.Policy.checked(String.class));
+		Queue<?> result = (Queue<?>) this.copySeparate(source,
+		                                               Queue.class,
+		                                               ContainerPolicyRegistry.Policy.checked(String.class));
 		Assertions.assertEquals(2,
 		                        result.size());
 		Assertions.assertNull(result.remove());
@@ -100,9 +100,9 @@ class ContainerPolicyRegressionTest {
 		                                              Object.class);
 		source.add("x");
 		source.add(1);
-		List<Object> result = (List<Object>) copySeparate(source,
-		                                                  List.class,
-		                                                  ContainerPolicyRegistry.Policy.checked(Object.class));
+		List<Object> result = (List<Object>) this.copySeparate(source,
+		                                                       List.class,
+		                                                       ContainerPolicyRegistry.Policy.checked(Object.class));
 		result.add(false);
 		Assertions.assertEquals(List.of("x",
 		                                1,

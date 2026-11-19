@@ -44,11 +44,11 @@ public final class ContainerPolicyRegistry {
 	}
 
 	public Policy get(Class<?> type) {
-		return policies.getOrDefault(type,
-		                             new Policy(null,
-		                                        null,
-		                                        null,
-		                                        false,
-		                                        false));
+		return this.policies.getOrDefault(type,
+		                                  new Policy(null,
+		                                             null,
+		                                             null,
+		                                             false,
+		                                             false));
 	}
 }

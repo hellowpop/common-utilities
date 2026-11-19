@@ -27,13 +27,13 @@ public record CodecOptions(NullPolicy nullPolicy,
 			return this;
 		}
 		return new CodecOptions(annotation.nullPolicy() == NullPolicy.INHERIT
-		                        ? nullPolicy
+		                        ? this.nullPolicy
 		                        : annotation.nullPolicy(),
 		                        annotation.emptyPolicy() == EmptyPolicy.INHERIT
-		                        ? emptyPolicy
+		                        ? this.emptyPolicy
 		                        : annotation.emptyPolicy(),
 		                        annotation.zonePolicy() == ZonePolicy.INHERIT
-		                        ? zonePolicy
+		                        ? this.zonePolicy
 		                        : annotation.zonePolicy());
 	}
 

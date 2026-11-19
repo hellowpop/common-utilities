@@ -12,11 +12,11 @@ public abstract class AbstractTypeCodec<T> {
 	public T readBody(InputStream stream,
 	                  Class<T> type,
 	                  DecodeContext context) throws IOException {
-		T bean = createInstance(type,
-		                        context);
-		readInto(stream,
-		         bean,
-		         context);
+		T bean = this.createInstance(type,
+		                             context);
+		this.readInto(stream,
+		              bean,
+		              context);
 		return bean;
 	}
 
@@ -34,7 +34,8 @@ public abstract class AbstractTypeCodec<T> {
 	public void readInto(InputStream stream,
 	                     T bean,
 	                     DecodeContext context) throws IOException {
-		throw new PojoCodecException("Injectable/custom Codec must implement readInto: " + getClass().getName());
+		throw new PojoCodecException("Injectable/custom Codec must implement readInto: " + this.getClass()
+		                                                                                       .getName());
 	}
 
 	public boolean supportsVersion(int version) {

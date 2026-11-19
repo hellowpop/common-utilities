@@ -28,53 +28,53 @@ public final class EncodeContext {
 	}
 
 	public Type type() {
-		return type;
+		return this.type;
 	}
 
 	public CodecOptions options() {
-		return options;
+		return this.options;
 	}
 
 	public int codecVersion() {
-		return codecVersion;
+		return this.codecVersion;
 	}
 
 	public void writeValue(OutputStream stream,
 	                       Object value,
 	                       Type declared) throws IOException {
-		engine.writeValue(stream,
-		                  value,
-		                  declared,
-		                  this,
-		                  false);
+		this.engine.writeValue(stream,
+		                       value,
+		                       declared,
+		                       this,
+		                       false);
 	}
 
 	public void writeDefaultPojo(OutputStream stream,
 	                             Object value) throws IOException {
-		engine.writePojoBody(stream,
-		                     value,
-		                     this);
+		this.engine.writePojoBody(stream,
+		                          value,
+		                          this);
 	}
 
 	public void writeDefaultField(OutputStream stream,
 	                              Object bean,
 	                              Field field) throws IOException {
 		try {
-			writeValue(stream,
-			           field.get(bean),
-			           type);
+			this.writeValue(stream,
+			                field.get(bean),
+			                this.type);
 		}
 		catch (IllegalAccessException exception) {
-			throw session.error("Field access: " + field,
-			                    exception);
+			throw this.session.error("Field access: " + field,
+			                         exception);
 		}
 	}
 
 	public EncodeContext with(Type declared,
 	                          CodecOptions effective,
 	                          int version) {
-		return new EncodeContext(engine,
-		                         session,
+		return new EncodeContext(this.engine,
+		                         this.session,
 		                         declared,
 		                         effective,
 		                         version);

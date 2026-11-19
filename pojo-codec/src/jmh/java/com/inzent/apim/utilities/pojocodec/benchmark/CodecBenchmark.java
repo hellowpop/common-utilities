@@ -62,8 +62,8 @@ public class CodecBenchmark {
 
 	@Setup
 	public void setup() throws Exception {
-		switch (workload) {
-			case "flat" -> bean = new Flat();
+		switch (this.workload) {
+			case "flat" -> this.bean = new Flat();
 			case "nested" -> {
 				Nested value = new Nested();
 				for (int i = 0; i < 16; i++) {
@@ -71,18 +71,18 @@ public class CodecBenchmark {
 					item.id += i;
 					value.items.add(item);
 				}
-				bean = value;
+				this.bean = value;
 			}
 			case "numeric" -> {
 				Numeric value = new Numeric();
 				for (int i = 0; i < value.samples.length; i++) {
 					value.samples[i] = i * 12347 - 5000000;
 				}
-				bean = value;
+				this.bean = value;
 			}
-			default -> throw new IllegalArgumentException(workload);
+			default -> throw new IllegalArgumentException(this.workload);
 		}
-		type = bean.getClass();
+		this.type = this.bean.getClass();
 		ObjectMapper mapper = new ObjectMapper();
 		mapper.setVisibility(PropertyAccessor.ALL,
 		                     JsonAutoDetect.Visibility.NONE);
@@ -91,19 +91,19 @@ public class CodecBenchmark {
 		mapper.setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
 		mapper.getFactory()
 		      .disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
-		writer = mapper.writerFor(type);
-		reader = mapper.readerFor(type);
-		codec.serialize(output,
-		                bean);
-		binary = output.toByteArray();
-		output.reset();
-		writer.writeValue(output,
-		                  bean);
-		json = output.toByteArray();
-		output.reset();
-		Object binaryCopy = codec.deserialize(new ByteArrayInputStream(binary),
-		                                      type);
-		Object jsonCopy = reader.readValue(json);
+		this.writer = mapper.writerFor(this.type);
+		this.reader = mapper.readerFor(this.type);
+		this.codec.serialize(this.output,
+		                     this.bean);
+		this.binary = this.output.toByteArray();
+		this.output.reset();
+		this.writer.writeValue(this.output,
+		                       this.bean);
+		this.json = this.output.toByteArray();
+		this.output.reset();
+		Object binaryCopy = this.codec.deserialize(new ByteArrayInputStream(this.binary),
+		                                           this.type);
+		Object jsonCopy = this.reader.readValue(this.json);
 		// Compare content, not implementation metadata/wire size.
 		if (!mapper.valueToTree(binaryCopy)
 		           .equals(mapper.valueToTree(jsonCopy))) {
@@ -113,28 +113,28 @@ public class CodecBenchmark {
 
 	@Benchmark
 	public int pojoSerialize() throws Exception {
-		output.reset();
-		codec.serialize(output,
-		                bean);
-		return output.size();
+		this.output.reset();
+		this.codec.serialize(this.output,
+		                     this.bean);
+		return this.output.size();
 	}
 
 	@Benchmark
 	public int jacksonSerialize() throws Exception {
-		output.reset();
-		writer.writeValue(output,
-		                  bean);
-		return output.size();
+		this.output.reset();
+		this.writer.writeValue(this.output,
+		                       this.bean);
+		return this.output.size();
 	}
 
 	@Benchmark
 	public Object pojoDeserialize() throws Exception {
-		return codec.deserialize(new ByteArrayInputStream(binary),
-		                         type);
+		return this.codec.deserialize(new ByteArrayInputStream(this.binary),
+		                              this.type);
 	}
 
 	@Benchmark
 	public Object jacksonDeserialize() throws Exception {
-		return reader.readValue(new ByteArrayInputStream(json));
+		return this.reader.readValue(new ByteArrayInputStream(this.json));
 	}
 }

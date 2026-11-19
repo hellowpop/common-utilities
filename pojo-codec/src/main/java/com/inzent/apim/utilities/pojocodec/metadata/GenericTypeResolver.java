@@ -146,17 +146,17 @@ public final class GenericTypeResolver {
 			implements ParameterizedType {
 		@Override
 		public Type[] getActualTypeArguments() {
-			return arguments.clone();
+			return this.arguments.clone();
 		}
 
 		@Override
 		public Type getRawType() {
-			return rawType;
+			return this.rawType;
 		}
 
 		@Override
 		public Type getOwnerType() {
-			return ownerType;
+			return this.ownerType;
 		}
 	}
 
@@ -164,7 +164,7 @@ public final class GenericTypeResolver {
 			implements GenericArrayType {
 		@Override
 		public Type getGenericComponentType() {
-			return component;
+			return this.component;
 		}
 	}
 
@@ -173,12 +173,12 @@ public final class GenericTypeResolver {
 			implements WildcardType {
 		@Override
 		public Type[] getUpperBounds() {
-			return upper.clone();
+			return this.upper.clone();
 		}
 
 		@Override
 		public Type[] getLowerBounds() {
-			return lower.clone();
+			return this.lower.clone();
 		}
 	}
 }

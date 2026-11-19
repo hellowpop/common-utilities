@@ -19,26 +19,26 @@ public final class PojoCodecController {
 	}
 
 	private PojoCodecController(Builder builder) {
-		engine = new Engine(builder.options,
-		                    builder.limits,
-		                    new TypeRegistry(builder.types),
-		                    new CodecRegistry(builder.codecs),
-		                    new ComparatorRegistry(builder.comparators),
-		                    new ContainerPolicyRegistry(builder.policies));
-		compiled = new CompiledCodec(engine);
+		this.engine = new Engine(builder.options,
+		                         builder.limits,
+		                         new TypeRegistry(builder.types),
+		                         new CodecRegistry(builder.codecs),
+		                         new ComparatorRegistry(builder.comparators),
+		                         new ContainerPolicyRegistry(builder.policies));
+		this.compiled = new CompiledCodec(this.engine);
 		try {
 			for (Class<?> type : builder.types.values()) {
-				engine.prepare(type);
+				this.engine.prepare(type);
 			}
 			for (ContainerPolicyRegistry.Policy policy : builder.policies.values()) {
 				if (policy.enumType() != null) {
-					engine.prepare(policy.enumType());
+					this.engine.prepare(policy.enumType());
 				}
 				if (policy.checkedKeyType() != null) {
-					engine.prepare(policy.checkedKeyType());
+					this.engine.prepare(policy.checkedKeyType());
 				}
 				if (policy.checkedValueType() != null) {
-					engine.prepare(policy.checkedValueType());
+					this.engine.prepare(policy.checkedValueType());
 				}
 			}
 		}
@@ -57,17 +57,17 @@ public final class PojoCodecController {
 		if (bean == null) {
 			throw new PojoCodecException("Cannot infer null root type");
 		}
-		serializeRoot(stream,
-		              bean.getClass(),
-		              bean);
+		this.serializeRoot(stream,
+		                   bean.getClass(),
+		                   bean);
 	}
 
 	public <T> void serialize(OutputStream stream,
 	                          Class<T> type,
 	                          T bean) throws IOException {
-		serializeRoot(stream,
-		              type,
-		              bean);
+		this.serializeRoot(stream,
+		                   type,
+		                   bean);
 	}
 
 	private void serializeRoot(OutputStream stream,
@@ -80,9 +80,9 @@ public final class PojoCodecController {
 		}
 		try {
 			Lifecycle.beforeSerialize(bean);
-			serializeDocument(stream,
-			                  type,
-			                  bean);
+			this.serializeDocument(stream,
+			                       type,
+			                       bean);
 			Lifecycle.afterSerialize(bean);
 		}
 		catch (Throwable cause) {
@@ -95,26 +95,26 @@ public final class PojoCodecController {
 	private void serializeDocument(OutputStream stream,
 	                               Class<?> type,
 	                               Object bean) throws IOException {
-		if (compiled.write(stream,
-		                   type,
-		                   bean)) {
+		if (this.compiled.write(stream,
+		                        type,
+		                        bean)) {
 			return;
 		}
-		engine.prepare(type);
-		Session session = new Session(engine.limits);
-		EncodeContext context = new EncodeContext(engine,
+		this.engine.prepare(type);
+		Session session = new Session(this.engine.limits);
+		EncodeContext context = new EncodeContext(this.engine,
 		                                          session,
 		                                          type,
-		                                          engine.options,
+		                                          this.engine.options,
 		                                          1);
 		try (BudgetedBuffer root = new BudgetedBuffer(session,
 		                                              Math.max(0,
-		                                                       engine.limits.documentBytes() - 12))) {
-			engine.writeValue(root,
-			                  bean,
-			                  type,
-			                  context,
-			                  true);
+		                                                       this.engine.limits.documentBytes() - 12))) {
+			this.engine.writeValue(root,
+			                       bean,
+			                       type,
+			                       context,
+			                       true);
 			DataOutputStream out = new DataOutputStream(stream);
 			out.writeInt(0x504a4344);
 			out.writeShort(1);
@@ -126,9 +126,9 @@ public final class PojoCodecController {
 
 	public <T> T deserialize(InputStream stream,
 	                         Class<T> type) throws IOException {
-		return deserializeDocument(stream,
-		                           type,
-		                           false);
+		return this.deserializeDocument(stream,
+		                                type,
+		                                false);
 	}
 
 	private <T> T deserializeDocument(InputStream stream,
@@ -139,17 +139,17 @@ public final class PojoCodecController {
 		if (type.isPrimitive()) {
 			throw new PojoCodecException("Root type must be a reference class");
 		}
-		if (compiled.supports(type)) {
-			T result = type.cast(compiled.read(stream,
-			                                   type));
+		if (this.compiled.supports(type)) {
+			T result = type.cast(this.compiled.read(stream,
+			                                        type));
 			if (strict) {
 				FrameIO.exhausted(stream);
 			}
 			return result;
 		}
-		Session session = new Session(engine.limits);
+		Session session = new Session(this.engine.limits);
 		try {
-			engine.prepare(type);
+			this.engine.prepare(type);
 			DataInputStream in = new DataInputStream(stream);
 			if (in.readInt() != 0x504a4344 || in.readUnsignedShort() != 1 || in.readUnsignedShort() != 0) {
 				throw session.error("Invalid document header/version/flags");
@@ -157,15 +157,15 @@ public final class PojoCodecController {
 			BoundedInputStream root = new BoundedInputStream(in,
 			                                                 FrameIO.length(in,
 			                                                                Math.max(0,
-			                                                                         engine.limits.documentBytes() - 12)));
-			Object value = engine.readValue(root,
-			                                type,
-			                                new DecodeContext(engine,
-			                                                  session,
-			                                                  type,
-			                                                  engine.options,
-			                                                  1),
-			                                true);
+			                                                                         this.engine.limits.documentBytes() - 12)));
+			Object value = this.engine.readValue(root,
+			                                     type,
+			                                     new DecodeContext(this.engine,
+			                                                       session,
+			                                                       type,
+			                                                       this.engine.options,
+			                                                       1),
+			                                     true);
 			FrameIO.exhausted(root);
 			if (strict) {
 				FrameIO.exhausted(stream);
@@ -190,20 +190,20 @@ public final class PojoCodecController {
 	public void serialize(OutputStream stream,
 	                      Object bean,
 	                      Field field) throws IOException {
-		engine.validateField(bean,
-		                     field);
+		this.engine.validateField(bean,
+		                          field);
 		try {
 			Lifecycle.beforeSerialize(bean);
-			Session session = new Session(engine.limits);
-			engine.writeFieldRecord(stream,
-			                        bean,
-			                        field,
-			                        new EncodeContext(engine,
-			                                          session,
-			                                          bean.getClass(),
-			                                          CodecOptions.forClass(bean.getClass(),
-			                                                                engine.options),
-			                                          1));
+			Session session = new Session(this.engine.limits);
+			this.engine.writeFieldRecord(stream,
+			                             bean,
+			                             field,
+			                             new EncodeContext(this.engine,
+			                                               session,
+			                                               bean.getClass(),
+			                                               CodecOptions.forClass(bean.getClass(),
+			                                                                     this.engine.options),
+			                                               1));
 			Lifecycle.afterSerialize(bean);
 		}
 		catch (Throwable cause) {
@@ -218,28 +218,28 @@ public final class PojoCodecController {
 	 */
 	public <T> T deserializeSingle(InputStream stream,
 	                               Class<T> type) throws IOException {
-		return deserializeDocument(stream,
-		                           type,
-		                           true);
+		return this.deserializeDocument(stream,
+		                                type,
+		                                true);
 	}
 
 	public void deserialize(InputStream stream,
 	                        Object bean,
 	                        Field field) throws IOException {
-		engine.validateField(bean,
-		                     field);
+		this.engine.validateField(bean,
+		                          field);
 		try {
 			Lifecycle.beforeDeserialize(bean);
-			Session session = new Session(engine.limits);
-			engine.readSingleField(stream,
-			                       bean,
-			                       field,
-			                       new DecodeContext(engine,
-			                                         session,
-			                                         bean.getClass(),
-			                                         CodecOptions.forClass(bean.getClass(),
-			                                                               engine.options),
-			                                         1));
+			Session session = new Session(this.engine.limits);
+			this.engine.readSingleField(stream,
+			                            bean,
+			                            field,
+			                            new DecodeContext(this.engine,
+			                                              session,
+			                                              bean.getClass(),
+			                                              CodecOptions.forClass(bean.getClass(),
+			                                                                    this.engine.options),
+			                                              1));
 			Lifecycle.afterDeserialize(bean);
 		}
 		catch (Throwable cause) {
@@ -258,18 +258,18 @@ public final class PojoCodecController {
 		private final Map<Class<?>, ContainerPolicyRegistry.Policy> policies = new LinkedHashMap<>();
 
 		public Builder options(CodecOptions value) {
-			options = Objects.requireNonNull(value);
+			this.options = Objects.requireNonNull(value);
 			return this;
 		}
 
 		public Builder limits(CodecLimits value) {
-			limits = Objects.requireNonNull(value);
+			this.limits = Objects.requireNonNull(value);
 			return this;
 		}
 
 		public Builder registerType(String id,
 		                            Class<?> type) {
-			unique(types,
+			unique(this.types,
 			       id,
 			       type);
 			return this;
@@ -278,15 +278,15 @@ public final class PojoCodecController {
 		public Builder registerCodec(String id,
 		                             int version,
 		                             Object codec) {
-			codecs.add(new CodecRegistry.Registration(id,
-			                                          version,
-			                                          codec));
+			this.codecs.add(new CodecRegistry.Registration(id,
+			                                               version,
+			                                               codec));
 			return this;
 		}
 
 		public Builder registerComparator(String id,
 		                                  Comparator<?> comparator) {
-			unique(comparators,
+			unique(this.comparators,
 			       id,
 			       comparator);
 			return this;
@@ -294,7 +294,7 @@ public final class PojoCodecController {
 
 		public Builder registerContainerPolicy(Class<?> type,
 		                                       ContainerPolicyRegistry.Policy policy) {
-			unique(policies,
+			unique(this.policies,
 			       type,
 			       policy);
 			return this;

@@ -25,41 +25,41 @@ public final class DecodeContext {
 	}
 
 	public Type type() {
-		return type;
+		return this.type;
 	}
 
 	public CodecOptions options() {
-		return options;
+		return this.options;
 	}
 
 	public int codecVersion() {
-		return codecVersion;
+		return this.codecVersion;
 	}
 
 	public Object readValue(InputStream stream,
 	                        Type declared) throws IOException {
-		return engine.readValue(stream,
-		                        declared,
-		                        this);
+		return this.engine.readValue(stream,
+		                             declared,
+		                             this);
 	}
 
 	public Object readDefaultPojo(InputStream stream,
 	                              Class<?> declared) throws IOException {
-		return engine.readPojoBody(stream,
-		                           declared,
-		                           this);
+		return this.engine.readPojoBody(stream,
+		                                declared,
+		                                this);
 	}
 
 	public Object createDefaultPojo(Class<?> declared) throws IOException {
-		return engine.createPojoInstance(declared,
-		                                 this);
+		return this.engine.createPojoInstance(declared,
+		                                      this);
 	}
 
 	public void readDefaultPojoInto(InputStream stream,
 	                                Object bean) throws IOException {
-		engine.readPojoInto(stream,
-		                    bean,
-		                    this);
+		this.engine.readPojoInto(stream,
+		                         bean,
+		                         this);
 	}
 
 	public void readDefaultField(InputStream stream,
@@ -67,20 +67,20 @@ public final class DecodeContext {
 	                             Field field) throws IOException {
 		try {
 			field.set(bean,
-			          readValue(stream,
-			                    type));
+			          this.readValue(stream,
+			                         this.type));
 		}
 		catch (IllegalAccessException | IllegalArgumentException exception) {
-			throw session.error("Field assignment: " + field,
-			                    exception);
+			throw this.session.error("Field assignment: " + field,
+			                         exception);
 		}
 	}
 
 	public DecodeContext with(Type declared,
 	                          CodecOptions effective,
 	                          int version) {
-		return new DecodeContext(engine,
-		                         session,
+		return new DecodeContext(this.engine,
+		                         this.session,
 		                         declared,
 		                         effective,
 		                         version);

@@ -26,14 +26,16 @@ public class DefaultTypeCodec<T>
 	public void readInto(InputStream stream,
 	                     T bean,
 	                     DecodeContext context) throws IOException {
-		if (getClass() != DefaultTypeCodec.class) {
+		if (this.getClass() != DefaultTypeCodec.class) {
 			try {
-				if (getClass().getMethod("readBody",
-				                         InputStream.class,
-				                         Class.class,
-				                         DecodeContext.class)
-				              .getDeclaringClass() != DefaultTypeCodec.class) {
-					throw new PojoCodecException("Custom readBody requires an explicit readInto override for injectable types: " + getClass().getName());
+				if (this.getClass()
+				        .getMethod("readBody",
+				                   InputStream.class,
+				                   Class.class,
+				                   DecodeContext.class)
+				        .getDeclaringClass() != DefaultTypeCodec.class) {
+					throw new PojoCodecException("Custom readBody requires an explicit readInto override for injectable types: " + this.getClass()
+					                                                                                                                   .getName());
 				}
 			}
 			catch (NoSuchMethodException exception) {

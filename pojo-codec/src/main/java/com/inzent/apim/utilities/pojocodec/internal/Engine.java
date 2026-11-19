@@ -38,18 +38,18 @@ public final class Engine {
 	}
 
 	public void prepare(Type type) throws IOException {
-		prepare(type,
-		        new HashSet<>());
+		this.prepare(type,
+		             new HashSet<>());
 	}
 
 	public String typeId(Class<?> type) throws IOException {
-		return types.id(type);
+		return this.types.id(type);
 	}
 
 	public boolean defaultPojo(Class<?> type) throws IOException {
-		return codecs.get(typeCodecClass(type))
-		             .codec()
-		             .getClass() == DefaultTypeCodec.class;
+		return this.codecs.get(this.typeCodecClass(type))
+		                  .codec()
+		                  .getClass() == DefaultTypeCodec.class;
 	}
 
 	private void prepare(Type type,
@@ -59,44 +59,44 @@ public final class Engine {
 			return;
 		}
 		if (raw.isArray()) {
-			types.declare(raw);
-			prepare(raw.getComponentType(),
-			        visited);
+			this.types.declare(raw);
+			this.prepare(raw.getComponentType(),
+			             visited);
 			return;
 		}
 		if (type instanceof ParameterizedType parameterized) {
 			for (Type arg : parameterized.getActualTypeArguments()) {
-				prepare(arg,
-				        visited);
+				this.prepare(arg,
+				             visited);
 			}
 		}
 		if (raw == Object.class || raw == void.class) {
 			return;
 		}
 		if (ScalarValueCodec.kind(raw) >= 0 || TemporalValueCodec.supports(raw)) {
-			types.declare(raw);
+			this.types.declare(raw);
 			return;
 		}
 		if (Map.class.isAssignableFrom(raw) || Collection.class.isAssignableFrom(raw) || Map.Entry.class.isAssignableFrom(raw)) {
-			types.declare(raw);
+			this.types.declare(raw);
 			return;
 		}
-		types.declare(raw);
+		this.types.declare(raw);
 		if (raw.isInterface() || Modifier.isAbstract(raw.getModifiers())) {
 			return;
 		}
-		Class<? extends AbstractTypeCodec> selected = typeCodecClass(raw);
+		Class<? extends AbstractTypeCodec> selected = this.typeCodecClass(raw);
 		if (selected != DefaultTypeCodec.class) {
-			codecs.get(selected);
+			this.codecs.get(selected);
 			return;
 		}
 		ClassMetadata metadata = MetadataResolver.resolve(raw);
 		for (FieldMetadata field : metadata.fields()) {
-			validateFieldAnnotation(field.field());
-			prepare(GenericTypeResolver.resolve(field.field()
-			                                         .getGenericType(),
-			                                    type),
-			        visited);
+			this.validateFieldAnnotation(field.field());
+			this.prepare(GenericTypeResolver.resolve(field.field()
+			                                              .getGenericType(),
+			                                         type),
+			             visited);
 		}
 	}
 
@@ -121,11 +121,11 @@ public final class Engine {
 	}
 
 	private CodecRegistry.Registration fieldCodec(Field field) throws IOException {
-		validateFieldAnnotation(field);
+		this.validateFieldAnnotation(field);
 		PojoCodec annotation = field.getDeclaredAnnotation(PojoCodec.class);
-		return codecs.get(annotation == null
-		                  ? DefaultFieldCodec.class
-		                  : annotation.fieldCodec());
+		return this.codecs.get(annotation == null
+		                       ? DefaultFieldCodec.class
+		                       : annotation.fieldCodec());
 	}
 
 	private static Class<?> boxed(Class<?> type) {
@@ -213,7 +213,7 @@ public final class Engine {
 		session.enter(value);
 		boolean notify = !projection && value instanceof PojoInjectable;
 		try (BudgetedBuffer payload = new BudgetedBuffer(session,
-		                                                 limits.frameBytes())) {
+		                                                 this.limits.frameBytes())) {
 			if (notify) {
 				Lifecycle.beforeSerialize(value);
 			}
@@ -233,7 +233,7 @@ public final class Engine {
 					ScalarValueCodec.write(kind,
 					                       payload,
 					                       value,
-					                       types,
+					                       this.types,
 					                       session);
 				} else if (TemporalValueCodec.supports(actual)) {
 					kind = 13;
@@ -246,31 +246,31 @@ public final class Engine {
 					payload.write((byte[]) value);
 				} else if (actual.isArray()) {
 					kind = 15;
-					writeArray(payload,
-					           value,
-					           declared,
-					           context);
+					this.writeArray(payload,
+					                value,
+					                declared,
+					                context);
 				} else if (value instanceof Collection<?> || value instanceof Map<?, ?>) {
 					kind = value instanceof Map<?, ?>
 					       ? 17
 					       : 16;
-					writeContainer(payload,
-					               value,
-					               declared,
-					               context);
+					this.writeContainer(payload,
+					                    value,
+					                    declared,
+					                    context);
 				} else if (value instanceof Map.Entry<?, ?> entry) {
 					kind = 19;
-					writeEntry(payload,
-					           entry,
-					           declared,
-					           context);
+					this.writeEntry(payload,
+					                entry,
+					                declared,
+					                context);
 				} else {
 					kind = 18;
-					writePojo(payload,
-					          value,
-					          declared,
-					          context,
-					          projection);
+					this.writePojo(payload,
+					               value,
+					               declared,
+					               context,
+					               projection);
 				}
 			}
 			DataOutputStream out = new DataOutputStream(stream);
@@ -303,10 +303,10 @@ public final class Engine {
 	public Object readValue(InputStream stream,
 	                        Type declared,
 	                        DecodeContext context) throws IOException {
-		return readValue(stream,
-		                 declared,
-		                 context,
-		                 false);
+		return this.readValue(stream,
+		                      declared,
+		                      context,
+		                      false);
 	}
 
 	public Object readValue(InputStream stream,
@@ -321,7 +321,7 @@ public final class Engine {
 			DataInputStream in = new DataInputStream(stream);
 			int kind = in.readUnsignedByte();
 			int size = FrameIO.length(in,
-			                          limits.frameBytes());
+			                          this.limits.frameBytes());
 			BoundedInputStream body = new BoundedInputStream(in,
 			                                                 size);
 			Object value;
@@ -333,7 +333,7 @@ public final class Engine {
 			} else if (kind >= 1 && kind <= 12) {
 				value = ScalarValueCodec.read(kind,
 				                              body,
-				                              types,
+				                              this.types,
 				                              session);
 				if (kind == 12 && value instanceof PojoInjectable) {
 					if (exactRoot) {
@@ -344,36 +344,36 @@ public final class Engine {
 				}
 			} else if (kind == 13) {
 				value = TemporalValueCodec.read(body,
-				                                limits.identifierBytes());
+				                                this.limits.identifierBytes());
 			} else if (kind == 14) {
 				value = FrameIO.readExact(body,
 				                          size);
 			} else if (kind == 15) {
-				value = readArray(body,
-				                  declared,
-				                  context);
+				value = this.readArray(body,
+				                       declared,
+				                       context);
 			} else if (kind == 16 || kind == 17) {
-				value = readContainer(body,
+				value = this.readContainer(body,
+				                           declared,
+				                           context,
+				                           kind == 17,
+				                           exactRoot);
+			} else if (kind == 18) {
+				value = this.readPojo(body,
 				                      declared,
 				                      context,
-				                      kind == 17,
 				                      exactRoot);
-			} else if (kind == 18) {
-				value = readPojo(body,
-				                 declared,
-				                 context,
-				                 exactRoot);
 			} else if (kind == 19) {
-				value = readEntry(body,
-				                  declared,
-				                  context);
+				value = this.readEntry(body,
+				                       declared,
+				                       context);
 			} else {
 				throw session.error("Unknown value kind: " + kind);
 			}
 			FrameIO.exhausted(body);
-			Object result = assign(value,
-			                       declared,
-			                       session);
+			Object result = this.assign(value,
+			                            declared,
+			                            session);
 			if (!exactRoot) {
 				Lifecycle.afterDeserialize(session.currentDeserializingBean);
 			}
@@ -410,7 +410,7 @@ public final class Engine {
 	                        EncodeContext context) throws IOException {
 		DataOutputStream out = new DataOutputStream(stream);
 		ContainerHeader.writeId(out,
-		                        types.id(array.getClass()),
+		                        this.types.id(array.getClass()),
 		                        context.session);
 		int size = Array.getLength(array);
 		context.session.items(size);
@@ -435,14 +435,14 @@ public final class Engine {
 	private Object readArray(InputStream stream,
 	                         Type declared,
 	                         DecodeContext context) throws IOException {
-		Class<?> arrayType = types.resolve(FrameIO.readString(stream,
-		                                                      limits.identifierBytes()));
+		Class<?> arrayType = this.types.resolve(FrameIO.readString(stream,
+		                                                           this.limits.identifierBytes()));
 		if (!arrayType.isArray() || !GenericTypeResolver.raw(declared)
 		                                                .isAssignableFrom(arrayType)) {
 			throw context.session.error("Array type mismatch");
 		}
 		int count = FrameIO.length(stream,
-		                           limits.containerItems());
+		                           this.limits.containerItems());
 		context.session.items(count);
 		Object array = Array.newInstance(arrayType.getComponentType(),
 		                                 count);
@@ -478,9 +478,9 @@ public final class Engine {
 	                            Object value,
 	                            Type declared,
 	                            EncodeContext context) throws IOException {
-		JdkContainers.Snapshot snapshot = containers.snapshot(value,
-		                                                      declared,
-		                                                      context.session);
+		JdkContainers.Snapshot snapshot = this.containers.snapshot(value,
+		                                                           declared,
+		                                                           context.session);
 		snapshot.header()
 		        .write(stream,
 		               context.session);
@@ -525,12 +525,12 @@ public final class Engine {
 		ContainerHeader header = ContainerHeader.read(stream,
 		                                              context.session);
 		int count = FrameIO.length(stream,
-		                           limits.containerItems());
+		                           this.limits.containerItems());
 		context.session.items(count);
 		List<Object> items = new ArrayList<>(count);
-		Object target = containers.createInjectable(header,
-		                                            declared,
-		                                            context.session);
+		Object target = this.containers.createInjectable(header,
+		                                                 declared,
+		                                                 context.session);
 		if (exactRoot && target != null) {
 			context.session.rootDeserializedBean = target;
 		}
@@ -558,11 +558,11 @@ public final class Engine {
 				context.session.restore(old);
 			}
 		}
-		Object restored = containers.restore(header,
-		                                     items,
-		                                     declared,
-		                                     context.session,
-		                                     target);
+		Object restored = this.containers.restore(header,
+		                                          items,
+		                                          declared,
+		                                          context.session,
+		                                          target);
 		if ((restored instanceof Map<?, ?>) != map) {
 			throw context.session.error("Map/Collection kind mismatch");
 		}
@@ -620,17 +620,17 @@ public final class Engine {
 		                  ? GenericTypeResolver.raw(declared)
 		                  : bean.getClass();
 		if (actual == GenericTypeResolver.raw(declared)) {
-			prepare(declared);
+			this.prepare(declared);
 		}
-		String typeId = types.id(actual);
-		prepare(actual);
-		CodecRegistry.Registration registration = codecs.get(typeCodecClass(actual));
+		String typeId = this.types.id(actual);
+		this.prepare(actual);
+		CodecRegistry.Registration registration = this.codecs.get(this.typeCodecClass(actual));
 		Type effective = actual == GenericTypeResolver.raw(declared)
 		                 ? declared
 		                 : actual;
 		EncodeContext nested = context.with(effective,
 		                                    CodecOptions.forClass(actual,
-		                                                          options),
+		                                                          this.options),
 		                                    registration.version());
 		ContainerHeader.writeId(stream,
 		                        typeId,
@@ -641,7 +641,7 @@ public final class Engine {
 		DataOutputStream out = new DataOutputStream(stream);
 		out.writeInt(registration.version());
 		try (BudgetedBuffer body = new BudgetedBuffer(context.session,
-		                                              limits.frameBytes())) {
+		                                              this.limits.frameBytes())) {
 			((AbstractTypeCodec<Object>) registration.codec()).writeBody(body,
 			                                                             bean,
 			                                                             nested);
@@ -657,19 +657,19 @@ public final class Engine {
 	                        DecodeContext context,
 	                        boolean exactRoot) throws IOException {
 		String typeId = FrameIO.readString(stream,
-		                                   limits.identifierBytes());
-		Class<?> actual = types.resolve(typeId);
-		if (exactRoot && !typeId.equals(types.id(GenericTypeResolver.raw(declared)))) {
+		                                   this.limits.identifierBytes());
+		Class<?> actual = this.types.resolve(typeId);
+		if (exactRoot && !typeId.equals(this.types.id(GenericTypeResolver.raw(declared)))) {
 			throw context.session.error("Root type ID mismatch: " + typeId);
 		}
 		if (!GenericTypeResolver.raw(declared)
 		                        .isAssignableFrom(actual)) {
 			throw context.session.error("POJO type mismatch: " + typeId);
 		}
-		prepare(actual);
-		CodecRegistry.Registration registration = codecs.get(typeCodecClass(actual));
+		this.prepare(actual);
+		CodecRegistry.Registration registration = this.codecs.get(this.typeCodecClass(actual));
 		String codecId = FrameIO.readString(stream,
-		                                    limits.identifierBytes());
+		                                    this.limits.identifierBytes());
 		int version = new DataInputStream(stream).readInt();
 		AbstractTypeCodec codec = (AbstractTypeCodec) registration.codec();
 		if (!registration.id()
@@ -678,13 +678,13 @@ public final class Engine {
 		}
 		BoundedInputStream body = new BoundedInputStream(stream,
 		                                                 FrameIO.length(stream,
-		                                                                limits.frameBytes()));
+		                                                                this.limits.frameBytes()));
 		Type effective = actual == GenericTypeResolver.raw(declared)
 		                 ? declared
 		                 : actual;
 		DecodeContext nested = context.with(effective,
 		                                    CodecOptions.forClass(actual,
-		                                                          options),
+		                                                          this.options),
 		                                    version);
 		if (!PojoInjectable.class.isAssignableFrom(actual)) {
 			Object value = codec.readBody(body,
@@ -720,35 +720,35 @@ public final class Engine {
 		List<Field> included = new ArrayList<>();
 		for (FieldMetadata entry : metadata.fields()) {
 			Field field = entry.field();
-			if (!omit(bean,
-			          field,
-			          context.options()
-			                 .overlay(field.getDeclaredAnnotation(PojoCodec.class)),
-			          context.session)) {
+			if (!this.omit(bean,
+			               field,
+			               context.options()
+			                      .overlay(field.getDeclaredAnnotation(PojoCodec.class)),
+			               context.session)) {
 				included.add(field);
 			}
 		}
-		if (included.size() > limits.fields()) {
+		if (included.size() > this.limits.fields()) {
 			throw context.session.error("Too many fields");
 		}
 		context.session.items(included.size());
 		new DataOutputStream(stream).writeInt(included.size());
 		for (Field field : included) {
-			writeFieldRecord(stream,
-			                 bean,
-			                 field,
-			                 context);
+			this.writeFieldRecord(stream,
+			                      bean,
+			                      field,
+			                      context);
 		}
 	}
 
 	public Object readPojoBody(InputStream stream,
 	                           Class<?> type,
 	                           DecodeContext context) throws IOException {
-		Object bean = createPojoInstance(type,
-		                                 context);
-		readPojoInto(stream,
-		             bean,
-		             context);
+		Object bean = this.createPojoInstance(type,
+		                                      context);
+		this.readPojoInto(stream,
+		                  bean,
+		                  context);
 		return bean;
 	}
 
@@ -776,20 +776,20 @@ public final class Engine {
 			           entry.field());
 		}
 		int count = FrameIO.length(stream,
-		                           limits.fields());
+		                           this.limits.fields());
 		context.session.items(count);
 		Set<String> seen = new HashSet<>();
 		for (int i = 0; i < count; i++) {
 			String name = FrameIO.readString(stream,
-			                                 limits.identifierBytes());
+			                                 this.limits.identifierBytes());
 			if (!seen.add(name)) {
 				throw context.session.error("Duplicate field: " + name);
 			}
-			readFieldRecordBody(stream,
-			                    bean,
-			                    fields.get(name),
-			                    context,
-			                    false);
+			this.readFieldRecordBody(stream,
+			                         bean,
+			                         fields.get(name),
+			                         context,
+			                         false);
 		}
 	}
 
@@ -827,7 +827,7 @@ public final class Engine {
 		if (Modifier.isStatic(modifiers) || Modifier.isTransient(modifiers) || Modifier.isFinal(modifiers) || field.isSynthetic() || !field.trySetAccessible()) {
 			throw new PojoCodecException("Unsupported field: " + field);
 		}
-		validateFieldAnnotation(field);
+		this.validateFieldAnnotation(field);
 	}
 
 	public void writeFieldRecord(OutputStream stream,
@@ -840,14 +840,14 @@ public final class Engine {
 			                                .overlay(field.getDeclaredAnnotation(PojoCodec.class));
 			Type fieldType = GenericTypeResolver.resolve(field.getGenericType(),
 			                                             context.type());
-			prepare(fieldType);
+			this.prepare(fieldType);
 			Object value = get(field,
 			                   bean,
 			                   context.session);
-			int state = omit(bean,
-			                 field,
-			                 effective,
-			                 context.session)
+			int state = this.omit(bean,
+			                      field,
+			                      effective,
+			                      context.session)
 			            ? 0
 			            : value == null
 			              ? 1
@@ -864,13 +864,13 @@ public final class Engine {
 				out.writeInt(0);
 				return;
 			}
-			CodecRegistry.Registration registration = fieldCodec(field);
+			CodecRegistry.Registration registration = this.fieldCodec(field);
 			ContainerHeader.writeId(out,
 			                        registration.id(),
 			                        context.session);
 			out.writeInt(registration.version());
 			try (BudgetedBuffer body = new BudgetedBuffer(context.session,
-			                                              limits.frameBytes())) {
+			                                              this.limits.frameBytes())) {
 				((AbstractFieldCodec) registration.codec()).writeField(body,
 				                                                       bean,
 				                                                       field,
@@ -891,15 +891,15 @@ public final class Engine {
 	                            Field field,
 	                            DecodeContext context) throws IOException {
 		String name = FrameIO.readString(stream,
-		                                 limits.identifierBytes());
+		                                 this.limits.identifierBytes());
 		if (!name.equals(field.getName())) {
 			throw context.session.error("Field name mismatch: " + name);
 		}
-		readFieldRecordBody(stream,
-		                    bean,
-		                    field,
-		                    context,
-		                    true);
+		this.readFieldRecordBody(stream,
+		                         bean,
+		                         field,
+		                         context,
+		                         true);
 	}
 
 	private void readFieldRecordBody(InputStream stream,
@@ -910,9 +910,9 @@ public final class Engine {
 		DataInputStream in = new DataInputStream(stream);
 		int state = in.readUnsignedByte();
 		String codecId = FrameIO.readString(in,
-		                                    limits.identifierBytes());
+		                                    this.limits.identifierBytes());
 		int version = in.readInt(), size = FrameIO.length(in,
-		                                                  limits.frameBytes());
+		                                                  this.limits.frameBytes());
 		if (state > 2 || (state == 0 && !allowAbsent) || (state < 2 && (!codecId.isEmpty() || version != 0 || size != 0))) {
 			throw context.session.error("Invalid field record state/metadata");
 		}
@@ -935,7 +935,7 @@ public final class Engine {
 				          null);
 				return;
 			}
-			CodecRegistry.Registration registration = fieldCodec(field);
+			CodecRegistry.Registration registration = this.fieldCodec(field);
 			AbstractFieldCodec codec = (AbstractFieldCodec) registration.codec();
 			if (!registration.id()
 			                 .equals(codecId) || version < 1 || !codec.supportsVersion(version)) {
@@ -943,7 +943,7 @@ public final class Engine {
 			}
 			Type fieldType = GenericTypeResolver.resolve(field.getGenericType(),
 			                                             context.type());
-			prepare(fieldType);
+			this.prepare(fieldType);
 			BoundedInputStream body = new BoundedInputStream(in,
 			                                                 size);
 			codec.readField(body,

@@ -69,12 +69,12 @@ class AcceptanceTest {
 		long millis = System.currentTimeMillis() + 86400000;
 
 		public long getDelay(TimeUnit unit) {
-			return unit.convert(millis - System.currentTimeMillis(),
+			return unit.convert(this.millis - System.currentTimeMillis(),
 			                    TimeUnit.MILLISECONDS);
 		}
 
 		public int compareTo(Delayed other) {
-			return Long.compare(getDelay(TimeUnit.MILLISECONDS),
+			return Long.compare(this.getDelay(TimeUnit.MILLISECONDS),
 			                    other.getDelay(TimeUnit.MILLISECONDS));
 		}
 	}

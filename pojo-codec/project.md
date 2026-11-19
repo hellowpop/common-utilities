@@ -366,3 +366,11 @@ Java 17 전체 테스트는 60개다. Jackson 2.20.1과 JMH 1.36의 flat/nested/
 사용자의 코드 포맷 요청에 따라 저장소 루트 `code_formatter.xml`을 IntelliJ 포매터에 직접 지정하여 Java 58개와 pom.xml을 정리했다. 운영·테스트·JMH 소스를 모두 포함한다. 재검사에서 59개 파일이 설정에 부합하며, 포맷 전후 Java 구문 트리 58개와 POM XML 구조가 동일함을 확인했다. Java 17 클린 package에서 테스트 78개가 통과했다.
 
 후속 푸시 요청에 따라 PojoInjectable 구현·검증·문서, 코드 포맷 변경 및 루트 포맷 설정/규칙을 함께 커밋하여 origin/develop에 반영한다. java-performance-tuning과 data의 별도 작업은 제외한다. 이전 절의 커밋·푸시 미수행 기록은 각 구현 완료 시점의 상태다.
+
+## 17. 인스턴스 접근 규칙 적용 — 2026-11-19
+
+AGENTS.md에 추가된 this 명시 규칙을 운영·테스트·JMH Java 소스 전체에 적용했다. Java 컴파일러의 심볼 해석으로 인스턴스 멤버와 정적 멤버/지역 변수를 구분하여 24개 파일의 562곳을 수정했다. 상속 멤버는 this, 외부 인스턴스 멤버는 필요한 경우 Outer.this로 명시한다. README의 Java 예제에도 같은 규칙을 적용했다.
+
+code_formatter.xml로 다시 포맷하고 심볼 재검사에서 미적용 접근 0건을 확인했다. Java 17 benchmark profile 빌드에서 테스트 78개가 통과했으며, 운영 클래스 50개 및 테스트/JMH 클래스 96개의 디버그 정보를 제외한 바이트코드가 변경 전과 동일했다. 실행 코드가 같으므로 이번 문법 명시 변경만을 위한 JMH 재측정은 하지 않는다.
+
+사용자의 후속 푸시 요청에 따라 this 명시 규칙과 모듈 적용·문서 변경을 함께 커밋하여 origin/develop에 반영한다. 푸시 전 Java 17 package와 심볼 검사를 다시 수행한다. .gitignore 및 java-performance-tuning의 별도 사용자 변경은 포함하지 않는다.

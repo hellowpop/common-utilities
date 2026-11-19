@@ -19,10 +19,10 @@ public final class TypeRegistry {
 			                                    id) != null) {
 				throw new IllegalArgumentException("Duplicate/empty type ID");
 			}
-			types.put(id,
-			          type);
+			this.types.put(id,
+			               type);
 		});
-		explicit = Map.copyOf(ids);
+		this.explicit = Map.copyOf(ids);
 		Class<?>[] primitives = {boolean.class,
 		                         byte.class,
 		                         short.class,
@@ -32,20 +32,20 @@ public final class TypeRegistry {
 		                         double.class,
 		                         char.class};
 		for (Class<?> primitive : primitives) {
-			types.put(primitive.getName(),
-			          primitive);
+			this.types.put(primitive.getName(),
+			               primitive);
 		}
-		types.put(String.class.getName(),
-		          String.class);
-		types.put(Object.class.getName(),
-		          Object.class);
+		this.types.put(String.class.getName(),
+		               String.class);
+		this.types.put(Object.class.getName(),
+		               Object.class);
 	}
 
 	public String declare(Class<?> type) throws PojoCodecException {
-		String id = explicit.getOrDefault(type,
-		                                  type.getName());
-		Class<?> previous = types.putIfAbsent(id,
-		                                      type);
+		String id = this.explicit.getOrDefault(type,
+		                                       type.getName());
+		Class<?> previous = this.types.putIfAbsent(id,
+		                                           type);
 		if (previous != null && previous != type) {
 			throw new PojoCodecException("Type ID collision: " + id);
 		}
@@ -53,16 +53,16 @@ public final class TypeRegistry {
 	}
 
 	public String id(Class<?> type) throws PojoCodecException {
-		String id = explicit.getOrDefault(type,
-		                                  type.getName());
-		if (types.get(id) != type) {
+		String id = this.explicit.getOrDefault(type,
+		                                       type.getName());
+		if (this.types.get(id) != type) {
 			throw new PojoCodecException("Type must be registered: " + type.getName());
 		}
 		return id;
 	}
 
 	public Class<?> resolve(String id) throws PojoCodecException {
-		Class<?> type = types.get(id);
+		Class<?> type = this.types.get(id);
 		if (type == null) {
 			throw new PojoCodecException("Unregistered type: " + id);
 		}

@@ -12,7 +12,7 @@ public final class ComparatorRegistry {
 		if (registrations.containsKey("natural") || registrations.containsKey("reverse-natural")) {
 			throw new IllegalArgumentException("Reserved comparator ID");
 		}
-		comparators = Map.copyOf(registrations);
+		this.comparators = Map.copyOf(registrations);
 	}
 
 	public String id(Comparator<?> comparator) throws PojoCodecException {
@@ -22,7 +22,7 @@ public final class ComparatorRegistry {
 		if (comparator == Comparator.reverseOrder()) {
 			return "reverse-natural";
 		}
-		for (Map.Entry<String, Comparator<?>> entry : comparators.entrySet()) {
+		for (Map.Entry<String, Comparator<?>> entry : this.comparators.entrySet()) {
 			if (entry.getValue() == comparator) {
 				return entry.getKey();
 			}
@@ -37,7 +37,7 @@ public final class ComparatorRegistry {
 		if (id.equals("reverse-natural")) {
 			return Comparator.reverseOrder();
 		}
-		Comparator<?> result = comparators.get(id);
+		Comparator<?> result = this.comparators.get(id);
 		if (result == null) {
 			throw new PojoCodecException("Unregistered comparator: " + id);
 		}

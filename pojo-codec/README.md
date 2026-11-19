@@ -160,8 +160,8 @@ public class InjectableMessage implements PojoInjectable {
 
     @Override
     public void beforeSerialize() {
-        if (value != null) {
-            value = value.trim();
+        if (this.value != null) {
+            this.value = this.value.trim();
         }
     }
 
@@ -172,7 +172,7 @@ public class InjectableMessage implements PojoInjectable {
 
     @Override
     public void onDeserializeFail(Throwable cause) {
-        lastFailure = cause;
+        this.lastFailure = cause;
     }
 }
 ```
@@ -198,3 +198,7 @@ public void readInto(InputStream stream, MyBean bean, DecodeContext context)
 ```
 
 객체 생성과 읽기를 한꺼번에 수행하는 기존 readBody만으로는 생성 직후 훅을 보장할 수 없다. 따라서 injectable 사용자 Codec에서 readInto가 없으면 명시적으로 실패한다. DefaultTypeCodec의 readBody를 사용자 정의한 하위 클래스도 readInto를 명시적으로 override해야 한다. 비대상 타입의 기존 readBody 계약은 유지한다. 사용자 Field Codec도 중첩 POJO는 컨텍스트의 readValue/writeValue를 사용해야 공통 콜백·제한 처리가 적용된다.
+
+## 코드 작성 규칙
+
+루트 AGENTS.md와 code_formatter.xml을 적용한다. 같은 인스턴스의 필드·메서드는 `this.field`, `this.method()`로 접근한다. 내부 클래스에서 외부 인스턴스를 참조할 때는 필요한 경우 `Outer.this.field`처럼 명시한다. 정적 멤버와 지역 변수에는 this를 붙이지 않는다. 명시적 Java 타입을 사용하고 var와 static import는 사용하지 않는다.
