@@ -1,5 +1,21 @@
 # HTTP Payload Generator 구성
 
+## Maven 의존성 최신 안정 버전 정렬 (2026-11-19)
+
+Maven Central의 각 artifact `maven-metadata.xml`을 조회하여 Alpha·Beta·RC·Milestone을 제외한 최신 안정 버전을 적용했다. 기존 Java 17 대상과 공개 API를 유지한다.
+
+| 의존성 | 이전 버전 | 적용 버전 |
+|---|---|---|
+| io.netty:netty-codec-http | 4.1.139.Final | 4.2.21.Final |
+| com.aayushatharva.brotli4j:brotli4j | 1.23.0 | 1.24.0 |
+| com.github.luben:zstd-jni | 1.5.7-6 | 1.5.7-28 |
+| org.junit.jupiter:junit-jupiter (test) | 5.13.4 | 6.1.3 |
+| com.fasterxml.jackson.core:jackson-databind (test) | 2.20.1 | 2.23.0 |
+
+확인 출처: [Netty](https://repo.maven.apache.org/maven2/io/netty/netty-codec-http/maven-metadata.xml), [Brotli4j](https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/brotli4j/maven-metadata.xml), [zstd-jni](https://repo.maven.apache.org/maven2/com/github/luben/zstd-jni/maven-metadata.xml), [JUnit Jupiter](https://repo.maven.apache.org/maven2/org/junit/jupiter/junit-jupiter/maven-metadata.xml), [Jackson Databind](https://repo.maven.apache.org/maven2/com/fasterxml/jackson/core/jackson-databind/maven-metadata.xml).
+
+Windows x86_64/JDK 21에서 PARANOID 누수 감지 설정의 `clean verify` 성공: 123개 테스트, 실패·오류·건너뜀 0. 의존성 트리에서 Netty 전이 의존성은 모두 4.2.21.Final, Brotli4j service/native는 모두 1.24.0으로 일치한다. 기본 package는 소스 JAR을 첨부하며 `META-INF/docs/http-payload-generator/`에 모듈 Markdown 문서를 포함한다. 로컬 설치는 `-Dmaven.test.skip=true`로 테스트를 생략한다.
+
 ## Multipart 메모리 누수·NPE 후속 점검 (2026-11-11)
 
 운영 생성기의 새 내부 NPE/누수는 발견되지 않았다. multipart 검증 코드에서 디코더 생성 실패 시 요청과 거부된 file 파트가 해제되지 않는 경로를 각각 refCnt=1로 재현했다. 요청의 바깥 finally와 파트 추적 factory로 수정했으며 refCnt=0을 직접 단언한다. 모든 타입·압축 조합의 callback 종료 경로 및 multipart의 5개 압축 취소 경로로 자원 검증을 확대했다. 분석 근거·조치·보장 범위는 [resource-safety-review.md](resource-safety-review.md)의 multipart 후속 분석에 기록한다.

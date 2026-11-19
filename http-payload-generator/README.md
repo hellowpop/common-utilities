@@ -21,7 +21,7 @@ mvn -f http-payload-generator/pom.xml '-Dmaven.test.skip=true' install
 </dependency>
 ```
 
-Netty 4.1.139.Final, Brotli4j 1.23.0, zstd-jni 1.5.7-6을 사용합니다. Brotli4j는 Maven 실행 환경의 OS/아키텍처에 맞는 native 의존성을 선택합니다. 다른 플랫폼으로 배포할 때는 대상 플랫폼의 Brotli native artifact도 포함해야 합니다. Zstd 역시 지원되는 native 런타임이 필요합니다. 런타임을 사용할 수 없으면 해당 codec의 로딩 예외가 발생하며 무압축으로 대체하지 않습니다.
+Netty 4.2.21.Final, Brotli4j 1.24.0, zstd-jni 1.5.7-28을 사용합니다. 테스트 의존성은 JUnit Jupiter 6.1.3과 Jackson Databind 2.23.0입니다. 버전은 2026-11-19 Maven Central의 안정 릴리스를 기준으로 확인했으며 Alpha·Beta·RC·Milestone은 제외합니다. Brotli4j는 Maven 실행 환경의 OS/아키텍처에 맞는 native 의존성을 선택합니다. 다른 플랫폼으로 배포할 때는 대상 플랫폼의 Brotli native artifact도 포함해야 합니다. Zstd 역시 지원되는 native 런타임이 필요합니다. 런타임을 사용할 수 없으면 해당 codec의 로딩 예외가 발생하며 무압축으로 대체하지 않습니다.
 
 ## API
 
