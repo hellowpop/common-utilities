@@ -1,0 +1,40 @@
+# Final benchmark source fingerprints
+
+SHA-256 of Java production/benchmark source and Maven configuration used for the final run.
+
+| File | SHA-256 |
+| --- | --- |
+| pom.xml | 252d64f668364615e9c7a2f9a4de67120322ddd31d8ecdfc40a5d6c907109156 |
+| src/jmh/java/com/inzent/apim/utilities/pojocodec/benchmark/CodecBenchmark.java | 3a47bef7c9f55b8ee0f7a11eb541ee41ed2dc59e3cd3dc9f883ba86d5bc3352d |
+| src/main/java/com/inzent/apim/utilities/pojocodec/annotation/EmptyPolicy.java | f5dfbd8b7e8355ce28a57d54aa145e45a5596eadf06c7ea97186a662d2b31f94 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/annotation/NullPolicy.java | 54cc398bebda155fdd20bb24bcf083ab64849f45cd535e94002f877b905ebda7 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/annotation/PojoCodec.java | fe6974975c3a3e5fcd836b174d77d1774cbae06d15c08ae8ce344e32495cb971 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/annotation/ZonePolicy.java | 86f6cc2e63de03373902fa1e2a75e6fdf0cdd5c293fd74acc24c9c2b78782c73 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/codec/AbstractFieldCodec.java | 8046a2644745a663c947eb286fba55d290a1b3c22c6fa791ec61983158859177 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/codec/AbstractTypeCodec.java | 6f264e229d49817ca56e63c700c6824575caa2bd04e82ab4a21dc77f7baeac32 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/codec/container/JdkContainers.java | b097d4e04614348333877f350a607f998b5f219ab1d52d51bf054f3b47babdde |
+| src/main/java/com/inzent/apim/utilities/pojocodec/codec/DefaultFieldCodec.java | 73f5b5e47580bd7a75eba8d87657cbaac8c242a93b4b1d57f7eb30787519a19e |
+| src/main/java/com/inzent/apim/utilities/pojocodec/codec/DefaultTypeCodec.java | 37b3bf672cace88f63ba555aba19c25f7c4aea6fb992077e608d2163cbbd3ded |
+| src/main/java/com/inzent/apim/utilities/pojocodec/codec/value/ScalarValueCodec.java | 44f2fe3d0d92866880312b80c4945339dc703fe1ca54e824ed73d543a8ab2246 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/codec/value/TemporalValueCodec.java | 3ecd9f24379fa937ac7b889740a425e0cfb8a4e744c705cb9274f215112b63a3 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/CodecLimits.java | 8cda1e0efab86bc1bf1fc5ab8b6bbfb9800cbbc9ebdc93fc40a7963bea90da5f |
+| src/main/java/com/inzent/apim/utilities/pojocodec/CodecOptions.java | f686ecf6a85e0a29bc40d174f6246bb63fbd0b079cb370c280f489cfb6ab07f3 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/DecodeContext.java | c01f3ffde1e04efb7b1b5256c59175e38debf7444b7946a28836234c7f040f9a |
+| src/main/java/com/inzent/apim/utilities/pojocodec/EncodeContext.java | 1033252c04bb797ee23d16dbdbb2d80907c895da42003250dfc30cc75ea54a3c |
+| src/main/java/com/inzent/apim/utilities/pojocodec/internal/BoundedInputStream.java | 34e6061776d46dc00813531ddeab1b73a5f8d369de78c4f5502724159d4ec06e |
+| src/main/java/com/inzent/apim/utilities/pojocodec/internal/BudgetedBuffer.java | 3e295a964a431e25bb588ead26256323ac319403e8cff9ab84083f6f5f19531b |
+| src/main/java/com/inzent/apim/utilities/pojocodec/internal/CompiledCodec.java | fff81d7c91fe75edd6216e1cda52811c00620ab4b921e685ac8752be61d589a8 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/internal/ContainerHeader.java | a8f417ecfdb0643e54367ec61a1d94a952f8c36d01ab6ee8520dae4e62c77cdf |
+| src/main/java/com/inzent/apim/utilities/pojocodec/internal/Engine.java | c4b5e438d20412f1586947d3cb288c048cc10efac62ca2828b2ab69cb54aed06 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/internal/FrameIO.java | 85f516d6aed0c276cd39f75a17df738922e6e362e1149c1fbcf6427f7a67ef77 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/internal/Session.java | 8cce015f6a6ef004e014f7628a2751c1f807d5a2edbe3beeeb4d8d67ce880c9d |
+| src/main/java/com/inzent/apim/utilities/pojocodec/metadata/ClassMetadata.java | 9d51d64b4641cf7286657b1b4f03d03e793eddb816e0c746dba5f3c90475b1f4 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/metadata/FieldMetadata.java | bb261170746b274caf8a2777bd3c68f9154e6ff62793bf1c634653a1d8fe4839 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/metadata/GenericTypeResolver.java | 8eb07891963a9d738ebb673e6e1a3f29a424a75fe340dce61820c81a5fca0f32 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/metadata/MetadataResolver.java | 6dfc5c00b17abea5572af089b21f710f87d536ef16999d0abb288029210f0d00 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/PojoCodecController.java | 78b1fbf08a885cf8ce63c752ff6bfbdf871d74a8fd5ab4e0e7f06387cec3885d |
+| src/main/java/com/inzent/apim/utilities/pojocodec/PojoCodecException.java | 095bf4a7adf4f0051e4fbfd1d05855bd211351fec243a2a7fa984cc5faae2326 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/registry/CodecRegistry.java | 41caa75ebbd28346b22a37ec2cb0f2371bfcef47dfb07e8cec954d8997a2e3df |
+| src/main/java/com/inzent/apim/utilities/pojocodec/registry/ComparatorRegistry.java | 0eddfad13d6eafcae3a6bc058477d1647ca9b316d7961a42c3da9af597f41ce8 |
+| src/main/java/com/inzent/apim/utilities/pojocodec/registry/ContainerPolicyRegistry.java | 3bbefa53f7d65564eadabcae6c1c7e2a7bb2ba46a318ca2dca1f3dabdcb0882b |
+| src/main/java/com/inzent/apim/utilities/pojocodec/registry/TypeRegistry.java | 2fe40e5577f80268ddec6e30bceb798b62c0e918bd6bc4f1341775718223142a |

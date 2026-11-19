@@ -1,0 +1,33 @@
+pojo serialize / deserialize utility
+- @PojoCodec annotation
+  - codec type 과 부가 속성관리
+- codec 계층 추가
+  - class / field level 의 serialize/deserialize 담당을 구분하여 관리
+  - abstract base type 을 구현하고 extends 를 통해 확장하는 구조
+  - default type codec 을 구현하고 codec 미지정상태에서 기본으로 사용
+  - deserialize 의 구현은 serialize 의 역순을 해석하는 것을 기본으로 구현
+- type codec
+  - main controller method
+    - void serialize(OutputStream stream, Object bean);
+      - bean type 을 식별하여 진행
+    - <T> void serialize(OutputStream stream, Class<T> type, T bean);
+      - 지정된 타입에 선언된 annotation / field 구성으로 serialize
+    - <T> T deserialize(InputStream stream, Class<T> type);
+      - bean type 을 식별하여 진행
+  - default type codec serialize
+    - class 에 static / transient 로 선언되지 않은 모든 field 에 대해 수행
+    - field 이름을 명시하여 type 변경이후 이전 binary 를 읽을 수 있어야함.
+    - null 이거나 empty collection/map 은 serialize 에서 제외함
+      - annotation 에 null include 옵션을 통해 injection
+    - 단일값과 구조체 포함
+      - 단일값은 primitive, date 계열의 값
+      - 구조체는 java collection/map 계열, 다른 pojo type class 를 포함함
+      - 다중 구조체에 의한 계층구조를 지원해야함
+      - date 계열은 기본 long 으로 변환하여 저장을 기본으로함
+      - zoned datetime 의 경우 zone 정보는 기본 포함하지 않고 long 으로 변환하지만 annotation 주입을 통해 zone 정도 포함도 가능해야함
+- field codec
+  - main controller method
+    - void serialize(OutputStream stream, Object bean, Field field);
+      - field type 을 식별하여 진행
+    - void deserialize(InputStream stream, Object bean, Field field);
+      - bean 의 field type 으로 읽어서 field 값을 bean 에 set 함
