@@ -13,3 +13,4 @@
   - java code
     - var 를 사용하지 않고 class name 사용
     - static import 사용하지 않음
+    - [code_formatter.xml](code_formatter.xml) format 사용

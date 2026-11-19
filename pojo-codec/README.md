@@ -127,6 +127,8 @@ Codec은 자기 본문만 처리하고 읽을 때 전부 소비해야 한다. NU
 
 스크래치는 controller·스레드별로 최대 64 KiB의 바이트 배열을 보관한다. 더 큰 배열은 호출 종료 시 보관하지 않으며 재진입 호출은 별도 스크래치를 쓴다. 스크래치가 controller/Registry를 역참조하지 않도록 구성하여 폐기한 Codec 인스턴스가 작업 스레드에 붙잡히지 않는다.
 
+`PojoInjectable` 타입이 정적으로 포함된 그래프는 추측 실행 후 fallback 과정의 중복 콜백을 방지하기 위해 범용 경로로 처리한다. 비대상 POJO의 최적화 경로는 유지한다.
+
 `benchmark` profile에서만 Jackson/JMH test 의존성을 사용한다. 아래 명령은 Java 17, 동일 스트림 조건, warmup 5회, 측정 5회, JVM fork 2회로 CPU 처리 시간(us/op)과 할당량(B/op)을 비교한다.
 
 ```powershell
@@ -135,3 +137,64 @@ Codec은 자기 본문만 처리하고 읽을 때 전부 소비해야 한다. NU
 ```
 
 판정은 flat·nested·numeric 각 직렬화/역직렬화 6개 조합에서 시간과 할당량이 모두 감소하고 JMH 신뢰구간이 겹치지 않아야 통과한다. 연산당 할당량은 유지 힙이나 RSS 측정과 구분한다. 측정 환경·원본 데이터·구체적인 결과는 [performance.md](performance.md)에 기록한다.
+
+## PojoInjectable 콜백
+
+POJO가 `com.inzent.apim.utilities.pojocodec.PojoInjectable`을 구현하면 해당 인스턴스의 생명주기 콜백을 실행한다. 여섯 메서드는 default no-op이므로 필요한 것만 override한다.
+
+| 메서드 | 호출 시점 |
+| --- | --- |
+| `void beforeSerialize()` | 직렬화 시작 전, 필드 값을 읽기 전 |
+| `void afterSerialize()` | 루트 문서 출력 완료 후, 중첩 객체는 해당 값 프레임 기록 완료 후 |
+| `void onSerializeFail(Throwable cause)` | before/본문/after 또는 출력 실패 시 |
+| `void beforeDeserialize()` | bean 생성 직후, 필드 주입 시작 전 |
+| `void afterDeserialize()` | 값 프레임 검증 완료 후, 루트는 문서 전체 검증 후 |
+| `void onDeserializeFail(Throwable cause)` | 생성된 bean의 before/본문/after 또는 입력 검증 실패 시 |
+
+```java
+import com.inzent.apim.utilities.pojocodec.PojoInjectable;
+
+public class InjectableMessage implements PojoInjectable {
+    private String value;
+    private transient Throwable lastFailure;
+
+    @Override
+    public void beforeSerialize() {
+        if (value != null) {
+            value = value.trim();
+        }
+    }
+
+    @Override
+    public void afterDeserialize() {
+        // 이 시점에는 수신 필드 주입과 프레임 검증이 끝나 있다.
+    }
+
+    @Override
+    public void onDeserializeFail(Throwable cause) {
+        lastFailure = cause;
+    }
+}
+```
+
+- 루트·중첩 POJO와 지원하는 사용자 Collection/Map 하위 타입에 적용한다. 컨테이너는 생성 후 원소를 넣기 전에 beforeDeserialize를 호출한다. enum이 구현한 경우 새 인스턴스를 만들지 않고 조회한 상수 인스턴스에서 beforeDeserialize를 호출한다. null 및 인스턴스를 얻기 전 오류에는 콜백이 없다.
+- beforeSerialize의 필드 변경은 출력에 반영한다. afterSerialize의 변경은 이미 기록한 값에 영향을 주지 않는다. beforeDeserialize의 초기값은 수신 필드로 덮어쓸 수 있으며, 누락된 필드는 유지한다.
+- `deserializeSingle`은 EOF 확인까지 통과해야 afterDeserialize를 호출한다. 중첩 값 프레임이 손상되면 그 객체의 완료 콜백 대신 실패 콜백을 호출한다.
+- 자식 오류는 자식 실패 콜백 후 부모 실패 콜백으로 전파한다. 뒤에 발생한 루트 출력 오류가 이미 완료된 자식의 콜백을 다시 호출하지는 않는다.
+- 독립 field API는 새 객체를 생성하지 않고 기존 owner bean의 전/후/실패 콜백으로 감싼다.
+- before/after가 던진 RuntimeException/Error도 실패다. 실패 콜백이 추가로 던진 오류는 원래 Throwable의 suppressed에 보존한다. 필드나 출력의 변경을 rollback하지 않는다. 중첩 오류는 PojoCodecException으로 포장될 수 있으며 원래 cause를 보존한다.
+- 생략된 null/empty 필드의 값에는 콜백을 호출하지 않는다. 빈 사용자 컨테이너의 콜백도 필요하면 해당 필드에 `emptyPolicy = INCLUDE`를 지정한다.
+
+### 사용자 Type Codec과 인스턴스 생성
+
+injectable 사용자 Type Codec은 `createInstance(Class<T>, DecodeContext)`와 `readInto(InputStream, T, DecodeContext)` 경로를 사용한다. createInstance는 기본 인자 없는 생성자를 사용하며 필요하면 override한다. 라이브러리가 생성된 인스턴스의 beforeDeserialize를 호출한 뒤 그 **같은 인스턴스**를 readInto에 전달한다. readInto는 컨텍스트의 readValue로 값을 읽어 bean에 대입한다.
+
+```java
+@Override
+public void readInto(InputStream stream, MyBean bean, DecodeContext context)
+        throws IOException {
+    bean.setValue((String) context.readValue(stream, String.class));
+}
+```
+
+객체 생성과 읽기를 한꺼번에 수행하는 기존 readBody만으로는 생성 직후 훅을 보장할 수 없다. 따라서 injectable 사용자 Codec에서 readInto가 없으면 명시적으로 실패한다. DefaultTypeCodec의 readBody를 사용자 정의한 하위 클래스도 readInto를 명시적으로 override해야 한다. 비대상 타입의 기존 readBody 계약은 유지한다. 사용자 Field Codec도 중첩 POJO는 컨텍스트의 readValue/writeValue를 사용해야 공통 콜백·제한 처리가 적용된다.

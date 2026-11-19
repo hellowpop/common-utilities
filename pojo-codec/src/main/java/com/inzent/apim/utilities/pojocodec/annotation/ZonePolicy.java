@@ -1,2 +1,7 @@
 package com.inzent.apim.utilities.pojocodec.annotation;
-public enum ZonePolicy { INHERIT, INCLUDE, OMIT }
+
+public enum ZonePolicy {
+	INHERIT,
+	INCLUDE,
+	OMIT
+}

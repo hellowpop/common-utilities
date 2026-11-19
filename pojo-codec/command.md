@@ -31,3 +31,16 @@ pojo serialize / deserialize utility
       - field type 을 식별하여 진행
     - void deserialize(InputStream stream, Object bean, Field field);
       - bean 의 field type 으로 읽어서 field 값을 bean 에 set 함
+- PojoInjectable interface 추가하고 대상 type이 implements 했을 경우 직렬화 과정에서 실행
+  - void beforeSerialize();
+    - serialize 시작전 호출
+  - void afterSerialize();
+    - serialize 완료후 호출
+  - void onSerializeFail(Throwable cause);
+    - serialize 수행중 오류 발생시 호출
+  - void beforeDeserialize();
+    - deserialize 대상 bean instance 생성후 호출하고 deserialize 시작
+  - void afterDeserialize();
+    - deserialize 완료후 호출
+  - void onDeserializeFail(Throwable cause);
+    - deserialize 수행중 오류 발생시 호출

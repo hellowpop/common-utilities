@@ -1,7 +1,7 @@
 # POJO Codec 설계
 
 - 작성일: 2026-11-18
-- 상태: 구현 및 성능 개선 완료, 테스트 60개·Jackson 비교 6개 조합 통과
+- 상태: PojoInjectable 콜백 확장 구현, 테스트 78개 및 성능 회귀 6개 조합 통과
 - 승인일: 2026-11-18
 - 구현 계획: [implementation-plan.md](implementation-plan.md)
 - 요구사항: [command.md](command.md)
@@ -349,3 +349,20 @@ Java 17 전체 테스트는 60개다. Jackson 2.20.1과 JMH 1.36의 flat/nested/
 ## 14. 배포 준비 — 2026-11-19
 
 사용자의 푸시 요청에 따라 `pojo-codec`의 요구사항·설계·구현·테스트·벤치마크 결과를 함께 커밋하여 `origin/develop`에 반영한다. 별도 사용자 작업인 `data/`는 포함하지 않는다. 푸시 전에 Java 17 package와 저장된 정식 성능 결과의 합격 판정을 다시 확인한다. 이전 절의 커밋·푸시 미수행 기록은 당시 구현 완료 시점의 상태다.
+
+## 15. PojoInjectable 확장 — 2026-11-19
+
+- `PojoInjectable`은 beforeSerialize/afterSerialize/onSerializeFail 및 beforeDeserialize/afterDeserialize/onDeserializeFail의 여섯 default no-op 메서드를 제공한다.
+- 컨트롤러가 루트 문서·독립 field API를 관리하고, Engine이 중첩 POJO 및 지원하는 사용자 컨테이너의 콜백을 관리한다. beforeDeserialize는 생성 후 주입 전에 실행한다. 중첩 afterDeserialize는 값 프레임 검증까지 끝난 뒤, 루트는 전체 문서 검증 뒤 실행한다.
+- 실패 콜백은 각 인스턴스 처리 단위에서 한 번 실행하며 추가 오류는 suppressed에 보존한다. 생성 전 오류에는 인스턴스 콜백이 없다. strict 단일 문서의 남은 데이터 오류는 완료가 아닌 실패로 처리한다.
+- 사용자 Type Codec에는 createInstance/readInto를 추가하여 인스턴스 생성과 주입을 분리했다. 기존 비대상 readBody 계약은 유지한다. injectable custom readInto 미구현 또는 기존 readBody 재정의의 암묵적 우회는 명시적 오류다.
+- 추측 실행하는 compiled 경로에서는 사용자 훅을 실행하지 않는다. injectable 타입이 정적으로 포함된 그래프는 범용 경로를 선택하고, 동적 하위 타입은 기존 fallback에서 처리해 중복 호출을 막는다. 비대상 POJO의 최적화와 v1 포맷은 유지한다.
+- Java 17 클린 빌드에서 기능 테스트 78개가 통과했다. 순서·값 변경·출력/입력/훅 오류·suppressed·중첩/컨테이너·enum·field API·custom Codec·strict EOF·손상된 중첩 경계·동적 하위 타입의 compiled fallback 중복 방지를 검증한다. enum은 새로 생성할 수 없으므로 등록된 상수 인스턴스를 조회한 직후 beforeDeserialize를 실행하고 프레임 검증 후 완료 처리한다.
+- 비대상 POJO의 정식 JMH 회귀 측정도 6개 조합 모두 통과했다. 원본 결과와 범위는 performance.md의 2026-11-19 절에 기록한다.
+- 세부 계획은 [lifecycle-plan.md](lifecycle-plan.md), 사용법은 [README.md](README.md)의 콜백 절을 참조한다. 이번 확장 요청에서는 별도 commit/push를 하지 않는다.
+
+## 16. 코드 포맷 및 후속 반영 — 2026-11-19
+
+사용자의 코드 포맷 요청에 따라 저장소 루트 `code_formatter.xml`을 IntelliJ 포매터에 직접 지정하여 Java 58개와 pom.xml을 정리했다. 운영·테스트·JMH 소스를 모두 포함한다. 재검사에서 59개 파일이 설정에 부합하며, 포맷 전후 Java 구문 트리 58개와 POM XML 구조가 동일함을 확인했다. Java 17 클린 package에서 테스트 78개가 통과했다.
+
+후속 푸시 요청에 따라 PojoInjectable 구현·검증·문서, 코드 포맷 변경 및 루트 포맷 설정/규칙을 함께 커밋하여 origin/develop에 반영한다. java-performance-tuning과 data의 별도 작업은 제외한다. 이전 절의 커밋·푸시 미수행 기록은 각 구현 완료 시점의 상태다.

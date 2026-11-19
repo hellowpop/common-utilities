@@ -72,3 +72,24 @@ java -cp $benchmarkClasspath org.openjdk.jmh.Main CodecBenchmark -prof gc -f 2 -
 위 수치는 정상 상태의 세 workload 및 두 방향에 대한 결과다. 사용자 Codec, 순환 타입 그래프, Map/정렬·불변·동시성 컨테이너, 날짜·큰 수 등 범용 Engine을 사용하는 경로까지 Jackson보다 빠르다고 주장하지 않는다. 기존 기능 지원은 그대로 유지한다.
 
 메모리 비교는 연산당 할당량이다. 유지 힙/RSS, controller 생성 비용, 최초 호출 지연 및 출력 버퍼를 매번 새로 만드는 조건의 우위는 이 측정으로 확정하지 않는다. 하드웨어·JDK·실제 데이터가 바뀌면 동봉한 스크립트로 다시 측정한다. v1 바이너리 크기가 JSON보다 작다는 보장도 이 성능 조건에 포함하지 않는다.
+
+## PojoInjectable 확장 후 성능 회귀 — 2026-11-19
+
+동일 Java 17 환경과 정식 fork 2개, warmup/measurement 각각 5×1초, 단일 스레드 조건으로 다시 측정했다. 비교 데이터는 인터페이스를 구현하지 않는 기존 flat/nested/numeric 객체이며, 여섯 조합 모두 시간·할당량의 신뢰구간 기준을 통과했다.
+
+| Workload | 동작 | Jackson us/op | POJO us/op | Jackson B/op | POJO B/op |
+| --- | --- | ---: | ---: | ---: | ---: |
+| flat | serialize | 0.55 | 0.31 | 440 | <0.1 |
+| flat | deserialize | 0.64 | 0.52 | 1144 | 344 |
+| nested | serialize | 6.45 | 3.84 | 1616 | <0.1 |
+| nested | deserialize | 8.48 | 7.41 | 7624 | 5232 |
+| numeric | serialize | 8.00 | 2.51 | 416 | <0.1 |
+| numeric | deserialize | 28.86 | 4.24 | 15492 | 8280 |
+
+[원본 JSON](benchmarks/results/lifecycle-2026-11-19.json)과 [소스 SHA-256](benchmarks/results/source-fingerprints-lifecycle.md)을 보관한다. 사용자 콜백을 추측 실행하지 않기 위해 injectable 타입이 정적으로 포함된 그래프는 범용 Engine을 사용한다. 콜백 구현 비용과 이 범용 경로의 성능은 위 측정에 포함하지 않는다. 기능·실패·호환성 검증은 Java 17 클린 빌드 테스트 78개가 통과했다.
+
+```powershell
+./pojo-codec/benchmarks/Test-Performance.ps1 -ResultPath pojo-codec/benchmarks/results/lifecycle-2026-11-19.json
+```
+
+이후 code_formatter.xml 적용으로 소스의 공백·줄바꿈과 주석 배치가 변경됐다. 포맷 전후 Java 구문 트리 및 POM XML 구조의 동일성을 확인했고 테스트 78개를 다시 통과했다. 위 원본 결과와 SHA-256은 포맷 적용 전 측정 소스의 기록으로 보존하며, 포맷만을 이유로 JMH를 재측정하지는 않았다.
