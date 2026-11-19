@@ -1,0 +1,61 @@
+http client executor
+- connector 는 3가지로 구성하고 선택하여 사용할 수 있는 구조
+  - ht5: apache httpclient5 module 사용
+  - netty: netty library 사용하여 구현
+  - java: pure java 로 구현
+- http method 명, version, status 는 각 ht5,netty 에 따라 다르므로 공통영역으로 관리하고 connector module 은 변환기를 갖는다. pure java 는 그대로 사용한다.
+  - ConnectMethod : http method 대등
+  - ConnectVersion : http version 대응
+  - ResponseStatus : http response code status 대응
+  - HttpRequestPayload/HttpResponsePayload 
+    - 요청/응답 에 대한 맥락을 각 connector 별로 유지할 수 있도록 하기 위함
+- payload generator dependency 추가하여 request body로 사용할 수 있도록 함.
+- connection configure
+  - tcp 연결속성
+  - tls 인증서 속성 (mTLS)
+  - forward proxy server 사용여부 및 경유 정보
+  - 연결유지 관련 속성
+    - maxConnTotal
+    - maxConnPerRoute
+    - pool manage policy
+- manager
+  - connection configure 관리
+  - connection configure 는 기본값으로 사용하고 builder 에서 executor 를 생성할때 injection 가능해야함
+  - 각 executor 는 override 된 새로은 connection configure 로 동작
+  - connector type 을 기본 인자로 하는 builder pattern 을 통해 executor 생성
+    - 각 connector에 종속된 속성을 개별 override
+    - connection configure 속성 override
+    - executor 설정 주입
+      - location(URI uri)
+      - path(String path)
+      - method(ConnectMethod method)
+      - version(ConnectVersion version)
+- executor
+  - execution context 를 executor를 기본으로 수신하는 builder pattern 으로 생성
+    - connect url
+      - 미지정시 executor 의 location uri + path 로 조합
+    - path
+    - method
+    - content 지정패턴
+      - content type header 내용과 함께 raw byte[] 로 지정
+      - payload generator 타입으로 지정
+    - interceptor(ClientHandleInterceptor interceptor)
+    - execute
+      - 실행하고 execution context 를 반환함.
+- execution context
+  - http 요청과 응답에 대한 정보와 과정에 대한 history 를 관리함
+  - 요청정보
+    - http request summary
+    - 수신서버로 전송한 packet 원본
+- execute interceptor
+  - 요청 전송과 응답 과정의 특정 지점에서 개입과 event 수신
+  - injection point
+    - connect result
+      - 성공/실패 정보를 수신
+    - content generated
+      - byte[] contentGenerated(byte[])
+      - content body byte[] 을 수신하고 응답으로 null 이 아닌 byte[] 을 반환할 경우 반환된 값을 실제 연결로 전송함
+      - content 가 변경된 content 가 규칙에 어긋나더라도 반드시 그대로 사용한다
+        - 에러응답에 대한 수신을 위함으로 content length 헤더 보다 크거나 작아도 반드시 그대로 사용함
+    - 요청 전송관료알림
+    - 응답 수신완료알림
