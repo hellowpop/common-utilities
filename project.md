@@ -23,6 +23,16 @@
 
 ## 구조 변경내역
 
+- 2026-11-19: HTTP Client Executor 구현과 CPU·리소스·NPE 개선을 develop에 반영한다. interrupt 감시 통합, 취소 타이머·종료 executor 잔류 제거, 임시 파일 정리 및 Netty 입력 NPE/EOF 처리를 수정했다. JDK 17 PARANOID 검증 88개 통과와 일반·소스 JAR의 Markdown 7개 포함을 확인했다. 분석과 사용 계약은 [안전성 분석](http-client-executor/safety-analysis.md)에 기록했다.
+
+- 2026-11-19: [HTTP Client Executor](http-client-executor/project.md)에 HTTP/2 multiplex와 HT5 HTTP/2 proxy/localAddress를 추가했다. 물리 연결·stream lease 분리, 서버 SETTINGS/GOAWAY, stream 취소 격리·대기 timeout·늦은 전송 방지와 CONNECT/mTLS·로컬 바인딩을 구현했다. Apache HttpCore는 취소 stream reset 수정이 포함된 5.5로 정렬했다. 상세 사용법·지원표·검증은 모듈 문서를 따른다.
+
+- 2026-11-19: [HTTP Client Executor](http-client-executor/project.md)를 단일 Maven 라이브러리로 구현했다. HT5/Netty/Java HTTP/1.1, HT5·Netty TLS HTTP/2, TCP/TLS/mTLS·proxy, 설정 builder·풀, generator·본문 hook, 원본 bytes·이력·취소와 자원 종료를 제공한다. 독립 리뷰의 8개 경계 문제를 회귀 테스트로 수정하고 사용법을 [README](http-client-executor/README.md)에 정리했다. JDK 17 PARANOID clean verify 52개 통과, 58개 class의 major 61·소스 31개·Markdown 5개 패키징과 테스트 생략 install을 확인했다. HTTP/2 multiplex와 HT5 HTTP/2 proxy/localAddress는 미지원이며 커밋/push는 수행하지 않았다.
+
+- 2026-11-19: 사용자 지시에 따라 [HTTP Client Executor 설계](http-client-executor/project.md)를 단일 Maven 프로젝트·단일 JAR로 변경했다. 공통 기능·HT5/Netty/Java 커넥터·payload 연동은 패키지로 구분하고 하나의 POM에서 빌드한다. 내장 provider registry, 통합 의존성·소스/문서 패키징·구현 순서를 반영했다. 설계 수정이며 소스/POM 구현은 아직 진행하지 않았다.
+
+- 2026-11-19: `http-client-executor/http-client-executor.md` 요구를 기준으로 [HTTP Client Executor 설계](http-client-executor/project.md)를 작성했다. HT5/Netty/Java 선택형 모듈, 공통 모델·설정 snapshot, payload adapter, interceptor·이력·풀·자원 수명과 검증 기준을 정의했다. Java/Netty HTTP/1.1 raw 경로를 설계하고, HT5 길이 불일치 전송·직렬화 원본 기록은 미해결 기술 항목과 구현 착수 검증 조건으로 명시했다. 설계 문서만 추가했으며 소스/POM 구현·빌드·커밋/push는 수행하지 않았다.
+
 - 2026-11-15: 사용자 푸시 요청으로 HTTP Mock Request Caller의 path 그리드/복사, 시간 실행과 path 간격, HTML 리포트 및 YAML 재사용 기능을 develop에 커밋하여 origin/develop에 반영한다. 기술문서를 선행 갱신하고 Java 54개·Node 19개 테스트와 소스/문서 패키징을 재확인하며 target 계열·data·로그는 제외한다.
 
 - 2026-11-15: HTTP Mock Request Caller HTML 리포트에 상태/오류 꺾은선 그래프와 지연/Path/Worker 테이블, Path 상세 복사, YAML 전문 다운로드 및 파일·텍스트 기반 신규 시나리오 가져오기를 구현했다. 원본 편집 상태와 시나리오 ID를 분리하고 64-bit seed는 문자열로 보존한다. Java 54개·Node 19개 및 실제 브라우저 복사·YAML 재등록·실행 보고서 검증을 완료했다. 산출물은 target-report-yaml에 생성하며 커밋/push는 수행하지 않았다.
