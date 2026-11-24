@@ -62,56 +62,14 @@ final class TlsFixture
 	           int maxStreams,
 	           java.util.function.BiConsumer<ChannelHandlerContext, FullHttpRequest> handler) throws Exception {
 		this.handler = handler;
-		Files.createDirectories(directory);
-		Path store = directory.resolve("fixture.p12");
-		if (!Files.exists(store)) {
-			Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"),
-			                                             "bin",
-			                                             "keytool.exe")
-			                                         .toString(),
-			                                     "-genkeypair",
-			                                     "-alias",
-			                                     "fixture",
-			                                     "-keyalg",
-			                                     "RSA",
-			                                     "-keysize",
-			                                     "2048",
-			                                     "-validity",
-			                                     "3",
-			                                     "-dname",
-			                                     "CN=localhost",
-			                                     "-ext",
-			                                     "SAN=dns:localhost,ip:127.0.0.1",
-			                                     "-storetype",
-			                                     "PKCS12",
-			                                     "-keystore",
-			                                     store.toString(),
-			                                     "-storepass",
-			                                     "fixturepass",
-			                                     "-noprompt").redirectErrorStream(true)
-			                                                 .redirectOutput(directory.resolve("keytool.log")
-			                                                                          .toFile())
-			                                                 .start();
-			if (!process.waitFor(20,
-			                     TimeUnit.SECONDS) || process.exitValue() != 0) {
-				process.destroyForcibly();
-				throw new IllegalStateException("keytool failed");
-			}
-		}
-		KeyStore keys = KeyStore.getInstance("PKCS12");
-		try (InputStream input = Files.newInputStream(store)) {
-			keys.load(input,
-			          "fixturepass".toCharArray());
-		}
+		KeyStore keys = loadKeys(directory);
 		KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
 		keyManagers.init(keys,
 		                 "fixturepass".toCharArray());
 		TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
 		trustManagers.init(keys);
-		this.client = SSLContext.getInstance("TLS");
-		this.client.init(keyManagers.getKeyManagers(),
-		                 trustManagers.getTrustManagers(),
-		                 null);
+		this.client = sslContext(keyManagers,
+		                         trustManagers);
 		SslContextBuilder tls = SslContextBuilder.forServer(keyManagers)
 		                                         .trustManager(trustManagers)
 		                                         .clientAuth(mutual
@@ -178,6 +136,71 @@ final class TlsFixture
 		                                     .bind(0)
 		                                     .sync()
 		                                     .channel();
+	}
+
+	static SSLContext localContext(Path directory) throws Exception {
+		KeyStore keys = loadKeys(directory);
+		KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+		keyManagers.init(keys,
+		                 "fixturepass".toCharArray());
+		TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+		trustManagers.init(keys);
+		return sslContext(keyManagers,
+		                  trustManagers);
+	}
+
+	private static SSLContext sslContext(KeyManagerFactory keyManagers,
+	                                     TrustManagerFactory trustManagers) throws Exception {
+		SSLContext context = SSLContext.getInstance("TLS");
+		context.init(keyManagers.getKeyManagers(),
+		             trustManagers.getTrustManagers(),
+		             null);
+		return context;
+	}
+
+	private static KeyStore loadKeys(Path directory) throws Exception {
+		Files.createDirectories(directory);
+		Path store = directory.resolve("fixture.p12");
+		if (!Files.exists(store)) {
+			Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"),
+			                                             "bin",
+			                                             "keytool.exe")
+			                                         .toString(),
+			                                     "-genkeypair",
+			                                     "-alias",
+			                                     "fixture",
+			                                     "-keyalg",
+			                                     "RSA",
+			                                     "-keysize",
+			                                     "2048",
+			                                     "-validity",
+			                                     "3",
+			                                     "-dname",
+			                                     "CN=localhost",
+			                                     "-ext",
+			                                     "SAN=dns:localhost,ip:127.0.0.1",
+			                                     "-storetype",
+			                                     "PKCS12",
+			                                     "-keystore",
+			                                     store.toString(),
+			                                     "-storepass",
+			                                     "fixturepass",
+			                                     "-noprompt").redirectErrorStream(true)
+			                                                 .redirectOutput(directory.resolve("keytool.log")
+			                                                                          .toFile())
+			                                                 .start();
+			if (!process.waitFor(20,
+			                     TimeUnit.SECONDS) || process.exitValue() != 0) {
+				process.destroyForcibly();
+				throw new IllegalStateException("keytool failed");
+			}
+		}
+		KeyStore keys = KeyStore.getInstance("PKCS12");
+		try (InputStream input = Files.newInputStream(store)) {
+			keys.load(input,
+			          "fixturepass".toCharArray());
+		}
+		return keys;
 	}
 
 	private void install(Channel channel) {

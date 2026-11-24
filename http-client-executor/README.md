@@ -168,6 +168,18 @@ hook가 배열을 반환하면 이를 그대로 사용한다. null이면 전달�
 
 `CaptureLevel` 기본값은 LOGICAL이고 raw bytes는 명시적으로 켠다. 기록은 TLS 암호화 전 HTTP/1.1 애플리케이션 bytes이며 TCP packet/암호화 record/서버 도달 증거가 아니다. write 실패 시 기록은 성공적으로 write가 반환된 prefix이며 실제 원격 도달량은 알 수 없다. capture도 maxStoredBytes를 넘으면 실행 실패한다. 원본은 인증 헤더·본문을 포함하므로 기본 로그에 출력하지 않는다. 헤더 요약이 필요하면 `.redacted()`를 사용한다.
 
+### Java TLS에서 본문 일부를 보내고 서버 종료 기다리기
+
+[JavaTlsPartialBodySampleTest](src/test/java/com/inzent/apim/utilities/http/client/JavaTlsPartialBodySampleTest.java)는 임시 인증서로 루프백 TLS 서버를 열고 Java 커넥터로 한 번 연결한다. 프로젝트 루트에서 다음 명령으로 실행한다.
+
+```powershell
+mvn -f http-client-executor/pom.xml "-Dtest=JavaTlsPartialBodySampleTest" test
+```
+
+클라이언트는 HTTP/1.1 POST 본문을 `ABCDEFGH`로 준비한다. `RAW_HTTP1`에서 `contentGenerated`가 앞 3바이트만 반환하므로 서버는 `Content-Length: 8`과 본문 `ABC`를 받는다. 이 예제에서 지정하는 단위는 HTTP 본문 바이트이며 TCP 패킷 수나 TLS 레코드 경계는 전송 계층이 결정한다.
+
+`shutdownOutput(false)`로 송신 측을 열어 둔다. 서버는 250ms 동안 다음 바이트와 EOF가 오지 않는 것을 확인한 뒤 HTTP 응답 없이 연결을 닫는다. 그러면 `execute()`가 반환되고 `context.failure()`에 `EOFException`이 기록되면 테스트가 통과한다. 클라이언트의 응답 대기 한도는 5초, 전체 실행 한도는 10초다.
+
 ## 이벤트·이력·종료
 
 `ClientHandleInterceptor`의 `contentGenerated`, `connectResult`, `requestSent`, `responseReceived`를 구현한다. 정상 순서는 본문 준비 → 연결 결과 → 송신 완료 → 최종 응답 수신이다. 재사용은 ConnectResult.reused로 표시한다. 준비 실패에는 연결 이벤트가 없고 연결 시도 실패에는 실패 결과가 온다. 송신 완료는 원격 처리 완료가 아니다. 부분 응답에는 responseReceived가 오지 않는다.

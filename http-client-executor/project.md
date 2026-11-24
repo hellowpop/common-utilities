@@ -122,3 +122,7 @@ HT5는 full async `HttpRoute`에 proxy/localAddress를 주입한다. 최초 TLS 
 - 지정 formatter를 변경 Java 7개 파일에 적용했다. 독립 코드 검토에서 추가 조치 항목은 없었다.
 - 최종 JDK 17.0.10 `clean verify -Dio.netty.leakDetection.level=paranoid`: 88개 테스트, 실패/오류/생략 0건. Netty LEAK 보고 0건. 연결 종료 테스트에서 기존 서버 fixture의 `Connection reset` 경고가 출력됐다.
 - 일반 JAR·sources JAR을 생성했다. 최종 검증 기록을 반영한 문서만 갱신한 뒤 테스트를 생략하여 다시 package하고 루트 Markdown 7개의 포함·내용 일치를 확인했다.
+
+## Java TLS 부분 본문 전송 샘플
+
+`JavaTlsPartialBodySampleTest`는 Java 커넥터, RAW_HTTP1 본문 interceptor, 로컬 TLS 서버로 구성한다. 서버에서 선언 길이와 실제 prefix를 검사하고 클라이언트가 송신 측을 열어 둔 상태에서 서버 종료를 EOF로 관측하는지 검증한다.
