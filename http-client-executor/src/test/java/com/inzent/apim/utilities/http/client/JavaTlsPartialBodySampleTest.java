@@ -7,13 +7,17 @@ import java.net.ServerSocket;
 import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyStore;
+import java.security.cert.CertificateFactory;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
+import javax.net.ssl.TrustManagerFactory;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -32,12 +36,18 @@ class JavaTlsPartialBodySampleTest {
 	void waitsForServerClose(
 			@TempDir Path directory) throws Exception {
 		SSLContext tls = TlsFixture.localContext(directory);
+		// The local server supplies its public certificate for this example.
+		Path serverCertificate = directory.resolve("server.cer");
+		Files.write(serverCertificate,
+		            TlsFixture.loadKeys(directory)
+		                      .getCertificate("fixture")
+		                      .getEncoded());
 		try (ServerSocket listener = tls.getServerSocketFactory()
 		                                .createServerSocket(0,
 		                                                    1,
 		                                                    InetAddress.getByName("127.0.0.1"));
 		     HttpClientManager manager = HttpClientManager.create(ConnectionConfigure.builder()
-		                                                                             .sslContext(tls)
+		                                                                             .sslContext(clientTls(serverCertificate))
 		                                                                             .responseIdleTimeout(Duration.ofSeconds(5))
 		                                                                             .executionTimeout(Duration.ofSeconds(10))
 		                                                                             .build());
@@ -68,11 +78,32 @@ class JavaTlsPartialBodySampleTest {
 			thread.start();
 
 			context.execute();
+			if (!(context.failure() instanceof EOFException)) {
+				context.throwIfFailed();
+			}
 			server.get(5,
 			           TimeUnit.SECONDS);
 			Assertions.assertInstanceOf(EOFException.class,
 			                            context.failure());
 		}
+	}
+
+	private static SSLContext clientTls(Path serverCertificate) throws Exception {
+		KeyStore trusted = KeyStore.getInstance("PKCS12");
+		trusted.load(null,
+		             null);
+		try (InputStream input = Files.newInputStream(serverCertificate)) {
+			trusted.setCertificateEntry("service",
+			                            CertificateFactory.getInstance("X.509")
+			                                              .generateCertificate(input));
+		}
+		TrustManagerFactory trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+		trust.init(trusted);
+		SSLContext context = SSLContext.getInstance("TLS");
+		context.init(null,
+		             trust.getTrustManagers(),
+		             null);
+		return context;
 	}
 
 	private static void receivePrefixAndClose(ServerSocket listener) throws Exception {

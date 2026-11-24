@@ -1,6 +1,12 @@
 package com.inzent.apim.utilities.http.client;
 
 import java.net.URI;
+import java.security.GeneralSecurityException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -52,6 +58,15 @@ public final class HttpClientExecutor
 		if (this.type == ConnectorType.JAVA && this.version == ConnectVersion.HTTP_2) {
 			throw new IllegalArgumentException("JAVA connector does not support HTTP/2");
 		}
+		ConnectionConfigure poolSettings = this.configure;
+		if (!builder.verifyServerCertificate) {
+			if (poolSettings.sslContext() != null) {
+				throw new IllegalArgumentException("verifyServerCertificate(false) cannot override a custom SSLContext");
+			}
+			poolSettings = poolSettings.toBuilder()
+			                           .sslContext(createUnverifiedServerContext())
+			                           .build();
+		}
 		this.timer = new ScheduledThreadPoolExecutor(1,
 		                                             task -> {
 			                                             Thread thread = new Thread(task,
@@ -61,7 +76,39 @@ public final class HttpClientExecutor
 		                                             });
 		this.timer.setRemoveOnCancelPolicy(true);
 		this.pool = new ConnectionPool(this.type,
-		                               this.configure);
+		                               poolSettings);
+	}
+
+	private static SSLContext createUnverifiedServerContext() {
+		X509TrustManager trust = new X509TrustManager() {
+			@Override
+			public void checkServerTrusted(X509Certificate[] chain,
+			                               String authType) {
+				// Skip chain trust only. The Java connector requests HTTPS endpoint identification.
+			}
+
+			@Override
+			public void checkClientTrusted(X509Certificate[] chain,
+			                               String authType) throws CertificateException {
+				throw new CertificateException("Client-only TLS context");
+			}
+
+			@Override
+			public X509Certificate[] getAcceptedIssuers() {
+				return new X509Certificate[0];
+			}
+		};
+		try {
+			SSLContext context = SSLContext.getInstance("TLS");
+			context.init(null,
+			             new TrustManager[]{trust},
+			             null);
+			return context;
+		}
+		catch (GeneralSecurityException failure) {
+			throw new IllegalStateException("Cannot initialize Java TLS context",
+			                                failure);
+		}
 	}
 
 	public ConnectionConfigure configure() {
@@ -287,6 +334,7 @@ public final class HttpClientExecutor
 		private ConnectMethod method = ConnectMethod.GET;
 		private ConnectVersion version = ConnectVersion.HTTP_1_1;
 		private WireMode wireMode = WireMode.AUTO;
+		private boolean verifyServerCertificate = true;
 
 		Builder(HttpClientManager manager,
 		        ConnectorType type,
@@ -326,6 +374,17 @@ public final class HttpClientExecutor
 				throw new IllegalArgumentException("Netty options require NETTY connector");
 			}
 			return this.configure(builder -> builder.workerThreads(value.eventLoopThreads()));
+		}
+
+		/**
+		 * Controls Java TLS server chain validation. HTTPS hostname checks remain enabled.
+		 */
+		public Builder verifyServerCertificate(boolean value) {
+			if (this.type != ConnectorType.JAVA) {
+				throw new IllegalArgumentException("Server certificate option requires JAVA connector");
+			}
+			this.verifyServerCertificate = value;
+			return this;
 		}
 
 		public Builder javaOptions(com.inzent.apim.utilities.http.client.config.JavaOptions value) {

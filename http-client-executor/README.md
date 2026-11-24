@@ -180,6 +180,34 @@ mvn -f http-client-executor/pom.xml "-Dtest=JavaTlsPartialBodySampleTest" test
 
 `shutdownOutput(false)`로 송신 측을 열어 둔다. 서버는 250ms 동안 다음 바이트와 EOF가 오지 않는 것을 확인한 뒤 HTTP 응답 없이 연결을 닫는다. 그러면 `execute()`가 반환되고 `context.failure()`에 `EOFException`이 기록되면 테스트가 통과한다. 클라이언트의 응답 대기 한도는 5초, 전체 실행 한도는 10초다.
 
+#### 다른 자체 서명 인증서를 사용하는 서버
+
+서버 관리자가 제공한 X.509 공개 인증서(PEM 또는 DER)의 SHA-256 지문을 확인하고 파일로 저장한다. 샘플의 `clientTls(Path)`는 해당 인증서 한 개를 신뢰하는 클라이언트용 SSLContext를 만든다. 로컬 테스트에서 인증서 파일을 생성하는 부분은 테스트 서버 준비용이다. 실제 서비스에서는 제공받은 파일을 사용한다.
+
+```java
+// JavaTlsPartialBodySampleTest의 clientTls(Path) 메서드 사용
+ConnectionConfigure settings = ConnectionConfigure.builder()
+    .sslContext(clientTls(Path.of("certs", "service.crt")))
+    .build();
+```
+
+위 설정을 `HttpClientManager.create(settings)`에 전달하고 URL에는 인증서 SAN에 등록된 DNS 이름 또는 IP 주소를 사용한다. 서버가 사설 CA에서 발급받은 인증서를 사용하면 해당 CA를 신뢰하도록 구성한다. 서버가 mTLS를 요구하면 클라이언트 인증서와 개인 키를 로드한 key manager도 초기화해야 한다.
+
+`context.failure()` 또는 `throwIfFailed()`의 원인 체인에서 `PKIX path building failed`는 신뢰 경로, `No subject alternative ... matching`은 URL과 인증서 이름, `certificate_required`는 클라이언트 인증서 요구 여부를 확인한다. 단순히 `handshake_failure`만 있으면 서버 TLS 로그도 함께 확인한다.
+
+인증서를 미리 등록하기 어려운 테스트 서버에서는 Java 실행기의 `verifyServerCertificate(false)`로 서버 인증서 체인 검증을 생략할 수 있다. 기본값은 `true`다.
+
+```java
+try (HttpClientManager manager = HttpClientManager.create(ConnectionConfigure.defaults());
+     HttpClientExecutor executor = manager.executorBuilder(ConnectorType.JAVA)
+         .verifyServerCertificate(false)
+         .build()) {
+    // 기존 ExecutionContext를 이 executor로 생성한다.
+}
+```
+
+이 설정에서도 URL 호스트는 인증서 SAN과 일치해야 한다. 체인 검증을 끄면 같은 호스트 이름으로 발급한 임의의 인증서도 수락하므로 서버 신원을 보장할 수 없다. 옵션은 해당 Java 실행기에만 적용된다. 명시적인 `sslContext(...)`와 `false`를 함께 설정하면 실행기 생성 시 예외가 발생한다. mTLS처럼 키와 신뢰 정책을 직접 구성할 때는 기본값과 사용자 SSLContext를 사용한다.
+
 ## 이벤트·이력·종료
 
 `ClientHandleInterceptor`의 `contentGenerated`, `connectResult`, `requestSent`, `responseReceived`를 구현한다. 정상 순서는 본문 준비 → 연결 결과 → 송신 완료 → 최종 응답 수신이다. 재사용은 ConnectResult.reused로 표시한다. 준비 실패에는 연결 이벤트가 없고 연결 시도 실패에는 실패 결과가 온다. 송신 완료는 원격 처리 완료가 아니다. 부분 응답에는 responseReceived가 오지 않는다.

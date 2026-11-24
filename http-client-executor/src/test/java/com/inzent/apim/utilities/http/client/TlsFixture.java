@@ -158,7 +158,7 @@ final class TlsFixture
 		return context;
 	}
 
-	private static KeyStore loadKeys(Path directory) throws Exception {
+	static KeyStore loadKeys(Path directory) throws Exception {
 		Files.createDirectories(directory);
 		Path store = directory.resolve("fixture.p12");
 		if (!Files.exists(store)) {

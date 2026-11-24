@@ -1,6 +1,11 @@
 package com.inzent.apim.utilities.http.client;
 
 import java.net.URI;
+import javax.net.ssl.SSLHandshakeException;
+import org.junit.jupiter.api.Test;
+
+import com.inzent.apim.utilities.http.client.config.ProxyConfigure;
+
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Assertions;
@@ -17,6 +22,59 @@ import com.inzent.apim.utilities.http.client.model.RequestBody;
 class TlsIntegrationTest {
 	@TempDir
 	static Path directory;
+
+	@Test
+	void javaServerTrustIsScopedToOneExecutor() throws Exception {
+		try (TlsFixture server = new TlsFixture(directory,
+		                                        false,
+		                                        false);
+		     HttpClientManager manager = HttpClientManager.create(ConnectionConfigure.defaults());
+		     HttpClientExecutor relaxed = manager.executorBuilder(ConnectorType.JAVA)
+		                                         .verifyServerCertificate(false)
+		                                         .build();
+		     HttpClientExecutor strict = manager.executorBuilder(ConnectorType.JAVA)
+		                                        .build()) {
+			URI url = URI.create("https://localhost:" + server.port() + "/");
+			try (ExecutionContext accepted = ExecutionContext.builder(relaxed)
+			                                                 .url(url)
+			                                                 .build();
+			     ExecutionContext rejected = ExecutionContext.builder(strict)
+			                                                 .url(url)
+			                                                 .build()) {
+				accepted.execute()
+				        .throwIfFailed();
+				Assertions.assertEquals(200,
+				                        accepted.response()
+				                                .status()
+				                                .code());
+				Assertions.assertInstanceOf(SSLHandshakeException.class,
+				                            rejected.execute()
+				                                    .failure());
+			}
+			try (TunnelProxy proxy = new TunnelProxy(server.port(),
+			                                         null);
+			     HttpClientExecutor tunneled = manager.executorBuilder(ConnectorType.JAVA)
+			                                          .verifyServerCertificate(false)
+			                                          .configure(builder -> builder.proxy(ProxyConfigure.http("localhost",
+			                                                                                                  proxy.port())))
+			                                          .build();
+			     ExecutionContext mismatch = ExecutionContext.builder(tunneled)
+			                                                 .url(URI.create("https://wrong.invalid:" + server.port() + "/"))
+			                                                 .build()) {
+				Assertions.assertInstanceOf(SSLHandshakeException.class,
+				                            mismatch.execute()
+				                                    .failure());
+			}
+			Assertions.assertThrows(IllegalArgumentException.class,
+			                        () -> manager.executorBuilder(ConnectorType.HT5)
+			                                     .verifyServerCertificate(false));
+			Assertions.assertThrows(IllegalArgumentException.class,
+			                        () -> manager.executorBuilder(ConnectorType.JAVA)
+			                                     .verifyServerCertificate(false)
+			                                     .configure(builder -> builder.sslContext(server.client))
+			                                     .build());
+		}
+	}
 
 	@ParameterizedTest
 	@EnumSource(ConnectorType.class)
