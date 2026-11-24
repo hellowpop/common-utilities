@@ -241,3 +241,20 @@ HTTP/2는 정상 헤더·본문의 논리 기록을 제공하고 요청 버전�
 분석 근거와 수정 사항은 [safety-analysis.md](safety-analysis.md)에 정리했다. 활성 실행의 interrupt 감시는 executor당 하나이며, 완료된 요청의 타이머 작업과 개별 close한 executor의 manager 등록은 즉시 제거한다.
 
 custom `RequestBody.prepare`는 null 대신 빈 `HttpHeaders`를 반환한다. null이면 준비 단계 IOException이 `context.failure()`에 기록된다. 성공·실패 모두 context를 try-with-resources로 닫고, body에서 연 입력 스트림은 context보다 먼저 닫는다. 파일 삭제 실패 시 close 예외를 처리한 후 다시 close할 수 있다.
+
+## Java 요청 본문 분할 전송
+
+`ConnectorType.JAVA`의 HTTP/1.1 요청에서 `ExecutionContext.builder(executor)`에 다음 옵션을 추가하면 본문을 1,024바이트씩 보내고 각 구간을 flush한 뒤 다음 구간까지 100ms 대기한다.
+
+```java
+try (ExecutionContext context = ExecutionContext.builder(executor)
+                                               .url(URI.create("https://localhost:8443/upload"))
+                                               .method(ConnectMethod.POST)
+                                               .body(RequestBody.bytes("application/octet-stream", payload))
+                                               .sendChunks(1024, Duration.ofMillis(100))
+                                               .build()) {
+    context.execute().throwIfFailed();
+}
+```
+
+크기는 양수이며 간격에는 `java.time.Duration`을 사용한다. `Duration.ZERO`는 구간별로 즉시 flush한다. 크기는 실제 본문 바이트 기준이며 헤더와 HTTP 프레이밍은 제외한다. 첫 구간은 즉시 전송하며 마지막 구간을 flush하면 대기 없이 응답 처리로 넘어간다. 옵션을 생략하면 기존처럼 요청 끝에서 한 번 flush한다. 서버의 개별 read 크기는 TCP/TLS 버퍼링에 따라 달라질 수 있다.

@@ -139,8 +139,12 @@ public final class Http1Protocol {
 		try (InputStream body = context.request()
 		                               .body()
 		                               .openStream()) {
-			byte[] buffer = new byte[8192];
-			for (int count; (count = body.read(buffer)) != -1; ) {
+			int segmentSize = context.sendChunkBytes();
+			byte[] buffer = new byte[segmentSize == 0 ? 8192 : Math.min(segmentSize, 8192)];
+			int segmentRemaining = segmentSize;
+			long bodyRemaining = context.request().body().size();
+			int readLimit = buffer.length;
+			for (int count; (count = body.read(buffer, 0, readLimit)) != -1; ) {
 				context.checkCancelled();
 				if (chunked) {
 					output.write((Integer.toHexString(count) + "\r\n").getBytes(StandardCharsets.US_ASCII));
@@ -151,6 +155,18 @@ public final class Http1Protocol {
 				if (chunked) {
 					output.write(new byte[]{13,
 					                        10});
+				}
+				if (segmentSize > 0) {
+					segmentRemaining -= count;
+					bodyRemaining -= count;
+					if (segmentRemaining == 0) {
+						if (bodyRemaining > 0) {
+							output.flush();
+							context.awaitSendInterval();
+						}
+						segmentRemaining = segmentSize;
+					}
+					readLimit = Math.min(buffer.length, segmentRemaining);
 				}
 			}
 		}

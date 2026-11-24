@@ -128,3 +128,7 @@ HT5는 full async `HttpRoute`에 proxy/localAddress를 주입한다. 최초 TLS 
 `JavaTlsPartialBodySampleTest`는 Java 커넥터, RAW_HTTP1 본문 interceptor, 로컬 TLS 서버로 구성한다. 서버에서 선언 길이와 실제 prefix를 검사하고 클라이언트가 송신 측을 열어 둔 상태에서 서버 종료를 EOF로 관측하는지 검증한다.
 - 클라이언트는 별도의 SSLContext에 서비스의 X.509 공개 인증서를 등록하며 HTTPS 호스트 검증을 유지한다. README에 외부 자체 서명 인증서 적용 방법과 TLS 실패 진단을 정리했다.
 - Java 실행기의 `verifyServerCertificate(boolean)`으로 서버 인증서 체인 검증을 선택한다. 기본값은 true이며 false는 전용 연결 풀에만 적용한다. HTTPS 호스트 검증은 유지한다.
+
+## Java 요청 본문 분할 전송
+
+`ExecutionContext.Builder.sendChunks(int, Duration)`은 Java HTTP/1.1 커넥터의 요청별 전송 옵션이다. `Http1Protocol.write`는 실제 본문의 바이트를 누적해 지정된 경계에서 flush하고 다음 구간까지 기다린다. 전송 버퍼는 최대 8 KiB이며 기존 Content-Length 및 chunked 프레이밍을 유지한다. 구간 대기는 실행 제한 시간에 포함되며 취소나 응답 읽기 종료 시 깨어난다.

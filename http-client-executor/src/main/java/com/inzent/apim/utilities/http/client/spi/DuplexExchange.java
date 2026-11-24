@@ -34,6 +34,9 @@ public final class DuplexExchange {
 			try {
 				HttpResponsePayload result = read.call();
 				response.complete(result);
+				if (context.sendChunkBytes() > 0) {
+					context.signalResponseReadFinished();
+				}
 				// Let the caller publish a concurrent successful flush before treating this as an early response.
 				if (!sendDone.await(20,
 				                    TimeUnit.MILLISECONDS)) {
@@ -42,6 +45,9 @@ public final class DuplexExchange {
 			}
 			catch (Throwable failure) {
 				response.completeExceptionally(failure);
+				if (context.sendChunkBytes() > 0) {
+					context.signalResponseReadFinished();
+				}
 			}
 		});
 		Throwable sendFailure = null;

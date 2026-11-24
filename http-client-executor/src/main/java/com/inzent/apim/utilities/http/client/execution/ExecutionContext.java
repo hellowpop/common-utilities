@@ -2,17 +2,20 @@ package com.inzent.apim.utilities.http.client.execution;
 
 import java.io.IOException;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeUnit;
 
 import com.inzent.apim.utilities.http.client.HttpClientExecutor;
 import com.inzent.apim.utilities.http.client.interceptor.ClientHandleInterceptor;
 import com.inzent.apim.utilities.http.client.model.CaptureLevel;
 import com.inzent.apim.utilities.http.client.model.ConnectMethod;
 import com.inzent.apim.utilities.http.client.model.ConnectVersion;
+import com.inzent.apim.utilities.http.client.model.ConnectorType;
 import com.inzent.apim.utilities.http.client.model.HttpHeaders;
 import com.inzent.apim.utilities.http.client.model.HttpRequestPayload;
 import com.inzent.apim.utilities.http.client.model.HttpResponsePayload;
@@ -55,6 +58,9 @@ public final class ExecutionContext
 	private final WireMode requestedMode;
 	private final CaptureLevel captureLevel;
 	private final boolean shutdownOutput;
+	private final int sendChunkBytes;
+	private final long sendIntervalNanos;
+	private boolean responseReadFinished;
 	private final List<BodyStore> stores = new ArrayList<>();
 	private final List<History> history = new ArrayList<>();
 	private final List<Throwable> interceptorFailures = new ArrayList<>();
@@ -96,6 +102,8 @@ public final class ExecutionContext
 		                     : builder.wireMode;
 		this.captureLevel = builder.captureLevel;
 		this.shutdownOutput = builder.shutdownOutput;
+		this.sendChunkBytes = builder.sendChunkBytes;
+		this.sendIntervalNanos = builder.sendIntervalNanos;
 	}
 
 	public static Builder builder(HttpClientExecutor executor) {
@@ -151,6 +159,37 @@ public final class ExecutionContext
 
 	public CaptureLevel captureLevel() {
 		return this.captureLevel;
+	}
+
+	public int sendChunkBytes() {
+		return this.sendChunkBytes;
+	}
+
+	public synchronized void signalResponseReadFinished() {
+		this.responseReadFinished = true;
+		this.notifyAll();
+	}
+
+	public synchronized void awaitSendInterval() throws IOException {
+		long start = System.nanoTime();
+		while (true) {
+			this.checkCancelled();
+			if (this.responseReadFinished) {
+				throw new IOException("Response read finished during upload");
+			}
+			long now = System.nanoTime();
+			long remaining = this.sendIntervalNanos - (now - start);
+			if (remaining <= 0) {
+				return;
+			}
+			try {
+				TimeUnit.NANOSECONDS.timedWait(this,
+				                              Math.min(remaining, this.deadline - now));
+			}
+			catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
 	}
 
 	public boolean shutdownOutput() {
@@ -281,6 +320,7 @@ public final class ExecutionContext
 			return;
 		}
 		this.cancelled = true;
+		this.notifyAll();
 		Runnable action = this.abort;
 		if (action != null) {
 			action.run();
@@ -447,6 +487,8 @@ public final class ExecutionContext
 		private WireMode wireMode;
 		private CaptureLevel captureLevel = CaptureLevel.LOGICAL;
 		private boolean shutdownOutput;
+		private int sendChunkBytes;
+		private long sendIntervalNanos;
 
 		private Builder(HttpClientExecutor executor) {
 			this.executor = Objects.requireNonNull(executor);
@@ -499,6 +541,19 @@ public final class ExecutionContext
 
 		public Builder captureLevel(CaptureLevel value) {
 			this.captureLevel = Objects.requireNonNull(value);
+			return this;
+		}
+
+		public Builder sendChunks(int bytes,
+		                          Duration interval) {
+			if (this.executor.connectorType() != ConnectorType.JAVA) {
+				throw new IllegalArgumentException("sendChunks requires the JAVA connector");
+			}
+			if (bytes <= 0 || interval.isNegative()) {
+				throw new IllegalArgumentException("sendChunks requires positive bytes and a non-negative interval");
+			}
+			this.sendIntervalNanos = interval.toNanos();
+			this.sendChunkBytes = bytes;
 			return this;
 		}
 

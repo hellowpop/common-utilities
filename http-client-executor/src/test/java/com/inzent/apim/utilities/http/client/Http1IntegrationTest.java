@@ -6,11 +6,13 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -22,8 +24,45 @@ import com.inzent.apim.utilities.http.client.model.ConnectMethod;
 import com.inzent.apim.utilities.http.client.model.ConnectorType;
 import com.inzent.apim.utilities.http.client.model.HttpResponsePayload;
 import com.inzent.apim.utilities.http.client.model.RequestBody;
+import com.inzent.apim.utilities.http.client.spi.Http1Protocol;
 
 class Http1IntegrationTest {
+	@Test
+	void flushesBodySegmentsAndWaitsBetweenThem() throws Exception {
+		try (HttpClientManager manager = HttpClientManager.create(ConnectionConfigure.defaults());
+		     HttpClientExecutor executor = manager.executorBuilder(ConnectorType.JAVA).build();
+		     ExecutionContext context = ExecutionContext.builder(executor)
+		                                                .url(URI.create("http://localhost/upload"))
+		                                                .method(ConnectMethod.POST)
+		                                                .body(RequestBody.bytes("text/plain", "ABCDE".getBytes(StandardCharsets.US_ASCII)))
+		                                                .sendChunks(2, Duration.ofMillis(25))
+		                                                .build()) {
+			List<String> flushed = new ArrayList<>();
+			List<Long> times = new ArrayList<>();
+			ByteArrayOutputStream output = new ByteArrayOutputStream() {
+				@Override
+				public void flush() {
+					String wire = this.toString(StandardCharsets.US_ASCII);
+					flushed.add(wire.substring(wire.indexOf("\r\n\r\n") + 4));
+					times.add(System.nanoTime());
+				}
+			};
+			context.begin();
+			try {
+				context.prepare();
+				Http1Protocol.validate(context, ConnectorType.JAVA);
+				Http1Protocol.write(context, output, false);
+				Assertions.assertEquals(List.of("AB", "ABCD", "ABCDE"), flushed);
+				for (int i = 1; i < times.size(); i++) {
+					Assertions.assertTrue(times.get(i) - times.get(i - 1) >= Duration.ofMillis(25).toNanos());
+				}
+			}
+			finally {
+				context.finish(null);
+			}
+		}
+	}
+
 	@ParameterizedTest
 	@EnumSource(ConnectorType.class)
 	void changedBodyIsNotTruncatedAndCaptureMatchesActualWire(ConnectorType type) throws Exception {
