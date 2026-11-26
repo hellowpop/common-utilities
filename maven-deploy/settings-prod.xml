@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <servers>
+        <server>
+            <id>prod-releases</id>
+            <username>${env.MAVEN_PROD_USERNAME}</username>
+            <password>${env.MAVEN_PROD_PASSWORD}</password>
+        </server>
+        <server>
+            <id>prod-snapshots</id>
+            <username>${env.MAVEN_PROD_USERNAME}</username>
+            <password>${env.MAVEN_PROD_PASSWORD}</password>
+        </server>
+    </servers>
+    <profiles>
+        <profile>
+            <id>deploy-prod</id>
+            <properties>
+                <altReleaseDeploymentRepository>prod-releases::https://maven-prod.example.com/repository/maven-releases/</altReleaseDeploymentRepository>
+                <altSnapshotDeploymentRepository>prod-snapshots::https://maven-prod.example.com/repository/maven-snapshots/</altSnapshotDeploymentRepository>
+            </properties>
+        </profile>
+    </profiles>
+    <activeProfiles>
+        <activeProfile>deploy-prod</activeProfile>
+    </activeProfiles>
+</settings>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <servers>
+        <server>
+            <id>dev-releases</id>
+            <username>${env.MAVEN_DEV_USERNAME}</username>
+            <password>${env.MAVEN_DEV_PASSWORD}</password>
+        </server>
+        <server>
+            <id>dev-snapshots</id>
+            <username>${env.MAVEN_DEV_USERNAME}</username>
+            <password>${env.MAVEN_DEV_PASSWORD}</password>
+        </server>
+    </servers>
+    <profiles>
+        <profile>
+            <id>deploy-dev</id>
+            <properties>
+                <altReleaseDeploymentRepository>dev-releases::https://maven-dev.example.com/repository/maven-releases/</altReleaseDeploymentRepository>
+                <altSnapshotDeploymentRepository>dev-snapshots::https://maven-dev.example.com/repository/maven-snapshots/</altSnapshotDeploymentRepository>
+            </properties>
+        </profile>
+    </profiles>
+    <activeProfiles>
+        <activeProfile>deploy-dev</activeProfile>
+    </activeProfiles>
+</settings>

@@ -23,6 +23,8 @@
 
 ## 구조 변경내역
 
+- 2026-11-26: 기존 `pom.xml`에서 `mvn -s` 옵션으로 개발·운영 배포 대상을 전환하는 Maven 설정 샘플을 추가했다. Maven 3.9.11에서 각 환경의 SNAPSHOT·릴리스 경로에 JAR, 소스 JAR, POM이 배포되는 것을 임시 로컬 저장소로 검증했다. [설정 및 사용법](maven-deploy/README.md)
+
 - 2026-11-19: HTTP Client Executor 구현과 CPU·리소스·NPE 개선을 develop에 반영한다. interrupt 감시 통합, 취소 타이머·종료 executor 잔류 제거, 임시 파일 정리 및 Netty 입력 NPE/EOF 처리를 수정했다. JDK 17 PARANOID 검증 88개 통과와 일반·소스 JAR의 Markdown 7개 포함을 확인했다. 분석과 사용 계약은 [안전성 분석](http-client-executor/safety-analysis.md)에 기록했다.
 
 - 2026-11-19: [HTTP Client Executor](http-client-executor/project.md)에 HTTP/2 multiplex와 HT5 HTTP/2 proxy/localAddress를 추가했다. 물리 연결·stream lease 분리, 서버 SETTINGS/GOAWAY, stream 취소 격리·대기 timeout·늦은 전송 방지와 CONNECT/mTLS·로컬 바인딩을 구현했다. Apache HttpCore는 취소 stream reset 수정이 포함된 5.5로 정렬했다. 상세 사용법·지원표·검증은 모듈 문서를 따른다.
