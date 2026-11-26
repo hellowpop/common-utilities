@@ -23,6 +23,8 @@
 
 ## 구조 변경내역
 
+- 2026-11-26 `file-spliter` 독립 Maven 모듈을 추가했다. 단일 실행 JAR의 `split` 명령은 일반 파일과 gzip 원본을 정규식으로 분할하고, `analyze` 명령은 검출 패턴이 있는 분할 파일을 결과 폴더로 복사한다. [프로젝트 구성](file-spliter/project.md) · [사용법](file-spliter/README.md)
+
 - 2026-11-26: 기존 `pom.xml`에서 `mvn -s` 옵션으로 개발·운영 배포 대상을 전환하는 Maven 설정 샘플을 추가했다. Maven 3.9.11에서 각 환경의 SNAPSHOT·릴리스 경로에 JAR, 소스 JAR, POM이 배포되는 것을 임시 로컬 저장소로 검증했다. [설정 및 사용법](maven-deploy/README.md)
 
 - 2026-11-19: HTTP Client Executor 구현과 CPU·리소스·NPE 개선을 develop에 반영한다. interrupt 감시 통합, 취소 타이머·종료 executor 잔류 제거, 임시 파일 정리 및 Netty 입력 NPE/EOF 처리를 수정했다. JDK 17 PARANOID 검증 88개 통과와 일반·소스 JAR의 Markdown 7개 포함을 확인했다. 분석과 사용 계약은 [안전성 분석](http-client-executor/safety-analysis.md)에 기록했다.
