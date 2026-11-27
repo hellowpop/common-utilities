@@ -1,6 +1,6 @@
 # HTTP Client Executor
 
-Java 17용 단일 Maven 라이브러리다. HT5(Apache HttpClient 5), Netty, Java socket 커넥터를 선택해 같은 API로 요청을 보내고 요청·응답 본문, 실행 이력, HTTP/1.1 전송 원본을 조회한다.
+Java 17용 단일 Maven 라이브러리다. HT5(Apache HttpClient 5), Netty, Reactor Netty, Java socket 커넥터를 선택해 같은 API로 요청을 보내고 요청·응답 본문, 실행 이력, HTTP/1.1 전송 원본을 조회한다.
 
 ## 의존성과 빌드
 
@@ -74,7 +74,7 @@ ConnectionConfigure defaults = ConnectionConfigure.builder()
 //     .build();
 ```
 
-`Ht5Options(reactorThreads)`, `NettyOptions(eventLoopThreads)`, `JavaOptions(readBufferSize)`는 `.config` 패키지에 있다. 다른 커넥터의 옵션 주입은 거부한다. HT5 reactor 옵션은 HTTP/2 async 경로에 적용하며 HTTP/1.1은 호출 스레드에서 동작한다.
+`Ht5Options(reactorThreads)`, `NettyOptions(eventLoopThreads)`, `JavaOptions(readBufferSize)`는 `.config` 패키지에 있다. `NettyOptions`는 `NETTY`와 `REACTOR_NETTY`에 적용한다. HT5 reactor 옵션은 HTTP/2 async 경로에 적용하며 HTTP/1.1은 호출 스레드에서 동작한다.
 
 | 설정 | 기본값 |
 |---|---|
@@ -90,9 +90,28 @@ ConnectionConfigure defaults = ConnectionConfigure.builder()
 
 timeout은 양수, 최대 365일이다. 풀 제한은 executor별 물리 연결 수이며 raw 연결도 포함한다. FIFO/LIFO는 idle 연결 선택 순서이며 대기 스레드의 공정성을 보장하지 않는다. idle/TTL은 다음 acquire 시 검사한다. 자동 재시도, 리다이렉트, cookie 저장, 응답 자동 decompress는 수행하지 않는다.
 
+### Reactor Netty
+
+`ConnectorType.REACTOR_NETTY`는 Reactor Netty `TcpClient`로 물리 연결을 연다. 요청 전송과 응답 조회는 기존 동기 `ExecutionContext` API를 사용한다. 연결 수와 수명은 executor의 `ConnectionConfigure`로 관리한다.
+
+```java
+try (HttpClientManager manager = HttpClientManager.create(ConnectionConfigure.defaults());
+     HttpClientExecutor executor = manager.executorBuilder(ConnectorType.REACTOR_NETTY)
+         .nettyOptions(new NettyOptions(2))
+         .build();
+     ExecutionContext context = ExecutionContext.builder(executor)
+         .url(URI.create("https://example.com/"))
+         .build()) {
+    context.execute().throwIfFailed();
+    System.out.println(context.response().status().code());
+}
+```
+
+기본 버전은 HTTP/1.1이다. HTTPS HTTP/2를 사용하려면 executor builder에 `.version(ConnectVersion.HTTP_2)`를 지정한다.
+
 ### HTTP/2 multiplex
 
-HT5와 Netty 모두 하나의 HTTP/2 연결에서 여러 context를 동시에 실행할 수 있다. 각 스레드에서 별도 context를 생성한다. `maxConnTotal`/`maxConnPerRoute`는 물리 연결 상한이고, `maxConcurrentStreamsPerConnection`은 연결별 동시 실행 상한이다.
+HT5, Netty, Reactor Netty는 하나의 HTTP/2 연결에서 여러 context를 동시에 실행할 수 있다. 각 스레드에서 별도 context를 생성한다. `maxConnTotal`/`maxConnPerRoute`는 물리 연결 상한이고, `maxConcurrentStreamsPerConnection`은 연결별 동시 실행 상한이다.
 
 ```java
 ConnectionConfigure h2Settings = ConnectionConfigure.builder()
@@ -102,7 +121,7 @@ ConnectionConfigure h2Settings = ConnectionConfigure.builder()
     .maxConcurrentStreamsPerConnection(8)
     .poolAcquireTimeout(java.time.Duration.ofSeconds(5))
     .build();
-// manager.executorBuilder(ConnectorType.HT5) 또는 NETTY
+// manager.executorBuilder(ConnectorType.HT5) 또는 NETTY, REACTOR_NETTY
 //     .version(ConnectVersion.HTTP_2)
 //     .build();
 ```
@@ -127,7 +146,7 @@ ConnectionConfigure settings = ConnectionConfigure.builder()
 
 인증 없는 proxy는 `ProxyConfigure.http(host, port)`다. HTTP 목적지는 absolute-form, HTTPS 목적지는 CONNECT 후 목적지와 TLS/mTLS를 수행한다. `Proxy-Authorization` 직접 헤더 주입은 금지하고 전용 설정을 사용한다. HTTPS proxy 자체의 TLS, SOCKS, NTLM/Kerberos는 제공하지 않는다.
 
-HTTP/2에서도 HT5·Netty 모두 같은 proxy 설정과 `.localAddress(InetAddress)`를 지원한다. proxy와 localAddress를 함께 지정하면 해당 로컬 주소에서 proxy에 TCP 연결하고, CONNECT 터널 안에서 목적지 TLS/ALPN/mTLS를 수행한다. proxy 인증 헤더는 목적지 HTTP/2 요청에 전달하지 않는다.
+HTTP/2에서도 HT5, Netty, Reactor Netty는 같은 proxy 설정과 `.localAddress(InetAddress)`를 지원한다. proxy와 localAddress를 함께 지정하면 해당 로컬 주소에서 proxy에 TCP 연결하고, CONNECT 터널 안에서 목적지 TLS/ALPN/mTLS를 수행한다. proxy 인증 헤더는 목적지 HTTP/2 요청에 전달하지 않는다.
 
 ## Payload Generator
 
@@ -222,17 +241,17 @@ hook 예외는 실행을 실패시킨다. 나머지 알림의 RuntimeException�
 
 ## 지원 범위
 
-| 기능 | HT5 | Netty | Java |
-|---|---|---|---|
-| HTTP/1.1, HTTPS, mTLS | 지원 | 지원 | 지원 |
-| HTTP/1.1 raw 길이 불일치·원본 기록 | 지원 | 지원 | 지원 |
-| HTTP proxy·HTTPS CONNECT (HTTP/1.1) | 지원 | 지원 | 지원 |
-| HTTPS ALPN HTTP/2 | 지원 | 지원 | 미지원 |
-| HTTP/2 multiplex / 서버 stream 상한 | 지원 | 지원 | 미지원 |
-| HTTP/2 CONNECT proxy·Basic 인증·localAddress | 지원 | 지원 | 미지원 |
-| HTTP/2 원본 bytes·raw framing | 미지원 | 미지원 | 미지원 |
+| 기능 | HT5 | Netty | Reactor Netty | Java |
+|---|---|---|---|---|
+| HTTP/1.1, HTTPS, mTLS | 지원 | 지원 | 지원 | 지원 |
+| HTTP/1.1 raw 길이 불일치·원본 기록 | 지원 | 지원 | 지원 | 지원 |
+| HTTP proxy·HTTPS CONNECT (HTTP/1.1) | 지원 | 지원 | 지원 | 지원 |
+| HTTPS ALPN HTTP/2 | 지원 | 지원 | 지원 | 미지원 |
+| HTTP/2 multiplex / 서버 stream 상한 | 지원 | 지원 | 지원 | 미지원 |
+| HTTP/2 CONNECT proxy·Basic 인증·localAddress | 지원 | 지원 | 지원 | 미지원 |
+| HTTP/2 원본 bytes·raw framing | 미지원 | 미지원 | 미지원 | 미지원 |
 
-HTTP/2는 정상 헤더·본문의 논리 기록을 제공하고 요청 버전을 강제한다. h2c와 HTTP/3는 제공하지 않는다. HTTP/1.1 serializer/parser는 공통 코드이며 HT5는 Apache managed writer로 요청을 직렬화하고, Netty는 NIO channel로 bytes를 전송한다. HTTP/1.1 응답 parser는 세 커넥터가 공통 사용한다.
+HTTP/2는 정상 헤더·본문의 논리 기록을 제공하고 요청 버전을 강제한다. h2c와 HTTP/3는 제공하지 않는다. HTTP/1.1 serializer/parser는 공통 코드이며 HT5는 Apache managed writer로 요청을 직렬화한다. Netty와 Reactor Netty는 NIO 채널로 bytes를 전송한다. HTTP/1.1 응답 parser는 네 커넥터가 공통 사용한다.
 
 상세 구조와 검증 결과는 [project.md](project.md), 초기 설계와 변경 전 계약은 [design.md](design.md)에 정리한다.
 

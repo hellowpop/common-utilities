@@ -21,15 +21,16 @@
 | `spi` | 공통 HTTP/1.1 framing/parser, strict connection pool, 동시 송수신 helper |
 | `connector.java` | JDK Socket/SSLSocket, TCP/TLS/mTLS/proxy 연결 |
 | `connector.ht5` | Apache managed HTTP/1.1 writer 확장, async HTTP/2 endpoint |
-| `connector.netty` | Netty NIO byte 전송과 TLS HTTP/2 frame/stream 전송 |
+| `connector.netty` | `NettyTransport` 물리 연결, HTTP/1.1 byte 전송, TLS HTTP/2 frame/stream 전송 |
 | `payload` | 기존 generator의 callback 안에서 stream/header를 복사하는 `PayloadBody` |
 
-외부 provider discovery 대신 `ConnectionPool.open`의 enum registry로 세 구현을 명시적으로 선택한다. 선택하지 않은 커넥터의 네트워크 자원은 만들지 않는다. 공통 API는 Apache/Netty 요청·응답 타입을 노출하지 않는다. `.spi`는 내부 구현 경계이며 외부 확장 API로 보장하지 않는다.
+`ConnectionPool.open`은 `ConnectorType`으로 HT5, NETTY, JAVA, REACTOR_NETTY를 선택한다. 선택하지 않은 커넥터의 네트워크 자원은 만들지 않는다. 공통 API는 Apache/Netty 요청·응답 타입을 노출하지 않는다. `.spi`는 내부 구현 경계이며 외부 확장 API로 보장하지 않는다.
 
 ## 의존성과 빌드
 
 - Apache `httpclient5:5.6.5`, `httpcore5`/`httpcore5-h2:5.5`를 명시적으로 정렬한다. 송신 종료 후 응답 대기 중인 HTTP/2 stream reset 수정을 포함한 안정 버전이다.
 - Netty BOM `4.2.21.Final`로 직접·전이 버전을 정렬한다.
+- `reactor-netty-core:1.3.9`의 `TcpClient`를 REACTOR_NETTY 연결에 사용한다.
 - 기존 `http-payload-generator:1.0.0-SNAPSHOT`을 의존성으로 사용하며 소스를 복제하지 않는다.
 - JUnit Jupiter 5.13.4와 테스트 전용 SLF4J NOP 1.7.36. 애플리케이션의 logging binding은 강제하지 않는다.
 - package에 `maven-source-plugin:jar-no-fork`를 연결하고 `*.md`를 `META-INF/docs/http-client-executor/`에 포함한다.
@@ -38,7 +39,7 @@
 
 ## 실행과 설정 계약
 
-manager는 불변 기본 설정을 유지한다. builder의 connectionConfigure 전체 대체 후 필드 override를 적용해 executor마다 독립 snapshot·pool을 생성한다. typed connector option은 다른 connector에 주입할 수 없다.
+manager는 불변 기본 설정을 유지한다. builder의 connectionConfigure 전체 대체 후 필드 override를 적용해 executor마다 독립 snapshot·pool을 생성한다. `NettyOptions`는 NETTY와 REACTOR_NETTY의 event loop 스레드 수를 설정한다.
 
 context는 executor와 함께 builder로 생성하며 URI/method/version/body/header를 override한다. 전체 URL과 context path의 동시 지정은 거부한다. base path와 상대 path의 경계 slash만 합치고 기존 `%` escape는 보존한다. 유니코드 path/query는 UTF-8 percent encoding으로 변환한다. userinfo·fragment·잘못된 header/method token을 거부한다.
 
@@ -64,9 +65,15 @@ HTTP1_PLAINTEXT_BYTES는 실제 write가 반환된 애플리케이션 bytes를 �
 - callback에서 executor/manager close는 상태 변경 전에 거부한다. context close는 실행 반환 후 수행한다.
 - manager는 소유 executor를, executor는 pool·response reader·Netty group·Apache client·deadline timer를 닫는다. 사용자 hook/generator의 무한 대기를 강제 중단하지는 못한다.
 
+### Reactor Netty 전송 구성
+
+- `NETTY`는 Netty `Bootstrap`을, `REACTOR_NETTY`는 Reactor Netty `TcpClient.newConnection()`을 사용해 물리 채널을 연다. 두 타입은 HTTP/1.1 파서와 HTTP/2 frame/stream 처리를 공유한다.
+- Reactor Netty 클라이언트는 executor의 NIO event loop를 사용한다. `ConnectionPool`이 물리 연결 한도, 재사용, idle/TTL, HTTP/2 stream 한도를 관리한다.
+- 연결 대기 중 취소되면 연결 구독을 취소한다. 연결이 동시에 완료되면 그 채널을 닫는다. HTTP/2 stream 실행 중에는 해당 stream만 닫는다.
+
 ## HTTP/2와 명시적 제한
 
-HT5/Netty는 HTTPS ALPN HTTP/2를 제공하고 실제 version을 검사한다. 응답 body는 bounded store로 수신하며 response idle과 전체 실행 timeout을 적용한다. Netty CONNECT는 목적지의 로컬 DNS 조회 없이 proxy에 원래 hostname을 전달한다. 두 커넥터 모두 multiplex와 HTTP/2 proxy/localAddress를 지원한다.
+HT5, NETTY, REACTOR_NETTY는 HTTPS ALPN HTTP/2를 제공하고 실제 version을 검사한다. 응답 body는 bounded store로 수신하며 response idle과 전체 실행 timeout을 적용한다. NETTY와 REACTOR_NETTY의 CONNECT는 목적지의 로컬 DNS 조회 없이 proxy에 원래 hostname을 전달한다. 세 커넥터는 multiplex와 HTTP/2 proxy/localAddress를 지원한다.
 
 `ConnectionPool`은 물리 연결 entry와 stream lease를 별도로 관리한다. 기본 stream 상한은 `maxConcurrentStreamsPerConnection=100`이며 물리 연결 상한과 독립적이다. Netty는 peer SETTINGS와 GOAWAY를 관측하고, Apache는 native H2 scheduler의 peer 제한과 공통 acquire deadline을 함께 적용한다. stream 실패·취소는 정상 shared 연결을 폐기하지 않고, 연결 장애/TTL/GOAWAY는 draining 후 마지막 lease가 끝나면 폐기한다.
 
@@ -78,7 +85,7 @@ HT5는 full async `HttpRoute`에 proxy/localAddress를 주입한다. 최초 TLS 
 |---|---|
 | H2 multiplex | 동일 물리 연결에서 독립 stream/context 동시 실행. configured/peer 상한·대기 timeout 적용 |
 | HT5 H2 proxy/localAddress | direct/proxy 바인딩과 CONNECT Basic 인증, TLS/mTLS·ALPN 지원 |
-| Netty H2 proxy | CONNECT·Basic·localAddress·mTLS 조합의 통합 검증 완료 |
+| NETTY/REACTOR_NETTY H2 proxy | CONNECT·Basic·localAddress·mTLS 지원 |
 | Java H2 | 지원 오류, H1.1만 제공 |
 | H2 원본 bytes/손상 frame | 미제공. 논리 headers/body 기록만 제공 |
 | 개별 DNS/TCP/TLS 시간 | 별도 세부 시간 측정 미제공. 실행 stage와 monotonic 경과 기록 |

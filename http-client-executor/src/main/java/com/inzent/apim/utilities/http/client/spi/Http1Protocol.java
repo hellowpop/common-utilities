@@ -59,7 +59,7 @@ public final class Http1Protocol {
 		if (context.version() == ConnectVersion.HTTP_2 && (type == ConnectorType.JAVA || !"https".equalsIgnoreCase(context.url()
 		                                                                                                                  .getScheme()) || context.request()
 		                                                                                                                                          .wireMode() == WireMode.RAW_HTTP1 || context.captureLevel() == CaptureLevel.HTTP1_PLAINTEXT_BYTES || context.shutdownOutput())) {
-			throw new IllegalArgumentException("HTTP/2 requires HT5/NETTY, HTTPS, standard framing and logical capture");
+			throw new IllegalArgumentException("HTTP/2 requires HT5, NETTY or REACTOR_NETTY with HTTPS, standard framing and logical capture");
 		}
 		HttpHeaders headers = context.request()
 		                             .headers();

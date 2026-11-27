@@ -75,7 +75,8 @@ class Http2MultiplexTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void onePhysicalConnectionCarriesConcurrentIndependentStreams(ConnectorType type) throws Exception {
 		LinkedBlockingQueue<Pending> requests = new LinkedBlockingQueue<>();
 		try (TlsFixture server = new TlsFixture(directory,
@@ -147,7 +148,8 @@ class Http2MultiplexTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void cancellingOneStreamDoesNotCloseSiblingOrSharedConnection(ConnectorType type) throws Exception {
 		LinkedBlockingQueue<Pending> requests = new LinkedBlockingQueue<>();
 		try (TlsFixture server = new TlsFixture(directory,
@@ -244,7 +246,8 @@ class Http2MultiplexTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void responseStorageLimitFailureDoesNotAbortSiblingStream(ConnectorType type) throws Exception {
 		LinkedBlockingQueue<Pending> requests = new LinkedBlockingQueue<>();
 		try (TlsFixture server = new TlsFixture(directory,
@@ -324,7 +327,8 @@ class Http2MultiplexTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void excessiveInterimResponsesDoNotAbortSiblingStream(ConnectorType type) throws Exception {
 		LinkedBlockingQueue<Pending> requests = new LinkedBlockingQueue<>();
 		try (TlsFixture server = new TlsFixture(directory,

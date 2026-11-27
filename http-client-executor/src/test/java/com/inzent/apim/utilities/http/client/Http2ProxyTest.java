@@ -27,7 +27,8 @@ class Http2ProxyTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void authenticatedTunnelMultiplexesAndBindsLocalAddressWithoutLeakingProxyCredentials(ConnectorType type) throws Exception {
 		LinkedBlockingQueue<Http2MultiplexTest.Pending> requests = new LinkedBlockingQueue<>();
 		try (TlsFixture server = new TlsFixture(directory,

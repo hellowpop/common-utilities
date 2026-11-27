@@ -3,27 +3,18 @@ package com.inzent.apim.utilities.http.client.connector.netty;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.InetSocketAddress;
 import java.net.URI;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLEngine;
-import javax.net.ssl.SSLParameters;
+import java.util.concurrent.atomic.AtomicReference;
 
-import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.proxy.HttpProxyHandler;
-import io.netty.handler.ssl.SslHandler;
 
 import com.inzent.apim.utilities.http.client.config.ConnectionConfigure;
 import com.inzent.apim.utilities.http.client.config.ProxyConfigure;
@@ -39,116 +30,43 @@ public final class NettyConnection
 		implements ClientConnection {
 	private final ConnectionConfigure configure;
 	private final Channel channel;
-	private final Inbound input = new Inbound();
+	private final Inbound input;
 	private boolean reusable;
 	private final boolean forwardProxy;
-	private final java.util.concurrent.ExecutorService readers;
+	private final ExecutorService readers;
 
 	public NettyConnection(ConnectionConfigure configure,
 	                       ExecutionContext context,
 	                       EventLoopGroup group,
-	                       java.util.concurrent.ExecutorService readers) throws Exception {
+	                       ExecutorService readers) throws Exception {
+		this(configure,
+		     context,
+		     group,
+		     readers,
+		     false);
+	}
+
+	public NettyConnection(ConnectionConfigure configure,
+	                       ExecutionContext context,
+	                       EventLoopGroup group,
+	                       ExecutorService readers,
+	                       boolean reactorNetty) throws Exception {
 		this.readers = readers;
 		this.configure = configure;
 		URI uri = context.url();
-		boolean secure = "https".equalsIgnoreCase(uri.getScheme());
 		ProxyConfigure proxy = configure.proxy();
-		this.forwardProxy = proxy != null && !secure;
-		Bootstrap bootstrap = new Bootstrap().group(group)
-		                                     .channel(NioSocketChannel.class)
-		                                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS,
-		                                             (int) Math.min(Integer.MAX_VALUE,
-		                                                            configure.connectTimeout()
-		                                                                     .toMillis()))
-		                                     .option(ChannelOption.TCP_NODELAY,
-		                                             configure.tcpNoDelay())
-		                                     .option(ChannelOption.SO_KEEPALIVE,
-		                                             configure.keepAlive())
-		                                     .option(ChannelOption.AUTO_READ,
-		                                             false)
-		                                     .handler(new ChannelInitializer<SocketChannel>() {
-			                                     @Override
-			                                     protected void initChannel(SocketChannel channel) throws Exception {
-				                                     if (proxy != null && secure) {
-					                                     // Pre-encoded Basic header avoids retaining the user's cleartext password.
-					                                     io.netty.handler.codec.http.HttpHeaders headers = new io.netty.handler.codec.http.DefaultHttpHeaders();
-					                                     if (proxy.authorization() != null) {
-						                                     headers.add("Proxy-Authorization",
-						                                                 proxy.authorization());
-					                                     }
-					                                     channel.pipeline()
-					                                            .addLast(new HttpProxyHandler(new InetSocketAddress(proxy.host(),
-					                                                                                                proxy.port()),
-					                                                                          headers));
-				                                     }
-				                                     if (secure) {
-					                                     SSLContext sslContext = configure.sslContext() == null
-					                                                             ? SSLContext.getDefault()
-					                                                             : configure.sslContext();
-					                                     SSLEngine engine = sslContext.createSSLEngine(uri.getHost(),
-					                                                                                   Http1Protocol.port(uri));
-					                                     engine.setUseClientMode(true);
-					                                     SSLParameters parameters = engine.getSSLParameters();
-					                                     parameters.setEndpointIdentificationAlgorithm("HTTPS");
-					                                     parameters.setProtocols(configure.tlsProtocols()
-					                                                                      .toArray(String[]::new));
-					                                     engine.setSSLParameters(parameters);
-					                                     SslHandler handler = new SslHandler(engine);
-					                                     handler.setHandshakeTimeoutMillis(configure.tlsHandshakeTimeout()
-					                                                                                .toMillis());
-					                                     channel.pipeline()
-					                                            .addLast(handler);
-				                                     }
-				                                     channel.pipeline()
-				                                            .addLast(NettyConnection.this.input);
-			                                     }
-		                                     });
-		if (configure.sendBufferSize() > 0) {
-			bootstrap.option(ChannelOption.SO_SNDBUF,
-			                 configure.sendBufferSize());
-		}
-		if (configure.receiveBufferSize() > 0) {
-			bootstrap.option(ChannelOption.SO_RCVBUF,
-			                 configure.receiveBufferSize());
-		}
-		if (configure.localAddress() != null) {
-			bootstrap.localAddress(configure.localAddress(),
-			                       0);
-		}
-		if (proxy != null && secure) {
-			bootstrap.resolver(io.netty.resolver.NoopAddressResolverGroup.INSTANCE);
-		}
-		io.netty.channel.ChannelFuture connected = bootstrap.connect(this.forwardProxy
-		                                                             ? proxy.host()
-		                                                             : uri.getHost(),
-		                                                             this.forwardProxy
-		                                                             ? proxy.port()
-		                                                             : Http1Protocol.port(uri));
-		this.channel = connected.channel();
-		context.abortWith(() -> this.channel.close());
-		try {
-			if (!connected.await(context.remainingMillis()) || !connected.isSuccess()) {
-				throw new IOException("Netty connect failed",
-				                      connected.cause());
-			}
-			if (secure) {
-				this.channel.read();
-				SslHandler ssl = this.channel.pipeline()
-				                             .get(SslHandler.class);
-				if (!ssl.handshakeFuture()
-				        .await(context.remainingMillis()) || !ssl.handshakeFuture()
-				                                                 .isSuccess()) {
-					throw new IOException("TLS handshake failed",
-					                      ssl.handshakeFuture()
-					                         .cause());
-				}
-			}
-		}
-		catch (Throwable failure) {
-			this.channel.close()
-			            .awaitUninterruptibly();
-			throw failure;
-		}
+		this.forwardProxy = proxy != null && !"https".equalsIgnoreCase(uri.getScheme());
+		AtomicReference<Inbound> openingInput = new AtomicReference<>();
+		this.channel = NettyTransport.connect(configure,
+		                                      context,
+		                                      group,
+		                                      reactorNetty,
+		                                      add -> {
+			                                      Inbound inbound = new Inbound();
+			                                      openingInput.set(inbound);
+			                                      add.accept(inbound);
+		                                      });
+		this.input = openingInput.get();
 	}
 
 	@Override
@@ -251,6 +169,7 @@ public final class NettyConnection
 		@Override
 		public void channelInactive(ChannelHandlerContext context) {
 			this.data.add(new byte[0]);
+			context.fireChannelInactive();
 		}
 
 		@Override

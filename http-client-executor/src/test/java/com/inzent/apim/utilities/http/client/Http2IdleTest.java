@@ -20,7 +20,8 @@ class Http2IdleTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void responseIdleTimeoutAppliesBeforeHeaders(ConnectorType type) throws Exception {
 		try (TlsFixture server = new TlsFixture(directory,
 		                                        true,

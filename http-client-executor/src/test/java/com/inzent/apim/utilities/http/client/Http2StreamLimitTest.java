@@ -21,7 +21,8 @@ class Http2StreamLimitTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void cancellingDuringGoAwayDoesNotAbortOtherDrainingStream(ConnectorType type) throws Exception {
 		LinkedBlockingQueue<Http2MultiplexTest.Pending> requests = new LinkedBlockingQueue<>();
 		try (TlsFixture server = new TlsFixture(directory,
@@ -96,7 +97,8 @@ class Http2StreamLimitTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void configuredStreamLimitTimesOutWithoutLateTransmission(ConnectorType type) throws Exception {
 		this.checkLimit(type,
 		                10,
@@ -106,7 +108,8 @@ class Http2StreamLimitTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void serverStreamLimitTimesOutWithoutLateTransmission(ConnectorType type) throws Exception {
 		this.checkLimit(type,
 		                1,
@@ -194,7 +197,8 @@ class Http2StreamLimitTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void goAwayDrainsExistingStreamAndNextExecutionUsesNewConnection(ConnectorType type) throws Exception {
 		LinkedBlockingQueue<Http2MultiplexTest.Pending> requests = new LinkedBlockingQueue<>();
 		try (TlsFixture server = new TlsFixture(directory,

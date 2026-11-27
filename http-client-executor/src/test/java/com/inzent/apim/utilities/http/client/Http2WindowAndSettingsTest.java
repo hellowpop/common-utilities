@@ -30,7 +30,8 @@ class Http2WindowAndSettingsTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void parallelBodiesAndResponsesCrossFlowControlWindowAndSpillToFiles(ConnectorType type) throws Exception {
 		LinkedBlockingQueue<Http2MultiplexTest.Pending> requests = new LinkedBlockingQueue<>();
 		try (TlsFixture server = new TlsFixture(directory,
@@ -103,7 +104,8 @@ class Http2WindowAndSettingsTest {
 	@ParameterizedTest
 	@EnumSource(value = ConnectorType.class,
 	            names = {"HT5",
-	                     "NETTY"})
+	                     "NETTY",
+	                     "REACTOR_NETTY"})
 	void loweringServerLimitPreservesActiveStreamsAndLimitsNewAdmissions(ConnectorType type) throws Exception {
 		LinkedBlockingQueue<Http2MultiplexTest.Pending> requests = new LinkedBlockingQueue<>();
 		try (TlsFixture server = new TlsFixture(directory,

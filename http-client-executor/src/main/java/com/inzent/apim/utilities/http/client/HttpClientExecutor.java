@@ -370,8 +370,8 @@ public final class HttpClientExecutor
 		}
 
 		public Builder nettyOptions(com.inzent.apim.utilities.http.client.config.NettyOptions value) {
-			if (this.type != ConnectorType.NETTY) {
-				throw new IllegalArgumentException("Netty options require NETTY connector");
+			if (this.type != ConnectorType.NETTY && this.type != ConnectorType.REACTOR_NETTY) {
+				throw new IllegalArgumentException("Netty options require NETTY or REACTOR_NETTY connector");
 			}
 			return this.configure(builder -> builder.workerThreads(value.eventLoopThreads()));
 		}

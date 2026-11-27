@@ -3,5 +3,6 @@ package com.inzent.apim.utilities.http.client.model;
 public enum ConnectorType {
 	HT5,
 	NETTY,
-	JAVA
+	JAVA,
+	REACTOR_NETTY
 }

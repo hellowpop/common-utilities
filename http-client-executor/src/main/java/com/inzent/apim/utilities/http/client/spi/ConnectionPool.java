@@ -274,9 +274,11 @@ public final class ConnectionPool
 			return switch (this.type) {
 				case HT5 -> new Ht5Http2Connection(this.configure,
 				                                   context);
-				case NETTY -> new NettyHttp2Connection(this.configure,
-				                                       context,
-				                                       this.group());
+				case NETTY,
+				     REACTOR_NETTY -> new NettyHttp2Connection(this.configure,
+				                                               context,
+				                                               this.group(),
+				                                               this.type == ConnectorType.REACTOR_NETTY);
 				case JAVA -> throw new IllegalArgumentException("JAVA does not support HTTP/2");
 			};
 		}
@@ -287,10 +289,12 @@ public final class ConnectionPool
 			case HT5 -> new Ht5Connection(this.configure,
 			                              context,
 			                              this.readers);
-			case NETTY -> new NettyConnection(this.configure,
-			                                  context,
-			                                  this.group(),
-			                                  this.readers);
+			case NETTY,
+			     REACTOR_NETTY -> new NettyConnection(this.configure,
+			                                          context,
+			                                          this.group(),
+			                                          this.readers,
+			                                          this.type == ConnectorType.REACTOR_NETTY);
 		};
 	}
 
