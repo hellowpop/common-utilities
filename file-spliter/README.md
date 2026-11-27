@@ -25,7 +25,7 @@ java -jar file-spliter/target/file-spliter.jar --help
 ### 분할 (`split`)
 
 ```powershell
-java -jar file-spliter/target/file-spliter.jar split '<정규식>' '<출력 폴더>' '<입력 파일>' ['<추가 입력 파일>' ...]
+java -jar file-spliter/target/file-spliter.jar split '<정규식>' '<출력 폴더>' '<파일 경로 또는 패턴>' ['<추가 경로 또는 패턴>' ...]
 ```
 
 예를 들어 아래 명령은 각 줄에서 `key=` 뒤의 값을 찾아 `output/<검출값>.txt`로 분리한다.
@@ -51,6 +51,24 @@ key=BETA
 - 입력과 출력은 UTF-8이다. 각 입력 파일 맨 앞의 UTF-8 BOM은 제거한다. 출력은 LF 줄바꿈을 사용하며 마지막 줄에도 LF를 붙인다.
 - 출력 디렉터리는 필요할 때 생성한다. 각 키는 유효한 파일명이어야 하며 같은 이름의 기존 항목이 있으면 오류로 종료한다. 실패 시 이미 생성된 출력은 남는다.
 - 파일명 대소문자를 구분하지 않는 파일시스템에서는 서로 다른 키인 `A`와 `a`도 같은 출력 경로로 처리되어 충돌 오류가 발생한다.
+
+#### 파일명 패턴으로 입력 지정
+
+```powershell
+java -jar file-spliter/target/file-spliter.jar split '^key=([A-Za-z0-9_-]+)' output '*.txt'
+java -jar file-spliter/target/file-spliter.jar split '^key=([A-Za-z0-9_-]+)' output first.log 'logs/acb-log*.txt' 'archive/*.gz'
+```
+
+- 파일명의 `*`는 임의 길이의 문자열과 일치하고, `?`는 문자 한 개와 일치한다. 명령줄에서 패턴을 따옴표로 감싸 전달한다.
+- 폴더를 생략하면 현재 작업 폴더를 사용한다. 폴더를 지정하면 그 바로 아래의 일반 파일만 선택하며, 와일드카드는 파일명에 사용한다.
+- 인수 순서를 따르고, 각 패턴 안에서는 파일명 오름차순으로 처리한다. 경로나 패턴이 겹치면 해당 파일은 지정된 횟수만큼 읽는다.
+- 패턴에 일치하는 파일이 없으면 분할을 시작하기 전에 오류로 종료한다.
+
+로그의 `[C:UUID]` 또는 `[H:UUID]`에서 UUID를 파일명으로 쓰려면 UUID만 캡처한다. PowerShell에서 정규식의 여닫는 대괄호 앞에는 백슬래시를 한 개씩 쓴다.
+
+```powershell
+java -jar file-spliter/target/file-spliter.jar split "\[[CH]:([0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})\]" output 'session*.log'
+```
 
 ### 분석 및 분류 (`analyze`)
 

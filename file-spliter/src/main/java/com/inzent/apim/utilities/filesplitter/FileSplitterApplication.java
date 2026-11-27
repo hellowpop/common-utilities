@@ -2,7 +2,6 @@ package com.inzent.apim.utilities.filesplitter;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -17,7 +16,7 @@ import org.springframework.context.annotation.Bean;
 public class FileSplitterApplication {
 	private static final String USAGE = """
 		Usage:
-		  java -jar file-spliter.jar split <regex> <output-directory> <input-file> [<input-file> ...]
+		  java -jar file-spliter.jar split <regex> <output-directory> <file-or-glob> [<file-or-glob> ...]
 		  java -jar file-spliter.jar analyze <regex> <split-directory> <result-directory>
 		  java -jar file-spliter.jar --help""";
 
@@ -41,10 +40,7 @@ public class FileSplitterApplication {
 			application.web(WebApplicationType.NONE).bannerMode(Banner.Mode.OFF).logStartupInfo(false);
 			try (ConfigurableApplicationContext context = application.run()) {
 				if (split) {
-					List<Path> inputs = new ArrayList<>(args.length - 3);
-					for (int index = 3; index < args.length; index++) {
-						inputs.add(Path.of(args[index]));
-					}
+					List<Path> inputs = InputFiles.resolve(List.of(args).subList(3, args.length));
 					context.getBean(FileSplitter.class).split(pattern, directory, inputs);
 				}
 				else {
