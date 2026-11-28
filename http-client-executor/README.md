@@ -90,6 +90,52 @@ ConnectionConfigure defaults = ConnectionConfigure.builder()
 
 timeout은 양수, 최대 365일이다. 풀 제한은 executor별 물리 연결 수이며 raw 연결도 포함한다. FIFO/LIFO는 idle 연결 선택 순서이며 대기 스레드의 공정성을 보장하지 않는다. idle/TTL은 다음 acquire 시 검사한다. 자동 재시도, 리다이렉트, cookie 저장, 응답 자동 decompress는 수행하지 않는다.
 
+### JSON·YAML 설정 파일
+
+`ConnectionConfigure.load(Path)`는 파일 확장자로 JSON(`.json`) 또는 YAML(`.yml`, `.yaml`)을 선택한다. 최상위 객체에서 `ConnectionConfigure.Builder`와 같은 camelCase 이름을 사용한다. 생략한 항목은 빌더 기본값을 적용한다.
+
+`connection.yml` 예제
+
+```yaml
+maxConnTotal: 40
+maxConnPerRoute: 10
+connectTimeout: PT3S
+responseIdleTimeout: PT15S
+leaseOrder: FIFO
+tlsProtocols: [TLSv1.3, TLSv1.2]
+proxy:
+  host: proxy.example
+  port: 8080
+```
+
+같은 설정의 `connection.json` 예제
+
+```json
+{
+  "maxConnTotal": 40,
+  "maxConnPerRoute": 10,
+  "connectTimeout": "PT3S",
+  "responseIdleTimeout": "PT15S",
+  "leaseOrder": "FIFO",
+  "tlsProtocols": ["TLSv1.3", "TLSv1.2"],
+  "proxy": {"host": "proxy.example", "port": 8080}
+}
+```
+
+```java
+ConnectionConfigure settings = ConnectionConfigure.load(Path.of("connection.yml"));
+try (HttpClientManager manager = HttpClientManager.create(settings);
+     HttpClientExecutor executor = manager.executorBuilder(ConnectorType.REACTOR_NETTY).build()) {
+    // 이 executor에서 ExecutionContext를 생성하고 실행한다.
+}
+```
+
+- timeout과 `timeToLive`는 ISO 8601 문자열로 지정한다. `PT3S`는 3초, `PT2.5S`는 2.5초다. 버퍼와 저장 한도의 단위는 바이트다.
+- `localAddress`에는 주소 문자열을, `temporaryDirectory`에는 경로 문자열을 지정한다. 상대 경로는 프로세스의 현재 작업 디렉터리를 기준으로 해석한다.
+- `proxy`의 필수 항목은 `host`와 `port`다. Basic 인증이 필요하면 `user`와 `password`를 함께 지정한다.
+- 사용자 정의 `SSLContext`가 필요하면 `settings.toBuilder().sslContext(clientSslContext).build()`로 설정한다.
+- 읽을 수 없는 파일, 지원하지 않는 확장자, 알 수 없는 키, 중복 키, 여러 문서, 유효하지 않은 설정값은 `IOException`으로 보고한다.
+
 ### Reactor Netty
 
 `ConnectorType.REACTOR_NETTY`는 Reactor Netty `TcpClient`로 물리 연결을 연다. 요청 전송과 응답 조회는 기존 동기 `ExecutionContext` API를 사용한다. 연결 수와 수명은 executor의 `ConnectionConfigure`로 관리한다.

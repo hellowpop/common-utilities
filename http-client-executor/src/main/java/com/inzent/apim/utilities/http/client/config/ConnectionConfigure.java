@@ -1,5 +1,6 @@
 package com.inzent.apim.utilities.http.client.config;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -37,6 +38,15 @@ public final class ConnectionConfigure {
 
 	public static ConnectionConfigure defaults() {
 		return builder().build();
+	}
+
+	/**
+	 * Loads settings from a JSON, YML or YAML file. Omitted settings use the builder defaults.
+	 *
+	 * @throws IOException if the file cannot be read or its settings are invalid
+	 */
+	public static ConnectionConfigure load(Path file) throws IOException {
+		return ConnectionConfigureFile.load(file);
 	}
 
 	public Builder toBuilder() {

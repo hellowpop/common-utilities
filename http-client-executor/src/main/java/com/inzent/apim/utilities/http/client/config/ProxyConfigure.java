@@ -17,6 +17,9 @@ public final class ProxyConfigure {
 		if (host.isBlank() || port < 1 || port > 65535) {
 			throw new IllegalArgumentException("Invalid proxy address");
 		}
+		if (user == null && password != null) {
+			throw new IllegalArgumentException("Proxy password requires a user");
+		}
 		this.port = port;
 		if (user != null && (user.contains(":") || user.contains("\r") || user.contains("\n"))) {
 			throw new IllegalArgumentException("Invalid proxy user");

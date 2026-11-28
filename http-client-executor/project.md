@@ -13,7 +13,7 @@
 | 경로 | 구성과 책임 |
 |---|---|
 | 기본 패키지 | `HttpClientManager`, `HttpClientExecutor`: 설정 snapshot, builder, connector 선택과 실행/종료 |
-| `config` | `ConnectionConfigure`, `ProxyConfigure`, `Ht5Options`, `NettyOptions`, `JavaOptions` |
+| `config` | `ConnectionConfigure`, JSON·YAML 설정을 읽는 `ConnectionConfigureFile`, `ProxyConfigure`, `Ht5Options`, `NettyOptions`, `JavaOptions` |
 | `model` | `ConnectMethod`, `ConnectVersion`, `ResponseStatus`, 다중 `HttpHeaders`, 요청·응답 payload와 body |
 | `execution` | single-use `ExecutionContext`, 단계 이력, 실패·취소·저장 scope |
 | `interceptor` | `ClientHandleInterceptor`의 본문 변경과 세 가지 알림 |
@@ -31,6 +31,7 @@
 - Apache `httpclient5:5.6.5`, `httpcore5`/`httpcore5-h2:5.5`를 명시적으로 정렬한다. 송신 종료 후 응답 대기 중인 HTTP/2 stream reset 수정을 포함한 안정 버전이다.
 - Netty BOM `4.2.21.Final`로 직접·전이 버전을 정렬한다.
 - `reactor-netty-core:1.3.9`의 `TcpClient`를 REACTOR_NETTY 연결에 사용한다.
+- 설정 파일은 Jackson BOM `2.21.2`로 관리하는 `jackson-databind`와 `jackson-dataformat-yaml`로 읽는다.
 - 기존 `http-payload-generator:1.0.0-SNAPSHOT`을 의존성으로 사용하며 소스를 복제하지 않는다.
 - JUnit Jupiter 5.13.4와 테스트 전용 SLF4J NOP 1.7.36. 애플리케이션의 logging binding은 강제하지 않는다.
 - package에 `maven-source-plugin:jar-no-fork`를 연결하고 `*.md`를 `META-INF/docs/http-client-executor/`에 포함한다.
@@ -40,6 +41,8 @@
 ## 실행과 설정 계약
 
 manager는 불변 기본 설정을 유지한다. builder의 connectionConfigure 전체 대체 후 필드 override를 적용해 executor마다 독립 snapshot·pool을 생성한다. `NettyOptions`는 NETTY와 REACTOR_NETTY의 event loop 스레드 수를 설정한다.
+
+`ConnectionConfigure.load(Path)`는 확장자에 맞는 Jackson reader로 최상위 JSON 객체 또는 YAML 매핑 하나를 읽는다. Jackson mix-in으로 파일 키를 기존 빌더에 매핑해 생략한 항목의 기본값과 설정 간 유효성 검사를 공유한다. 파일 로더는 기간을 ISO 8601 문자열로 읽고, 알 수 없는 키·중복 키·추가 문서를 거부한다. `SSLContext`는 빌더를 통해 Java 코드에서 주입한다. 파일 예제는 [README.md](README.md#jsonyaml-설정-파일)에 있다.
 
 context는 executor와 함께 builder로 생성하며 URI/method/version/body/header를 override한다. 전체 URL과 context path의 동시 지정은 거부한다. base path와 상대 path의 경계 slash만 합치고 기존 `%` escape는 보존한다. 유니코드 path/query는 UTF-8 percent encoding으로 변환한다. userinfo·fragment·잘못된 header/method token을 거부한다.
 
